@@ -1,0 +1,22 @@
+#
+#  ______                                           ____   __  __  _____
+# |  __  |                         @               |    \ |  \ | ||  ___| (TM)
+# | _____|.------. .-----. .-----. _ -. .-.------. | |\  ||   \| ||___  |
+# |  |    |  __  ||__  --'|__  --'| |\ Y /| _--__|_| |/  ||      || \_| |
+# |__|    |____|_||______||______||_| \_/ |_______/|____/ |__|\__||_____|
+#
+#
+
+A tool to collect DNS records passively to aid Incident handling, Network Security Monitoring
+and general digital forensics.
+
+PassiveDNS sniffes the interface or reads a pcap-file and outputs the DNS-server answers.
+Example output from version 0.1.1:
+
+# timestamp||sniffing-host|dns-server-IP||<The answer from the DNS server>
+1304063713||localhost||8.8.8.8||QUERY,NOERROR,31882,qr|rd|ra||1||gamelinux.org,IN,A||1||gamelinux.org,IN,A,361,85.19.221.54||0||0
+1304063713||localhost||8.8.8.8||QUERY,NOERROR,45422,qr|rd|ra||1||gamelinux.org,IN,AAAA||0||1||gamelinux.org,IN,SOA,1800,ns.netimage.no,hostmaster.netimage.no,2010102501,3600,3600,3024000,86400||0
+1304063713||localhost||8.8.8.8||QUERY,NOERROR,13533,qr|rd|ra||1||gamelinux.org,IN,MX||1||gamelinux.org,IN,MX,361,1,mail.gamelinux.org||0||0
+
+
+
