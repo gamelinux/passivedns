@@ -22,11 +22,15 @@
 /*  I N C L U D E S  **********************************************************/
 
 /*  D E F I N E S  ************************************************************/
-#define VERSION                       "0.1.1"
+#define VERSION                       "0.1.2"
 #define TIMEOUT                       60
+#define SIG_ALRM                      60        /* Time between sig alrm i called */
 #define BUCKET_SIZE                   1211
 #define SNAPLENGTH                    1600
 #define PKT_MAXPAY                    255
+#define MAX_BYTE_CHECK                500000
+#define MAX_PKT_CHECK                 10
+#define TCP_TIMEOUT                   300       /* When idle IP connections should be timed out */
 
 #define ETHERNET_TYPE_IP              0x0800
 #define ETHERNET_TYPE_IPV6            0x86dd
@@ -37,8 +41,11 @@
 #define ETHERNET_TYPE_802Q1MT3        0x9300
 #define ETHERNET_TYPE_8021AD          0x88a8
 
+#define IP_PROTO_ICMP                 1
 #define IP_PROTO_TCP                  6
 #define IP_PROTO_UDP                  17
+#define IP_PROTO_IP6                  41
+#define IP6_PROTO_ICMP                58
 
 #define IP4_HEADER_LEN                20
 #define IP6_HEADER_LEN                40
@@ -54,6 +61,14 @@
 #define IP_PROTO_IP6                  41
 #define IP_PROTO_IP4                  94
 
+#define TF_FIN                        0x01
+#define TF_SYN                        0x02
+#define TF_RST                        0x04
+#define TF_PUSH                       0x08
+#define TF_ACK                        0x10
+#define TF_URG                        0x20
+#define TF_ECE                        0x40
+#define TF_CWR                        0x80
 
 #define SUCCESS     0
 #define ERROR       1
@@ -203,6 +218,144 @@ typedef struct _udp_header {
         uint16_t csum;                    /* checksum */
 } udp_header;
 
+/*
+ * Structure for connections
+ */
+
+typedef struct _connection {
+    struct   _connection *prev;
+    struct   _connection *next;
+    time_t   start_time;          /* connection start time */
+    time_t   last_pkt_time;       /* last seen packet time */
+    uint64_t cxid;                /* connection id */
+    uint8_t  reversed;            /* 1 if the connection is reversed */
+    uint32_t af;                  /* IP version (4/6) AF_INET */
+    uint8_t  proto;               /* IP protocoll type */
+    struct   in6_addr s_ip;       /* source address */
+    struct   in6_addr d_ip;       /* destination address */
+    uint16_t s_port;              /* source port */
+    uint16_t d_port;              /* destination port */
+    uint64_t s_total_pkts;        /* total source packets */
+    uint64_t s_total_bytes;       /* total source bytes */
+    uint64_t d_total_pkts;        /* total destination packets */
+    uint64_t d_total_bytes;       /* total destination bytes */
+    uint8_t  s_tcpFlags;          /* tcpflags sent by source */
+    uint8_t  d_tcpFlags;          /* tcpflags sent by destination */
+    uint8_t  check;               /* Flags spesifying checking */
+    struct   _asset *c_asset;     /* pointer to src asset */
+    struct   _asset *s_asset;     /* pointer to server asset */
+} connection;
+#define CXT_DONT_CHECK_SERVER     0x01  /* Dont check server packets */
+#define CXT_DONT_CHECK_CLIENT     0x02  /* Dont check client packets */
+#define CXT_SERVICE_DONT_CHECK    0x04  /* Dont check payload from server */
+#define CXT_CLIENT_DONT_CHECK     0x08  /* Dont check payload from client */
+#define CXT_SERVICE_UNKNOWN_SET   0x10  /* If service is set as unknown */
+#define CXT_CLIENT_UNKNOWN_SET    0x20  /* If client is set as unknown */
+
+#define ISSET_CXT_DONT_CHECK_CLIENT(pi)  (pi->cxt->check & CXT_DONT_CHECK_CLIENT)
+#define ISSET_CXT_DONT_CHECK_SERVER(pi)  (pi->cxt->check & CXT_DONT_CHECK_SERVER)
+#define ISSET_DONT_CHECK_SERVICE(pi)     (pi->cxt->check & CXT_SERVICE_DONT_CHECK)
+#define ISSET_DONT_CHECK_CLIENT(pi)      (pi->cxt->check & CXT_CLIENT_DONT_CHECK)
+#define ISSET_SERVICE_UNKNOWN(pi)        (pi->cxt->check & CXT_SERVICE_UNKNOWN_SET)
+#define ISSET_CLIENT_UNKNOWN(pi)         (pi->cxt->check & CXT_CLIENT_UNKNOWN_SET)
+
+#ifdef OSX
+// sidds darwin ports
+#define IP4ADDR(ip) (ip)->__u6_addr.__u6_addr32[0]
+
+#define CMP_ADDR6(a1,a2) \
+    (((a1)->__u6_addr.__u6_addr32[3] == (a2)->__u6_addr.__u6_addr32[3] && \
+      (a1)->__u6_addr.__u6_addr32[2] == (a2)->__u6_addr.__u6_addr32[2] && \
+      (a1)->__u6_addr.__u6_addr32[1] == (a2)->__u6_addr.__u6_addr32[1] && \
+      (a1)->__u6_addr.__u6_addr32[0] == (a2)->__u6_addr.__u6_addr32[0]))
+
+// the reason why we can't get rid of pi->s6_addr32
+#define CMP_ADDR4(a1,a2) \
+    (((a1)->__u6_addr.__u6_addr32[0] ==  (a2)))
+#define CMP_ADDRA(a1,a2) \
+    (((a1)->__u6_addr.__u6_addr32[0] == (a2)->__u6_addr.__u6_addr32[0]))
+
+#define CMP_PORT(p1,p2) \
+    ((p1 == p2))
+#else
+#define IP6ADDR0(ip) ((ip)->s6_addr32[0])
+#define IP6ADDR1(ip) ((ip)->s6_addr32[1])
+#define IP6ADDR2(ip) ((ip)->s6_addr32[2])
+#define IP6ADDR3(ip) ((ip)->s6_addr32[3])
+#define IP6ADDR(ip) \
+    IP6ADDR0(ip), IP6ADDR1(ip), IP6ADDR2(ip), IP6ADDR3(ip)
+
+#define IP4ADDR(ip) ((ip)->s6_addr32[0])
+
+#define CMP_ADDR6(a1,a2) \
+    (((a1)->s6_addr32[3] == (a2)->s6_addr32[3] && \
+      (a1)->s6_addr32[2] == (a2)->s6_addr32[2] && \
+      (a1)->s6_addr32[1] == (a2)->s6_addr32[1] && \
+      (a1)->s6_addr32[0] == (a2)->s6_addr32[0]))
+
+// the reason why we can't get rid of pi->s6_addr32
+// apples and apples
+#define CMP_ADDR4A(a1,a2) \
+    ((a1)->s6_addr32[0] == (a2)->s6_addr32[0])
+// apples and oranges
+#define CMP_ADDR4(apple,orange) \
+    (((apple)->s6_addr32[0] ==  (orange)))
+#define CMP_PORT(p1,p2) \
+    ((p1 == p2))
+#endif // OSX
+
+/* Since two or more connections can have the same hash key, we need to
+ * compare the connections with the current hash key. */
+#define CMP_CXT4(cxt1, src, sp, dst, dp) \
+    (( \
+       CMP_PORT((cxt1)->s_port, (sp)) && \
+       CMP_PORT((cxt1)->d_port, (dp)) && \
+       CMP_ADDR4(&((cxt1)->s_ip), (src)) && \
+       CMP_ADDR4(&((cxt1)->d_ip), (dst))    \
+    ))
+
+#define CMP_CXT6(cxt1, src, sp, dst, dp) \
+    ((CMP_ADDR6(&(cxt1)->s_ip, (src)) && \
+       CMP_ADDR6(&(cxt1)->d_ip, (dst)) && \
+       CMP_PORT((cxt1)->s_port, (sp)) && CMP_PORT((cxt1)->d_port, (dp))))
+
+/* clear the address structure by setting all fields to 0 */
+#ifdef OSX
+#define CLEAR_ADDR(a) { \
+    (a)->__u6_addr.__u6_addr32[0] = 0; \
+    (a)->__u6_addr.__u6_addr32[1] = 0; \
+    (a)->__u6_addr.__u6_addr32[2] = 0; \
+    (a)->__u6_addr.__u6_addr32[3] = 0; \
+}
+#else
+#define CLEAR_ADDR(a) { \
+    (a)->s6_addr32[0] = 0; \
+    (a)->s6_addr32[1] = 0; \
+    (a)->s6_addr32[2] = 0; \
+    (a)->s6_addr32[3] = 0; \
+}
+#endif
+
+#define CXT_HASH4(src,dst) \
+   ((src + dst) % BUCKET_SIZE)
+
+#ifndef OSX
+#define CXT_HASH6(src,dst) \
+ (( \
+  (src)->s6_addr32[0] + (src)->s6_addr32[1] + \
+  (src)->s6_addr32[2] + (src)->s6_addr32[3] + \
+  (dst)->s6_addr32[0] + (dst)->s6_addr32[1] + \
+  (dst)->s6_addr32[2] + (dst)->s6_addr32[3] \
+ ) % BUCKET_SIZE)
+#else
+#define CXT_HASH6(src,dest) \
+ (( \
+  (src)->__u6_addr.__u6_addr32[0] + (src)->__u6_addr.__u6_addr32[1] + \
+  (src)->__u6_addr.__u6_addr32[2] + (src)->__u6_addr.__u6_addr32[3] + \
+  (dst)->__u6_addr.__u6_addr32[0] + (dst)->__u6_addr.__u6_addr32[1] + \
+  (dst)->__u6_addr.__u6_addr32[2] + (dst)->__u6_addr.__u6_addr32[3] \
+ ) % BUCKET_SIZE)
+#endif
 
 typedef struct _packetinfo {
     // macro out the need for some of these
@@ -238,7 +391,7 @@ typedef struct _packetinfo {
     uint32_t        plen;           /* transport payload length */
     uint32_t        our;            /* Is the asset in our defined network */
     uint8_t         up;             /* Set if the asset has been updated */
-    //connection      *cxt;           /* pointer to the cxt for this packet */
+    connection      *cxt;           /* pointer to the cxt for this packet */
     //struct _asset    *asset;         /* pointer to the asset for this (src) packet */
     //enum { SIGNATURE, FINGERPRINT } type;
 } packetinfo;
@@ -258,6 +411,9 @@ typedef struct _packetinfo {
 
 #define PI_TCP_SP(pi) ( ntohs((pi)->tcph->src_port))
 #define PI_TCP_DP(pi) ( ntohs((pi)->tcph->dst_port))
+
+#define SC_CLIENT                 0x01  /* pi for this session is client */
+#define SC_SERVER                 0x02  /* pi for this session is server */
 
 typedef struct _pdns_stat {
     uint32_t got_packets;   /* number of packets received by prog */
@@ -311,6 +467,7 @@ typedef struct _globalconfig {
     uint8_t     ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
     uint8_t     cof;                    /* Flags for other; icmp,udp,other,.... */
     uint32_t    payload;                /* dump how much of the payload ?  */
+    uint64_t    cxtrackerid;            /* cxtracker ID counter */
     char        errbuf[PCAP_ERRBUF_SIZE];   /**/
     char        *bpff;                  /**/
     char        *user_filter;           /**/

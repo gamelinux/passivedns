@@ -47,6 +47,7 @@
 
 /*  G L O B A L S  *** (or candidates for refactoring, as we say)***********/
 globalconfig config;
+connection *bucket[BUCKET_SIZE];
 
 /*  I N T E R N A L   P R O T O T Y P E S  ***********************************/
 static void usage();
@@ -66,6 +67,13 @@ void parse_tcp (packetinfo *pi);
 const char *u_ntop_src(packetinfo *pi, char *dest);
 void set_pkt_end_ptr (packetinfo *pi);
 void check_interrupt();
+void end_sessions();
+void cxt_init();
+int connection_tracking(packetinfo *pi);
+connection *cxt_new(packetinfo *pi);
+void del_connection(connection *, connection **);
+void print_pdns_stats();
+
 //void dump_payload(const uint8_t* data,uint16_t dlen);
 void game_over ();
 
@@ -330,8 +338,7 @@ void prepare_udp (packetinfo *pi)
     pi->proto  = IP_PROTO_UDP;
     pi->s_port = pi->udph->src_port;
     pi->d_port = pi->udph->dst_port;
-    //connection_tracking(pi);
-    //cx_track_simd_ipv4(pi);
+    connection_tracking(pi);
     //if(config.payload)
        //dump_payload(pi->payload, (config.payload < pi->plen)?config.payload:pi->plen);
     return;
@@ -358,11 +365,252 @@ void parse_udp (packetinfo *pi)
     static char ip_addr_s[INET6_ADDRSTRLEN];
     u_ntop_src(pi, ip_addr_s);
 
-    if ( ntohs(pi->s_port) == 53 || ntohs(pi->d_port) == 53 ) {
+    /* Traffic comes from port 53 and the client has sent at least one package on that
+     * connecton (Maybe asking for an aswere :) */
+    if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
+        // Need to build in a "local db" so we dont print out the same info over and over... 
         dump_dns(pi->payload, pi->plen, stdout, "\n", ip_addr_s, pi->pheader->ts.tv_sec);
     }
     //dump_dns(pi);
     return;
+}
+
+int connection_tracking(packetinfo *pi) {
+    struct in6_addr *ip_src;
+    struct in6_addr *ip_dst;
+    struct in6_addr ips;
+    struct in6_addr ipd;
+    uint16_t src_port = pi->s_port;
+    uint16_t dst_port = pi->d_port;
+    int af = pi->af;
+    connection *cxt = NULL;
+    connection *head = NULL;
+    uint32_t hash;
+
+
+    if(af== AF_INET6){
+        ip_src = &PI_IP6SRC(pi);
+        ip_dst = &PI_IP6DST(pi);
+    }else {
+        ips.s6_addr32[0] = pi->ip4->ip_src;
+        ipd.s6_addr32[0] = pi->ip4->ip_dst;
+        ip_src = &ips;
+        ip_dst = &ipd;
+    }
+
+    // find the right connection bucket
+    if (af == AF_INET) {
+        hash = CXT_HASH4(IP4ADDR(ip_src),IP4ADDR(ip_dst));
+    } else if (af == AF_INET6) {
+        hash = CXT_HASH6(ip_src,ip_dst);
+    }
+    cxt = bucket[hash];
+    head = cxt;
+
+   // search through the bucket
+    while (cxt != NULL) {
+        // Two-way compare of given connection against connection table
+        if (af == AF_INET) {
+            if (CMP_CXT4(cxt,IP4ADDR(ip_src),src_port,IP4ADDR(ip_dst),dst_port)){
+                // Client sends first packet (TCP/SYN - UDP?) hence this is a client
+                return cxt_update_client(cxt, pi);
+            } else if (CMP_CXT4(cxt,IP4ADDR(ip_dst),dst_port,IP4ADDR(ip_src),src_port)) {
+                // This is a server (Maybe not when we start up but in the long run)
+                return cxt_update_server(cxt, pi);
+            }
+        } else if (af == AF_INET6) {
+            if (CMP_CXT6(cxt,ip_src,src_port,ip_dst,dst_port)){
+                return cxt_update_client(cxt, pi);
+            } else if (CMP_CXT6(cxt,ip_dst,dst_port,ip_src,src_port)){
+                return cxt_update_server(cxt, pi);
+            }
+        }
+        cxt = cxt->next;
+    }
+    // bucket turned upside down didn't yeild anything. new connection
+    cxt = cxt_new(pi);
+
+    /* New connections are pushed on to the head of bucket[s_hash] */
+    cxt->next = head;
+    if (head != NULL) {
+        // are we doubly linked?
+        head->prev = cxt;
+    }
+    bucket[hash] = cxt;
+    pi->cxt = cxt;
+}
+
+/* freshly smelling connection :d */
+connection *cxt_new(packetinfo *pi)
+{
+    struct in6_addr ips;
+    struct in6_addr ipd;
+    connection *cxt;
+    config.cxtrackerid++;
+    cxt = (connection *) calloc(1, sizeof(connection));
+    //assert(cxt);
+    cxt->cxid = config.cxtrackerid;
+
+    cxt->af = pi->af;
+    if(pi->tcph) cxt->s_tcpFlags |= pi->tcph->t_flags;
+    cxt->s_total_bytes = pi->packet_bytes;
+    cxt->s_total_pkts = 1;
+    cxt->start_time = pi->pheader->ts.tv_sec;
+    cxt->last_pkt_time = pi->pheader->ts.tv_sec;
+
+    if(pi-> af== AF_INET6){
+        cxt->s_ip = PI_IP6SRC(pi);
+        cxt->d_ip = PI_IP6DST(pi);
+    }else {
+        ips.s6_addr32[0] = pi->ip4->ip_src;
+        ipd.s6_addr32[0] = pi->ip4->ip_dst;
+        cxt->s_ip = ips;
+        cxt->d_ip = ipd;
+    }
+
+    cxt->s_port = pi->s_port;
+    cxt->d_port = pi->d_port;
+    cxt->proto = pi->proto;
+
+    cxt->check = 0x00;
+    cxt->c_asset = NULL;
+    cxt->s_asset = NULL;
+    cxt->reversed = 0;
+
+    return cxt;
+}
+
+int cxt_update_client(connection *cxt, packetinfo *pi)
+{
+    cxt->last_pkt_time = pi->pheader->ts.tv_sec;
+
+    if(pi->tcph) cxt->s_tcpFlags |= pi->tcph->t_flags;
+    cxt->s_total_bytes += pi->packet_bytes;
+    cxt->s_total_pkts += 1;
+
+    pi->cxt = cxt;
+    pi->sc = SC_CLIENT;
+    //if(!cxt->c_asset)
+    //    cxt->c_asset = pi->asset; // connection client asset
+    if (cxt->s_total_bytes > MAX_BYTE_CHECK
+        || cxt->s_total_pkts > MAX_PKT_CHECK) {
+        return 0;   // Dont Check!
+    }
+    return SC_CLIENT;
+}
+
+int cxt_update_server(connection *cxt, packetinfo *pi)
+{
+    cxt->last_pkt_time = pi->pheader->ts.tv_sec;
+
+    if(pi->tcph) cxt->d_tcpFlags |= pi->tcph->t_flags;
+    cxt->d_total_bytes += pi->packet_bytes;
+    cxt->d_total_pkts += 1;
+
+    pi->cxt = cxt;
+    pi->sc = SC_SERVER;
+    //if(!cxt->s_asset)
+    //    cxt->s_asset = pi->asset; // server asset
+    if (cxt->d_total_bytes > MAX_BYTE_CHECK
+        || cxt->d_total_pkts > MAX_PKT_CHECK) {
+        return 0;   // Dont check!
+    }
+    return SC_SERVER;
+}
+
+void end_sessions()
+{
+    connection *cxt;
+    time_t check_time;
+    check_time = time(NULL);
+    int ended, expired = 0;
+    uint32_t curcxt = 0;
+
+    int iter;
+    for (iter = 0; iter < BUCKET_SIZE; iter++) {
+        cxt = bucket[iter];
+        while (cxt != NULL) {
+            ended = 0;
+            curcxt++;
+            /* TCP */
+            if (cxt->proto == IP_PROTO_TCP) {
+                /* * FIN from both sides */
+                if (cxt->s_tcpFlags & TF_FIN && cxt->d_tcpFlags & TF_FIN
+                    && (check_time - cxt->last_pkt_time) > 5) {
+                    ended = 1;
+                } /* * RST from either side */
+                else if ((cxt->s_tcpFlags & TF_RST
+                          || cxt->d_tcpFlags & TF_RST)
+                          && (check_time - cxt->last_pkt_time) > 5) {
+                    ended = 1;
+                }
+                else if ((check_time - cxt->last_pkt_time) > TCP_TIMEOUT) {
+                    expired = 1;
+                }
+            }
+            /* UDP */
+            else if (cxt->proto == IP_PROTO_UDP
+                     && (check_time - cxt->last_pkt_time) > 60) {
+                expired = 1;
+            }
+            /* ICMP */
+            else if (cxt->proto == IP_PROTO_ICMP
+                     || cxt->proto == IP6_PROTO_ICMP) {
+                if ((check_time - cxt->last_pkt_time) > 60) {
+                     expired = 1;
+                }
+            }
+            /* All Other protocols */
+            else if ((check_time - cxt->last_pkt_time) > TCP_TIMEOUT) {
+                expired = 1;
+            }
+
+            if (ended == 1 || expired == 1) {
+                /* remove from the hash */
+                if (cxt->prev)
+                    cxt->prev->next = cxt->next;
+                if (cxt->next)
+                    cxt->next->prev = cxt->prev;
+                connection *tmp = cxt;
+
+                ended = expired = 0;
+
+                cxt = cxt->prev;
+
+                del_connection(tmp, &bucket[iter]);
+                if (cxt == NULL) {
+                    bucket[iter] = NULL;
+                }
+            } else {
+                cxt = cxt->prev;
+            }
+        }
+    }
+}
+
+void del_connection(connection * cxt, connection ** bucket_ptr)
+{
+    connection *prev = cxt->prev;       /* OLDER connections */
+    connection *next = cxt->next;       /* NEWER connections */
+
+    if (prev == NULL) {
+        // beginning of list
+        *bucket_ptr = next;
+        // not only entry
+        if (next)
+            next->prev = NULL;
+    } else if (next == NULL) {
+        // at end of list!
+        prev->next = NULL;
+    } else {
+        // a node.
+        prev->next = next;
+        next->prev = prev;
+    }
+
+    // Free and set to NULL 
+    free(cxt);
+    cxt = NULL;
 }
 
 const char *u_ntop_src(packetinfo *pi, char *dest)
@@ -386,7 +634,6 @@ const char *u_ntop_src(packetinfo *pi, char *dest)
 
 void check_interrupt()
 {
-
     if (config.intr_flag == 1) {
         game_over();
     } else if (config.intr_flag == 2) {
@@ -395,6 +642,19 @@ void check_interrupt()
         //set_end_sessions();
     } else {
         config.intr_flag = 0;
+    }
+}
+
+void set_end_sessions()
+{
+    config.intr_flag = 3;
+
+    if (config.inpacket == 0) {
+        //config.tstamp = time(NULL);
+        end_sessions();
+        //update_asset_list();
+        config.intr_flag = 0;
+        alarm(SIG_ALRM);
     }
 }
 
@@ -594,14 +854,8 @@ int daemonize()
         return ERROR;
     }
 
-    /*
-     * new process group 
-     */
     setsid();
 
-    /*
-     * close file handles 
-     */
     if ((fd = open("/dev/null", O_RDWR)) >= 0) {
         dup2(fd, 0);
         dup2(fd, 1);
@@ -645,7 +899,7 @@ void game_over()
 {
     if (config.inpacket == 0) {
        //if(!ISSET_CONFIG_QUIET(config)){
-           //print_pdns_stats();
+           print_pdns_stats();
            //if(!config.pcap_file)
                //print_pcap_stats();
         //}
@@ -659,6 +913,7 @@ void game_over()
 
 void print_pdns_stats()
 {
+    olog("\n");
     olog("-- Total packets received from libpcap    :%12u\n",config.p_s.got_packets);
     olog("-- Total Ethernet packets received        :%12u\n",config.p_s.eth_recv);
     olog("-- Total VLAN packets received            :%12u\n",config.p_s.vlan_recv);
@@ -695,7 +950,7 @@ int main(int argc, char *argv[])
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
-    //signal(SIGALRM, set_end_sessions);
+    signal(SIGALRM, set_end_sessions);
 
 #define ARGS "i:r:c:hb:"
 
