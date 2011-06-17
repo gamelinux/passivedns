@@ -441,6 +441,27 @@ typedef struct _pdns_stat {
     uint32_t udp_clients;   /* total number of tcp clients detected */
 } pdns_stat;
 
+/* HASH: 
+ *     [RESP-CODE_BUCKET]_<-- Error or no error?
+ *                         |__[Q-TYPE_BUCKET]_<--- PTR,MX,A... 
+ *                                            |__[QNAME] <--- cmp on Query name (gamelinux.org etc.)
+ */
+
+typedef struct _pdns_record {
+/*    uint8_t qtype;           * Qtype (A/AAAA/MX/PTR/CNAME/NS/SOA/TXT...) */
+/*    struct  in6_addr ip;     * IP (IPv4 & IPv6) from record from A or AAAA */
+    time_t  first_seen;       /* First seen (unix timestamp) */
+    time_t  last_seen;        /* Last seen (unix timestamp) */
+    char    *qname;           /* Query name (gamelinux.org) */
+/*    char    *class;          * IN,CS,CH,HS - or just IN and drop this? */
+                              /* NS message ID */
+/*  int32_t ttl;               * Do we need ttl here ? */
+                              /* Flags??? (qr|rd|ra) */
+    char    *record;          /* (QUERY,NOERROR,qr|rd|ra||1||gamelinux.org,IN,A||1||gamelinux.org,IN,A,361,85.19.221.54||0||0) */
+    struct  in6_addr servip;  /* DNS Server IP (v4/6) */
+    struct  in6_addr cliip;   /* DNS Client IP (v4/6) */
+} pdns_record;
+
 #define CONFIG_VERBOSE 0x01
 #define CONFIG_UPDATES 0x02
 #define CONFIG_SYSLOG  0x04
