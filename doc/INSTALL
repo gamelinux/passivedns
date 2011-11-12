@@ -1,5 +1,6 @@
 FreeBSD Install
   $ pkg_add -r gmake git
+  $ rehash
   $ mkdir /usr/local/src/; cd /usr/local/src
   $ git clone git://github.com/gamelinux/passivedns.git
   $ cd passivedns/src/
