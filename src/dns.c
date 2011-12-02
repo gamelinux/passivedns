@@ -17,7 +17,10 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
 void print_passet(pdns_asset *p, pdns_record *l);
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest);
 
-#define DBUCKET_SIZE                   16769023
+/* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
+//#define DBUCKET_SIZE     16769023
+#define DBUCKET_SIZE     3967 // Carol that is primes
+
 pdns_record *dbucket[DBUCKET_SIZE];
 
 uint64_t hash(unsigned char *str) {
@@ -26,8 +29,8 @@ uint64_t hash(unsigned char *str) {
 
     while ((c = *str++))
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    return hash % 10; // TEST - stress the linked lists :)
-    //return hash % DBUCKET_SIZE;
+    //return hash % 10; // TEST - stress the linked lists :)
+    return hash % DBUCKET_SIZE;
 }
 
 void dns_parser (packetinfo *pi) {
@@ -309,56 +312,82 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
 // A=1, 5=CNAME, PTR=12, AAAA=28
 // timestamp||dns-client||dns-server-IP||class||domain||query type||answer
 void print_passet(pdns_asset *p, pdns_record *l) {
+
+    FILE *fd;
+    char filename[4096];
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
+
+    sprintf(filename, "/var/log/passivedns.log");
+    fd = fopen(filename, "a");
+    if (fd == NULL) {
+        plog("[E] ERROR: Cant open file %s\n",filename);
+        p->last_print = p->last_seen;
+        return;
+    }
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
 
-    printf("%lu||%s||%s||",p->last_seen, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu||%s||%s||",p->last_seen, ip_addr_c, ip_addr_s);
+    //fprintf("%lu||%s||%s||",p->last_seen, ip_addr_c, ip_addr_s);
 
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:
-             printf("IN");
+             //printf("IN");
+             fprintf(fd,"IN");
              break;
         case LDNS_RR_CLASS_CH:
-             printf("CH");
+             //printf("CH");
+             fprintf(fd,"CH");
              break;
         case LDNS_RR_CLASS_HS:
-             printf("HS");
+             //printf("HS");
+             fprintf(fd,"HS");
              break;
         case LDNS_RR_CLASS_NONE:
-             printf("NONE");
+             //printf("NONE");
+             fprintf(fd,"NONE");
              break;
         case LDNS_RR_CLASS_ANY:
-             printf("ANY");
+             //printf("ANY");
+             fprintf(fd,"ANY");
              break;
         default:
-             printf("%d",p->rr->_rr_class);
+             //printf("%d",p->rr->_rr_class);
+             fprintf(fd,"%d",p->rr->_rr_class);
              break;
     }
 
-    printf("||%s||",l->qname);
+    //printf("||%s||",l->qname);
+    fprintf(fd,"||%s||",l->qname);
 
     switch (ldns_rr_get_type(p->rr)) {
         case LDNS_RR_TYPE_PTR:
-             printf("PTR");
+             //printf("PTR");
+             fprintf(fd,"PTR");
              break;
         case LDNS_RR_TYPE_A:
-             printf("A");
+             //printf("A");
+             fprintf(fd,"A");
              break;
         case LDNS_RR_TYPE_AAAA:
-             printf("AAAA");
+             //printf("AAAA");
+             fprintf(fd,"AAAA");
              break;
         case LDNS_RR_TYPE_CNAME:
-             printf("CNAME");
+             //printf("CNAME");
+             fprintf(fd,"CNAME");
              break;
         default:
-            printf("%d",p->rr->_rr_type);
+            //printf("%d",p->rr->_rr_type);
+            fprintf(fd,"%d",p->rr->_rr_type);
             break;
     }
 
-    printf("||%s\n", p->answer);
+    //printf("||%s\n", p->answer);
+    fprintf(fd,"||%s\n", p->answer);
+    fclose(fd);
 
     p->last_print = p->last_seen;
 }

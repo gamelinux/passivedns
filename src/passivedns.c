@@ -935,7 +935,6 @@ void usage()
     olog("\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
-    olog(" -c <file>       Read config from <file>.\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: udp and port 53).\n");
     olog(" -h              This help message.\n");
 }
@@ -951,7 +950,7 @@ int main(int argc, char *argv[])
     //set_default_config_options();
     config.inpacket = config.intr_flag = 0;
     char *pconfile;
-#define BPFF "udp and src port 53"
+#define BPFF "(udp and port 53)"
     config.bpff = BPFF;
 
     signal(SIGTERM, game_over);
