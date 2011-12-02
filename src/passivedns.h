@@ -74,6 +74,10 @@
 #define ERROR       1
 #define STDBUF      1024
 
+#ifdef __FreeBSD__
+#define s6_addr32   __u6_addr.__u6_addr32
+#endif /* __FreeBSD__ */
+
 /*  D A T A  S T R U C T U R E S  *********************************************/
 
 /* 
@@ -508,5 +512,25 @@ typedef struct _globalconfig {
 #endif
 
 int cxt_update_client(connection *cxt, packetinfo *pi);
-
 int cxt_update_server(connection *cxt, packetinfo *pi);
+
+#ifdef __FreeBSD__
+const char *_res_opcodes[] = {
+        "QUERY",
+        "IQUERY",
+        "CQUERYM",
+        "CQUERYU",      /* experimental */
+        "NOTIFY",       /* experimental */
+        "UPDATE",
+        "6",
+        "7",
+        "8",
+        "UPDATEA",
+        "UPDATED",
+        "UPDATEDA",
+        "UPDATEM",
+        "UPDATEMA",
+        "ZONEINIT",
+        "ZONEREF",
+};
+#endif /* __FreeBSD__ */
