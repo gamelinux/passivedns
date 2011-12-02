@@ -41,6 +41,7 @@ void dns_parser (packetinfo *pi) {
 
     if (status != LDNS_STATUS_OK) {
         dlog("[D] ldns_wire2pkt status = %d\n", status);
+        ldns_pkt_free(decoded_dns);
         return;
     }
 
@@ -50,9 +51,10 @@ void dns_parser (packetinfo *pi) {
         if (!ldns_pkt_qdcount(decoded_dns) || !ldns_pkt_ancount(decoded_dns)) {
             /* no questions or answers */
             dlog("[D] dns_archiver() packet did not contain answer\n");
+            ldns_pkt_free(decoded_dns);
             return;
         }
-    
+
         questions   = ldns_pkt_question(decoded_dns);
         answers     = ldns_pkt_answer(decoded_dns);
         authorities = ldns_pkt_authority(decoded_dns);
@@ -61,7 +63,7 @@ void dns_parser (packetinfo *pi) {
             dlog("[D] dns_archiver(): archive() returned -1\n");
         }
     }
-    
+
     ldns_pkt_free(decoded_dns);
 }
 
@@ -115,7 +117,7 @@ archive_lname_list(packetinfo   *pi,
                    ldns_buffer  *buf)
 {
     int             list_count;
-    unsigned char  *lname_str;
+    unsigned char  *lname_str = 0;
     ldns_status     status;
     int             i;
     pdns_record    *lname_node = NULL;
@@ -141,7 +143,7 @@ archive_lname_list(packetinfo   *pi,
     for (i = 0; i < list_count; i++) {
         ldns_rr       *rr;
         ldns_rdf      *rname;
-        unsigned char *rname_str;
+        unsigned char *rname_str = 0;
         int            data_offset = 0;
 
         ldns_buffer_clear(buf);
@@ -207,18 +209,19 @@ archive_lname_list(packetinfo   *pi,
 
         // CHECK IF THE NODE HAS THE ASSOCIATED ENTRY, IF NOT ADD IT.
         associated_lookup_or_make_insert(lname_node, pi, rname_str, rr);
+        free(rname_str);
     }
-
+    free(lname_str);
     return(0);
 }
 
 void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr) {
-    
+
     pdns_asset *passet = lname_node->passet;
     pdns_asset *head   = passet;
     ldns_rr    *prr    = NULL;
     uint32_t    len    = 0;
-   
+
     dlog("Searching: %u, %s, %s\n",rr->_rr_type, lname_node->qname, rname_str);
 
     while (passet != NULL) {
@@ -281,7 +284,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
     dlog("[D] Adding: %u, %s, %s\n",passet->rr->_rr_type, lname_node->qname, rname_str);
 
     lname_node->passet = passet;
-  
+
     print_passet(passet, lname_node);
 
     return;
@@ -371,9 +374,9 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
 
     // search through the bucket
     while (pdnsr != NULL) {
-        // if found, update & return dnsr    
+        // if found, update & return dnsr
         if (strcmp((const char *)lname_str,(const char *)pdnsr->qname) == 0) { // match :)
-            pdnsr->last_seen = pi->pheader->ts.tv_sec; 
+            pdnsr->last_seen = pi->pheader->ts.tv_sec;
             pdnsr->sip       = pi->cxt->s_ip;
             pdnsr->cip       = pi->cxt->d_ip;
             return pdnsr;
@@ -399,11 +402,9 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     pdnsr->prev       = NULL;
     pdnsr->passet     = NULL;
     len               = strlen((char *)lname_str);
-    pdnsr->qname      = calloc(1, (len + 1)); 
+    pdnsr->qname      = calloc(1, (len + 1));
     strncpy((char *)pdnsr->qname, (char *)lname_str, len);
 
     dbucket[dnshash] = pdnsr;
     return pdnsr;
 }
-
-
