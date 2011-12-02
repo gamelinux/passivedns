@@ -6,3 +6,11 @@ FreeBSD Install
   $ cd passivedns/src/
   $ gmake
 
+
+Ubuntu
+  $ sudo apt-get install git-core binutils-dev libldns1 libldns-dev libpcap-dev 
+  $ git clone git://github.com/gamelinux/passivedns.git
+  $ cd passivedns/src/
+  $ make
+
+
