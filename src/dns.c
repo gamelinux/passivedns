@@ -331,9 +331,10 @@ void print_passet(pdns_asset *p, pdns_record *l) {
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
+    fprintf(fd,"%lu||%s||%s||",p->last_seen, ip_addr_s, ip_addr_c);
 
-    fprintf(fd,"%lu||%s||%s||",p->last_seen, ip_addr_c, ip_addr_s);
-    //fprintf("%lu||%s||%s||",p->last_seen, ip_addr_c, ip_addr_s);
+    //u_ntop(p->sip, p->af, ip_addr_s);
+    //fprintf(fd,"%s||",ip_addr_s);
 
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:

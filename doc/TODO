@@ -1,32 +1,6 @@
 
 # PassiveDNS
 
- * Get main code up and running.
- ** "catch" DNS traffic!
-
- * Decode DNS server reply packet
-
- * Output: timestamp||sensor||ns-server-ip||NAME||TYPE||CLASS||TTL||*RDLENGTH*||RDATA
- ** NAME 	Name of the node to which this record pertains 	(variable)
- ** TYPE 	Type of RR in numeric form (e.g. 15 for MX RRs) 	2
- ** CLASS 	Class code 	2
- ** TTL 	Count of seconds that the RR stays valid (The maximum is 231-1, which is about 68 years.) 	4
-# ** RDLENGTH 	Length of RDATA field 	2
- ** RDATA 	Additional RR-specific data 	(variable)
-
-
-# ref: http://en.wikipedia.org/wiki/List_of_DNS_record_types
-for answer in dns.an:
-   if answer.type == 5:
-     print "CNAME request", answer.name, "\tresponse", answer.cname
-   elif answer.type == 1:
-     print "A request", answer.name, "\tresponse", socket.inet_ntoa(answer.rdata)
-   elif answer.type == 28:
-     print "AAAA request", answer.name, "\tresponse", socket.inet6_ntoa(answer.rdata)
-   elif answer.type == 12:
-     print "PTR request", answer.name, "\tresponse", answer.ptrname
-   else
-     print "Parsing of R-Type", answer.type, "is not yet implemented..."
-
-
-
+* Implement comandline option for log filename
+* Clean up memory on exit
+* Add some stats
