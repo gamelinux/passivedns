@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arpa/inet.h>
 #include <netinet/in.h> 
 #include <signal.h>
 #include <pcap.h>
@@ -38,8 +39,10 @@
 #include <syslog.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <ctype.h>
 #include "passivedns.h"
-#include "dump_dns.h"
+//#include "dump_dns.h"
+#include "dns.h"
 
 #ifndef CONFDIR
 #define CONFDIR "/etc/passivedns/"
@@ -48,6 +51,7 @@
 /*  G L O B A L S  *** (or candidates for refactoring, as we say)***********/
 globalconfig config;
 connection *bucket[BUCKET_SIZE];
+
 
 /*  I N T E R N A L   P R O T O T Y P E S  ***********************************/
 static void usage();
@@ -369,7 +373,8 @@ void parse_udp (packetinfo *pi)
      * connecton (Maybe asking for an aswere :) */
     if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
         // Need to build in a "local db" so we dont print out the same info over and over... 
-        dump_dns(pi->payload, pi->plen, stdout, "\n", ip_addr_s, pi->pheader->ts.tv_sec);
+        //dump_dns(pi->payload, pi->plen, ip_addr_s, pi->pheader->ts.tv_sec);
+        dns_parser(pi);
     }
     //dump_dns(pi);
     return;
@@ -438,6 +443,7 @@ int connection_tracking(packetinfo *pi) {
     }
     bucket[hash] = cxt;
     pi->cxt = cxt;
+    return cxt_update_client(cxt, pi);
 }
 
 /* freshly smelling connection :d */
@@ -938,8 +944,8 @@ extern int optind, opterr, optopt; // getopt()
 /* magic main */
 int main(int argc, char *argv[])
 {
-    int32_t rc = 0;
-    int ch = 0, verbose_already = 0;
+    //int32_t rc = 0;
+    int ch = 0; // verbose_already = 0;
     memset(&config, 0, sizeof(globalconfig));
     //set_default_config_options();
     config.inpacket = config.intr_flag = 0;

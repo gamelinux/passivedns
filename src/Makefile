@@ -1,25 +1,27 @@
 #Makefile
 
 OCFLAGS=-O3
-DCFLAGS=-Wall -g
+DCFLAGS=-Wall -g -DDEBUG
 PCFLAGS=-g -pg
-LDFLAGS=-lpcap
+LDFLAGS=-lpcap -lldns
+# dump_dns.o -lresolv
+# gcc $(OCFLAGS) -c dump_dns.c
 
 all:
-	gcc $(OCFLAGS) -c dump_dns.c
+	gcc $(OCFLAGS) -c dns.c
 	gcc $(OCFLAGS) -c passivedns.c
-	gcc -o passivedns  passivedns.o dump_dns.o -lpcap -lresolv
+	gcc -o passivedns dns.o passivedns.o -lpcap -lldns
 
 debug: 
-	gcc $(DCFLAGS) -c dump_dns.c
+	gcc $(DCFLAGS) -c dns.c
 	gcc $(DCFLAGS) -c passivedns.c
-	gcc -o passivedns passivedns.o dump_dns.o -lpcap -lresolv
+	gcc -o passivedns dns.o passivedns.o -lpcap -lldns
 
 profile:
-	gcc $(PCFLAGS) -c dump_dns.c
+	gcc $(PCFLAGS) -c dns.c
 	gcc $(PCFLAGS) -c passivedns.c
-	gcc -o passivedns passivedns.o dump_dns.o -lpcap -lresolv
+	gcc -o passivedns dns.o passivedns.o -lpcap -lldns
 
 clean:
-	-rm -v passivedns passivedns.o dump_dns.o
+	-rm -v passivedns passivedns.o dns.o
 
