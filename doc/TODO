@@ -5,3 +5,12 @@
 * Clean up/Expire domains/domain-assets
 * Clean up memory on exit - remove all records/assets
 * Add some stats
+* Add abuility to read log file when starting up
+  - Import domains that has timestamp less then 24h ago
+  -- It will reduce the "noize" at startups.
+
+* Evaluate pdns hardening methods
+
+* Adding abuility for custom output formating 
+
+
