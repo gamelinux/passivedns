@@ -1,5 +1,7 @@
 void dns_parser (packetinfo *pi);
 
+#define DNSEXPIRETIME          86400
+
 typedef enum {
     QUESTION,
     ANSWER

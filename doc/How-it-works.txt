@@ -1,0 +1,33 @@
+#### PassiveDNS internals
+
+## Packet capture
+* Uses libpcap
+* Decodes packets as they come in.
+* Handles vlan
+* Handles IPv4 and IPv6 packets
+* We only look at DNS on UDP port 53.
+
+## Connection Tracking
+* Same connection tracking as in cxtracker
+** When used with a propper BPF (filter),
+   it only tracks traffic on port 53 UDP.
+* Connection tracking is used to make sure
+  that a client asked for a domain, so that
+  there will not be any tracking of domains,
+  if a client did not request one. A bit spoof
+  protection.
+
+## Domain caching
+* When a DNS question and answer is recieved, it
+  is stored in an internal linked list. If its new,
+  we will print the info to the logfile, and we will
+  not print it again befor it has gone 24 hours or
+  the record has changed. This is to provent flooding
+  of data to the log file, and serving you much duplicat
+  info.
+* If we have not seen any activity agains a domain in 24h,
+  it will be deleted from the internal cache.
+* If we have not seen any activity of any related entries
+  within 24h, it will be deleted...
+
+

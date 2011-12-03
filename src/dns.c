@@ -16,6 +16,10 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
 pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
 void print_passet(pdns_asset *p, pdns_record *l);
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest);
+void expire_dns_records();
+void expire_dns_assets(pdns_asset *passet, time_t expire_t);
+void delete_dns_asset(pdns_asset *passet);
+void delete_dns_record(pdns_record *pdnsr);
 
 /* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
 //#define DBUCKET_SIZE     16769023
@@ -241,7 +245,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
             passet->sip       = pi->cxt->s_ip;
             passet->cip       = pi->cxt->d_ip;
             dlog("[*] DNS asset updated...\n");
-            if ((passet->last_seen - passet->last_print) >= 86400) {
+            if ((passet->last_seen - passet->last_print) >= DNSEXPIRETIME) {
                 print_passet(passet, lname_node);
             }
             return;
@@ -438,3 +442,49 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     dbucket[dnshash] = pdnsr;
     return pdnsr;
 }
+
+void expire_dns_records() {
+    pdns_record *pdnsr;
+    time_t expire_t;
+    expire_t = time(NULL) - DNSEXPIRETIME;
+
+    uint32_t iter;
+    for (iter = 0; iter < DBUCKET_SIZE; iter++) {
+        pdnsr = dbucket[iter];
+        while (pdnsr != NULL) {
+            if (pdnsr->last_seen <= expire_t) {
+                // Expire the record and all its assets
+                delete_dns_record(pdnsr);
+            }
+            if (pdnsr != NULL) {
+                // Search through a domain record for assets to expire
+                expire_dns_assets(pdnsr->passet, expire_t);
+            }
+            pdnsr = pdnsr->next;
+        }
+    }
+}
+
+void expire_dns_assets(pdns_asset *passet, time_t expire_t) {
+    while ( passet != NULL ) {
+        if (passet->last_seen <= expire_t) {
+            //Expire the asset
+            delete_dns_asset(passet);
+        }
+        passet = passet->next;
+    }
+    return;
+}
+
+void delete_dns_asset(pdns_asset *passet) {
+    // TODO
+    plog("[D] Should have deleted domain asset: %s", passet->answer);
+    return;
+}
+
+void delete_dns_record(pdns_record *pdnsr) {
+    // TODO
+    plog("[D] Should have deleted domain record: %s", pdnsr->qname);
+    return;
+}
+
