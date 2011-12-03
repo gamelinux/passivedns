@@ -73,6 +73,7 @@ const char *u_ntop_src(packetinfo *pi, char *dest);
 void set_pkt_end_ptr (packetinfo *pi);
 void check_interrupt();
 void end_sessions();
+void set_end_sessions();
 void cxt_init();
 int connection_tracking(packetinfo *pi);
 connection *cxt_new(packetinfo *pi);
@@ -646,7 +647,7 @@ void check_interrupt()
     } else if (config.intr_flag == 2) {
         //update_asset_list();
     } else if (config.intr_flag == 3) {
-        //set_end_sessions();
+        set_end_sessions();
     } else {
         config.intr_flag = 0;
     }
@@ -657,11 +658,10 @@ void set_end_sessions()
     config.intr_flag = 3;
 
     if (config.inpacket == 0) {
-        //config.tstamp = time(NULL);
         end_sessions();
-        //update_asset_list();
+        //expire_domains();
         config.intr_flag = 0;
-        alarm(SIG_ALRM);
+        alarm(TIMEOUT);
     }
 }
 
@@ -1044,6 +1044,8 @@ int main(int argc, char *argv[])
     if (pcap_setfilter(config.handle, &config.cfilter)) {
             olog("[*] Unable to set pcap filter!  %s", pcap_geterr(config.handle));
     }
+
+    alarm(TIMEOUT);
 
     //cxt_init();
     olog("[*] Sniffing...\n\n");

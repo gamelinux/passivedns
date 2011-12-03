@@ -2,5 +2,6 @@
 # PassiveDNS
 
 * Implement comandline option for log filename
-* Clean up memory on exit
+* Clean up/Expire domains/domain-assets
+* Clean up memory on exit - remove all records/assets
 * Add some stats

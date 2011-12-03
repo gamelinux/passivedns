@@ -24,7 +24,6 @@
 /*  D E F I N E S  ************************************************************/
 #define VERSION                       "0.2.0"
 #define TIMEOUT                       60
-#define SIG_ALRM                      60        /* Time between sig alrm i called */
 #define BUCKET_SIZE                   1211
 #define SNAPLENGTH                    1600
 #define PKT_MAXPAY                    255
