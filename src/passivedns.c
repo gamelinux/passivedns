@@ -338,7 +338,7 @@ void prepare_udp (packetinfo *pi)
 
 void parse_tcp (packetinfo *pi)
 {
-    olog("\n[*] Got TCP packet...\n");
+    //olog("\n[*] Got TCP packet...\n");
     if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
         dns_parser(pi);
     }   
@@ -347,7 +347,7 @@ void parse_tcp (packetinfo *pi)
 
 void parse_udp (packetinfo *pi)
 {
-    olog("\n[*] Got UDP packet...\n");
+    //olog("\n[*] Got UDP packet...\n");
 
     /* Traffic comes from port 53 and the client has sent at least one package on that
      * connecton (Maybe asking for an aswere :) */
