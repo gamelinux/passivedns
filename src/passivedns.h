@@ -451,6 +451,10 @@ typedef struct _pdns_stat {
 #define CONFIG_CONNECT 0x10
 #define CONFIG_CXWRITE 0x20
 
+#define INTERRUPT_END      0x01
+#define INTERRUPT_SESSION  0x02
+#define INTERRUPT_DNS      0x04
+
 typedef struct _globalconfig {
     pcap_t              *handle;        /* Pointer to libpcap handle */
     struct pcap_stat    ps;             /* libpcap stats */
@@ -460,6 +464,7 @@ typedef struct _globalconfig {
     uint8_t     intr_flag;
     uint8_t     inpacket;
     
+    time_t      dnslastchk;             /* Timestamp for last dns cache expiration check */
     uint8_t     cflags;                 /* config flags */
     uint8_t     verbose;                /* Verbose or not */
     uint8_t     print_updates;          /* Prints updates */
@@ -497,6 +502,10 @@ typedef struct _globalconfig {
 #define ISSET_CONFIG_UPDATES(config)    ((config).cflags & CONFIG_UPDATES)
 #define ISSET_CONFIG_SYSLOG(config)     ((config).cflags & CONFIG_SYSLOG)
 #define ISSET_CONFIG_QUIET(config)      ((config).cflags & CONFIG_QUIET)
+
+#define ISSET_INTERRUPT_END(config)     ((config).intr_flag & INTERRUPT_END)
+#define ISSET_INTERRUPT_SESSION(config) ((config).intr_flag & INTERRUPT_SESSION)
+#define ISSET_INTERRUPT_DNS(config)     ((config).intr_flag & INTERRUPT_DNS)
 
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 #define olog(fmt, ...) do{ if(!(ISSET_CONFIG_QUIET(config))) fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)

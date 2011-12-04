@@ -16,7 +16,6 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
 pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
 void print_passet(pdns_asset *p, pdns_record *l);
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest);
-void expire_dns_records();
 void expire_dns_assets(pdns_asset *passet, time_t expire_t);
 void delete_dns_asset(pdns_asset *passet);
 void delete_dns_record(pdns_record *pdnsr);
@@ -245,7 +244,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
             passet->sip       = pi->cxt->s_ip;
             passet->cip       = pi->cxt->d_ip;
             dlog("[*] DNS asset updated...\n");
-            if ((passet->last_seen - passet->last_print) >= DNSEXPIRETIME) {
+            if ((passet->last_seen - passet->last_print) >= DNSPRINTTIME) {
                 print_passet(passet, lname_node);
             }
             return;
@@ -446,7 +445,9 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
 void expire_dns_records() {
     pdns_record *pdnsr;
     time_t expire_t;
-    expire_t = time(NULL) - DNSEXPIRETIME;
+    expire_t = time(NULL) - DNSCACHETIMEOUT;
+
+    dlog("[D] Checking for DNS records and assets to be expired\n");
 
     uint32_t iter;
     for (iter = 0; iter < DBUCKET_SIZE; iter++) {
@@ -478,13 +479,13 @@ void expire_dns_assets(pdns_asset *passet, time_t expire_t) {
 
 void delete_dns_asset(pdns_asset *passet) {
     // TODO
-    plog("[D] Should have deleted domain asset: %s", passet->answer);
+    plog("[D] Should have deleted domain asset: %s\n", passet->answer);
     return;
 }
 
 void delete_dns_record(pdns_record *pdnsr) {
     // TODO
-    plog("[D] Should have deleted domain record: %s", pdnsr->qname);
+    plog("[D] Should have deleted domain record: %s\n", pdnsr->qname);
     return;
 }
 

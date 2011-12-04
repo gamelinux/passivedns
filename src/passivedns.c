@@ -74,6 +74,7 @@ void set_pkt_end_ptr (packetinfo *pi);
 void check_interrupt();
 void end_sessions();
 void set_end_sessions();
+void set_end_dns_records();
 void cxt_init();
 int connection_tracking(packetinfo *pi);
 connection *cxt_new(packetinfo *pi);
@@ -160,18 +161,17 @@ void prepare_ip4 (packetinfo *pi)
     pi->ip4 = (ip4_header *) (pi->packet + pi->eth_hlen);
     pi->packet_bytes = (pi->ip4->ip_len - (IP_HL(pi->ip4) * 4));
 
-    //pi->our = filter_packet(pi->af, &PI_IP4SRC(pi));
-    //vlog(0x3, "Got %s IPv4 Packet...\n", (pi->our?"our":"foregin"));
+    //vlog(0x3, "Got IPv4 Packet...\n");
     return;
 }
 
 void parse_ip4 (packetinfo *pi)
 {
     switch (pi->ip4->ip_p) {
-        case IP_PROTO_TCP:
+     /* case IP_PROTO_TCP:
             prepare_tcp(pi);
             parse_tcp(pi);
-            break;
+            break;            */
         case IP_PROTO_UDP:
             prepare_udp(pi);
             parse_udp(pi);
@@ -244,12 +244,12 @@ void prepare_ip6 (packetinfo *pi)
 void parse_ip6 (packetinfo *pi)
 {
     switch (pi->ip6->next) {
-        case IP_PROTO_TCP:
+    /*  case IP_PROTO_TCP:
             prepare_tcp(pi);
             if (!pi->our)
                 break;
             parse_tcp(pi);
-            break;
+            break;                  */
         case IP_PROTO_UDP:
             prepare_udp(pi);
             if (!pi->our)
@@ -276,15 +276,6 @@ void parse_arp (packetinfo *pi)
     //if (!IS_CSSET(&config,CS_ARP)) return;
     pi->af = AF_INET;
     pi->arph = (ether_arp *) (pi->packet + pi->eth_hlen);
-
-    //if (ntohs(pi->arph->ea_hdr.ar_op) == ARPOP_REPLY) {
-    //    if (filter_packet(pi->af, &pi->arph->arp_spa)) {
-    //        update_asset_arp(pi->arph->arp_sha, pi);
-    //    }
-        /* arp_check(eth_hdr,pi->pheader->ts.tv_sec); */
-    //} else {
-    //    vlog(0x3, "[*] ARP TYPE: %d\n",ntohs(pi->arph->ea_hdr.ar_op));
-    //}
 }
 
 void set_pkt_end_ptr (packetinfo *pi)
@@ -315,10 +306,7 @@ void prepare_tcp (packetinfo *pi)
     pi->proto  = IP_PROTO_TCP;
     pi->s_port = pi->tcph->src_port;
     pi->d_port = pi->tcph->dst_port;
-    //connection_tracking(pi);
-    //cx_track_simd_ipv4(pi);
-    //if(config.payload)
-       //dump_payload(pi->payload, (config.payload < pi->plen)?config.payload:pi->plen);
+    connection_tracking(pi);
     return;
 }
 
@@ -345,40 +333,27 @@ void prepare_udp (packetinfo *pi)
     pi->s_port = pi->udph->src_port;
     pi->d_port = pi->udph->dst_port;
     connection_tracking(pi);
-    //if(config.payload)
-       //dump_payload(pi->payload, (config.payload < pi->plen)?config.payload:pi->plen);
     return;
 }
 
 void parse_tcp (packetinfo *pi)
 {
-    //olog("\n[*] Got TCP packet...\n");
-    //config.payload = 200;
-    //dump_payload(pi->payload, (config.payload < pi->plen)?config.payload:pi->plen);
-// dump_dns(const u_char *payload, size_t paylen, FILE *trace, const char *endline)
-// pi->payload * const uint8_t
-// pi->plen * uint32_t
-    //dump_dns(pi->payload, pi->plen, stderr, "\\\n\t");
+    olog("\n[*] Got TCP packet...\n");
+    if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
+        dns_parser(pi);
+    }   
     return;
 }
 
 void parse_udp (packetinfo *pi)
 {
-    //olog("\n[*] Got UDP packet...\n");
-    //olog("\n");
-    //config.payload = 200;
-    //dump_payload(pi->payload, (config.payload < pi->plen)?config.payload:pi->plen);
-    static char ip_addr_s[INET6_ADDRSTRLEN];
-    u_ntop_src(pi, ip_addr_s);
+    olog("\n[*] Got UDP packet...\n");
 
     /* Traffic comes from port 53 and the client has sent at least one package on that
      * connecton (Maybe asking for an aswere :) */
     if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
-        // Need to build in a "local db" so we dont print out the same info over and over... 
-        //dump_dns(pi->payload, pi->plen, ip_addr_s, pi->pheader->ts.tv_sec);
         dns_parser(pi);
     }
-    //dump_dns(pi);
     return;
 }
 
@@ -393,7 +368,6 @@ int connection_tracking(packetinfo *pi) {
     connection *cxt = NULL;
     connection *head = NULL;
     uint32_t hash;
-
 
     if(af== AF_INET6){
         ip_src = &PI_IP6SRC(pi);
@@ -642,26 +616,52 @@ const char *u_ntop_src(packetinfo *pi, char *dest)
 
 void check_interrupt()
 {
-    if (config.intr_flag == 1) {
+    dlog("[D] In interrupt. Flag:%d",config.intr_flag);
+    if (ISSET_INTERRUPT_END(config)) {
         game_over();
-    } else if (config.intr_flag == 2) {
-        //update_asset_list();
-    } else if (config.intr_flag == 3) {
+    } else if (ISSET_INTERRUPT_SESSION(config)) {
         set_end_sessions();
+    } else if (ISSET_INTERRUPT_DNS(config)) {
+        set_end_dns_records();
     } else {
         config.intr_flag = 0;
     }
 }
 
+void sig_alarm_handler()
+{
+    time_t now_t;
+    now_t = time(NULL);
+
+    dlog("[D] Got SIG ALRM\n");
+    /* Each time check for timed out sessions */
+    set_end_sessions();
+    
+    /* Only check for timed out dns records each 10 minutes */
+    if ( (now_t - config.dnslastchk) >= 600 ) {
+        set_end_dns_records();
+        config.dnslastchk = now_t;
+    }
+    alarm(TIMEOUT);
+}
+
+void set_end_dns_records()
+{
+    config.intr_flag |= INTERRUPT_DNS;
+
+    if (config.inpacket == 0) {
+        expire_dns_records();
+        config.intr_flag &= ~INTERRUPT_DNS;
+    }
+}
+
 void set_end_sessions()
 {
-    config.intr_flag = 3;
+    config.intr_flag |= INTERRUPT_SESSION;
 
     if (config.inpacket == 0) {
         end_sessions();
-        //expire_domains();
-        config.intr_flag = 0;
-        alarm(TIMEOUT);
+        config.intr_flag &= ~INTERRUPT_SESSION;
     }
 }
 
@@ -905,17 +905,13 @@ void a_dump_payload(const uint8_t* data,uint16_t dlen) {
 void game_over()
 {
     if (config.inpacket == 0) {
-       //if(!ISSET_CONFIG_QUIET(config)){
-           print_pdns_stats();
-           //if(!config.pcap_file)
-               //print_pcap_stats();
-        //}
+        print_pdns_stats();
         if (config.handle != NULL) pcap_close(config.handle);
         //free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
     }
-    config.intr_flag = 1;
+    config.intr_flag |= INTERRUPT_END;
 }
 
 void print_pdns_stats()
@@ -944,7 +940,6 @@ extern int optind, opterr, optopt; // getopt()
 /* magic main */
 int main(int argc, char *argv[])
 {
-    //int32_t rc = 0;
     int ch = 0; // verbose_already = 0;
     memset(&config, 0, sizeof(globalconfig));
     //set_default_config_options();
@@ -956,7 +951,7 @@ int main(int argc, char *argv[])
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
-    signal(SIGALRM, set_end_sessions);
+    signal(SIGALRM, sig_alarm_handler);
 
 #define ARGS "i:r:c:hb:"
 
@@ -1047,12 +1042,10 @@ int main(int argc, char *argv[])
 
     alarm(TIMEOUT);
 
-    //cxt_init();
     olog("[*] Sniffing...\n\n");
     pcap_loop(config.handle, -1, got_packet, NULL);
 
     game_over();
-    //pcap_close(config.handle);
     return (0);
 }
 
