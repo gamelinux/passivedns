@@ -49,7 +49,6 @@ void dns_parser (packetinfo *pi) {
 
     if (status != LDNS_STATUS_OK) {
         dlog("[D] ldns_wire2pkt status = %d\n", status);
-        ldns_pkt_free(decoded_dns);
         return;
     }
 
