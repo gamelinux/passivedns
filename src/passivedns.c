@@ -952,8 +952,11 @@ void usage()
     olog("\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
+    olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: udp and port 53).\n");
-    olog(" -h              This help message.\n");
+    olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
+    olog(" -D              Run as daemon.\n");
+    olog(" -h              This help message.\n\n");
 }
 
 extern int optind, opterr, optopt; // getopt()
@@ -962,6 +965,7 @@ extern int optind, opterr, optopt; // getopt()
 int main(int argc, char *argv[])
 {
     int ch = 0; // verbose_already = 0;
+    int daemon = 0;
     memset(&config, 0, sizeof(globalconfig));
     //set_default_config_options();
     config.inpacket = config.intr_flag = 0;
@@ -969,13 +973,15 @@ int main(int argc, char *argv[])
     char *pconfile;
 #define BPFF "(udp and port 53)"
     config.bpff = BPFF;
+    config.logfile = "/var/log/passivedns.log";
+    config.pidfile = "/var/run/passivedns.pid";
 
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
 
-#define ARGS "i:r:c:hb:"
+#define ARGS "i:r:l:hb:Dp:"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -985,11 +991,17 @@ int main(int argc, char *argv[])
         case 'r':
             config.pcap_file = strdup(optarg);
             break;
-        case 'c':
-            pconfile = strdup(optarg);
+        case 'l':
+            config.logfile = strdup(optarg);
             break;
         case 'b':
             config.bpff = strdup(optarg);
+            break;
+        case 'p':
+            config.pidfile = strdup(optarg);
+            break;
+        case 'D':
+            daemon = 1;
             break;
         case 'h':
             usage();
@@ -1042,7 +1054,7 @@ int main(int argc, char *argv[])
             drop_privs();
         }
 
-        if (config.daemon_flag) {
+        if (daemon) {
             if (!is_valid_path(config.pidfile))
                 elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
             openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);

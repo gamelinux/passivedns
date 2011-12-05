@@ -34,7 +34,6 @@ uint64_t hash(unsigned char *str) {
 
     while ((c = *str++))
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    //return hash % 10; // TEST - stress the linked lists :)
     return hash % DBUCKET_SIZE;
 }
 
@@ -325,8 +324,7 @@ void print_passet(pdns_asset *p, pdns_record *l) {
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
-    sprintf(filename, "/var/log/passivedns.log");
-    fd = fopen(filename, "a");
+    fd = fopen(config.logfile, "a");
     if (fd == NULL) {
         plog("[E] ERROR: Cant open file %s\n",filename);
         p->last_print = p->last_seen;
@@ -337,63 +335,47 @@ void print_passet(pdns_asset *p, pdns_record *l) {
     u_ntop(p->cip, p->af, ip_addr_c);
     fprintf(fd,"%lu||%s||%s||",p->last_seen, ip_addr_c, ip_addr_s);
 
-    //u_ntop(p->sip, p->af, ip_addr_s);
-    //fprintf(fd,"%s||",ip_addr_s);
-
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:
-             //printf("IN");
              fprintf(fd,"IN");
              break;
         case LDNS_RR_CLASS_CH:
-             //printf("CH");
              fprintf(fd,"CH");
              break;
         case LDNS_RR_CLASS_HS:
-             //printf("HS");
              fprintf(fd,"HS");
              break;
         case LDNS_RR_CLASS_NONE:
-             //printf("NONE");
              fprintf(fd,"NONE");
              break;
         case LDNS_RR_CLASS_ANY:
-             //printf("ANY");
              fprintf(fd,"ANY");
              break;
         default:
-             //printf("%d",p->rr->_rr_class);
              fprintf(fd,"%d",p->rr->_rr_class);
              break;
     }
 
-    //printf("||%s||",l->qname);
     fprintf(fd,"||%s||",l->qname);
 
     switch (ldns_rr_get_type(p->rr)) {
         case LDNS_RR_TYPE_PTR:
-             //printf("PTR");
              fprintf(fd,"PTR");
              break;
         case LDNS_RR_TYPE_A:
-             //printf("A");
              fprintf(fd,"A");
              break;
         case LDNS_RR_TYPE_AAAA:
-             //printf("AAAA");
              fprintf(fd,"AAAA");
              break;
         case LDNS_RR_TYPE_CNAME:
-             //printf("CNAME");
              fprintf(fd,"CNAME");
              break;
         default:
-            //printf("%d",p->rr->_rr_type);
             fprintf(fd,"%d",p->rr->_rr_type);
             break;
     }
 
-    //printf("||%s\n", p->answer);
     fprintf(fd,"||%s\n", p->answer);
     fclose(fd);
 

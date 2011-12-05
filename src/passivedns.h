@@ -456,47 +456,43 @@ typedef struct _pdns_stat {
 #define INTERRUPT_DNS      0x04
 
 typedef struct _globalconfig {
-    pcap_t              *handle;        /* Pointer to libpcap handle */
-    struct pcap_stat    ps;             /* libpcap stats */
-    pdns_stat           p_s;            /* pdns stats */
-    struct bpf_program  cfilter;        /**/
-    bpf_u_int32         net_mask;       /**/
+    pcap_t              *handle;         /* Pointer to libpcap handle */
+    struct pcap_stat    ps;              /* libpcap stats */
+    pdns_stat           p_s;             /* pdns stats */
+    struct bpf_program  cfilter;         /* */
+    bpf_u_int32         net_mask;        /* */
     uint8_t     intr_flag;
     uint8_t     inpacket;
     
-    time_t      dnslastchk;             /* Timestamp for last dns cache expiration check */
-    time_t      tstamp;                 /* Current timestamp from packet-header */
-    uint8_t     cflags;                 /* config flags */
-    uint8_t     verbose;                /* Verbose or not */
-    uint8_t     print_updates;          /* Prints updates */
-    uint8_t     use_syslog;             /* Use syslog or not */
-    uint8_t     setfilter;
-    uint8_t     drop_privs_flag;
-    uint8_t     daemon_flag;
-    uint8_t     ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
-    uint8_t     cof;                    /* Flags for other; icmp,udp,other,.... */
-    uint32_t    payload;                /* dump how much of the payload ?  */
-    uint64_t    cxtrackerid;            /* cxtracker ID counter */
-    char        errbuf[PCAP_ERRBUF_SIZE];   /**/
-    char        *bpff;                  /**/
-    char        *user_filter;           /**/
-    char        *net_ip_string;         /**/
-    //connection  *bucket[BUCKET_SIZE];   /* Pointer to list of ongoing connections */
-    //connection  *cxtbuffer;             /* Pointer to list of expired connections */
-    //asset       *passet[BUCKET_SIZE];   /* Pointer to list of assets */
-    //port_t      *lports[MAX_IP_PROTO];  /* Pointer to list of known ports */
-    char       *assetlog;               /* Filename of pdns.log */
-    char       *fifo;                   /* Path to FIFO output */
-    char       *pcap_file;              /* Filename to pcap too read */
-    char        *dev;                   /* Device name to use for sniffing */
-    char        *dpath;                 /* ... ??? seriously ???... */
-    char        *chroot_dir;            /* Directory to chroot to */
-    char        *group_name;            /* Groupe to drop privileges too */
-    char        *user_name;             /* User to drop privileges too */
-    char        *pidfile;               /* pidfile */
-    char        *configpath;            /* Path to config dir */
-    uint32_t     sig_hashsize;          /* size of signature hash */
-    uint32_t     mac_hashsize;          /* size of mac hash */
+    time_t       dnslastchk;             /* Timestamp for last dns cache expiration check */
+    time_t       tstamp;                 /* Current timestamp from packet-header */
+    uint8_t      cflags;                 /* config flags */
+    uint8_t      verbose;                /* Verbose or not */
+    uint8_t      print_updates;          /* Prints updates */
+    uint8_t      use_syslog;             /* Use syslog or not */
+    uint8_t      setfilter;
+    uint8_t      drop_privs_flag;
+    uint8_t      daemon_flag;
+    uint8_t      ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
+    uint8_t      cof;                    /* Flags for other; icmp,udp,other,.... */
+    uint32_t     payload;                /* dump how much of the payload ?  */
+    uint64_t     cxtrackerid;            /* cxtracker ID counter */
+    char         errbuf[PCAP_ERRBUF_SIZE];   /**/
+    char        *bpff;                   /**/
+    char        *user_filter;            /**/
+    char        *net_ip_string;          /**/
+    char        *logfile;                /* Filename of /var/log/passivedns.log */
+    char        *fifo;                   /* Path to FIFO output */
+    char        *pcap_file;              /* Filename to pcap too read */
+    char        *dev;                    /* Device name to use for sniffing */
+    char        *dpath;                  /* ... ??? seriously ???... */
+    char        *chroot_dir;             /* Directory to chroot to */
+    char        *group_name;             /* Groupe to drop privileges too */
+    char        *user_name;              /* User to drop privileges too */
+    char        *pidfile;                /* pidfile */
+    char        *configpath;             /* Path to config dir */
+    uint32_t     sig_hashsize;           /* size of signature hash */
+    uint32_t     mac_hashsize;           /* size of mac hash */
 } globalconfig;
 
 #define ISSET_CONFIG_VERBOSE(config)    ((config).cflags & CONFIG_VERBOSE)
