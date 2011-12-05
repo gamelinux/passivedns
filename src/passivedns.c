@@ -95,7 +95,7 @@ void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
     pi->packet = packet;
     pi->pheader = pheader;
     set_pkt_end_ptr (pi);
-    //config.tstamp = pi->pheader->ts.tv_sec; // Global
+    config.tstamp = pi->pheader->ts.tv_sec; // Global
     if (config.intr_flag != 0) {
         check_interrupt();
     }
@@ -500,11 +500,30 @@ int cxt_update_server(connection *cxt, packetinfo *pi)
     return SC_SERVER;
 }
 
+void end_all_sessions()
+{
+    connection *cxt;
+    int cxkey;
+
+    for (cxkey = 0; cxkey < BUCKET_SIZE; cxkey++) {
+        cxt = bucket[cxkey];
+        while (cxt != NULL) {
+            connection *tmp = cxt;
+
+            cxt = cxt->next;
+            del_connection(tmp, &bucket[cxkey]);
+            if (cxt == NULL) {
+                bucket[cxkey] = NULL;
+            }
+        }
+    }
+}
+
 void end_sessions()
 {
     connection *cxt;
     time_t check_time;
-    check_time = time(NULL);
+    check_time = config.tstamp;
     int ended, expired = 0;
     uint32_t curcxt = 0;
 
@@ -631,13 +650,13 @@ void check_interrupt()
 void sig_alarm_handler()
 {
     time_t now_t;
-    now_t = time(NULL);
+    now_t = config.tstamp;
 
     dlog("[D] Got SIG ALRM\n");
     /* Each time check for timed out sessions */
     set_end_sessions();
     
-    /* Only check for timed out dns records each 10 minutes */
+    /* Only check for timed-out dns records each 10 minutes */
     if ( (now_t - config.dnslastchk) >= 600 ) {
         set_end_dns_records();
         config.dnslastchk = now_t;
@@ -907,6 +926,8 @@ void game_over()
     if (config.inpacket == 0) {
         print_pdns_stats();
         if (config.handle != NULL) pcap_close(config.handle);
+        expire_all_dns_records();
+        void end_all_sessions();
         //free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
@@ -944,6 +965,7 @@ int main(int argc, char *argv[])
     memset(&config, 0, sizeof(globalconfig));
     //set_default_config_options();
     config.inpacket = config.intr_flag = 0;
+    config.dnslastchk = 0;
     char *pconfile;
 #define BPFF "(udp and port 53)"
     config.bpff = BPFF;

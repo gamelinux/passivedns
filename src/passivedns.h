@@ -465,6 +465,7 @@ typedef struct _globalconfig {
     uint8_t     inpacket;
     
     time_t      dnslastchk;             /* Timestamp for last dns cache expiration check */
+    time_t      tstamp;                 /* Current timestamp from packet-header */
     uint8_t     cflags;                 /* config flags */
     uint8_t     verbose;                /* Verbose or not */
     uint8_t     print_updates;          /* Prints updates */

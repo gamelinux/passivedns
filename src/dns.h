@@ -1,5 +1,6 @@
 void dns_parser (packetinfo *pi);
 void expire_dns_records();
+void expire_all_dns_records();
 
 
 /* To avoid spaming the logfile with duplicate dns info 

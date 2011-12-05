@@ -16,9 +16,11 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
 pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
 void print_passet(pdns_asset *p, pdns_record *l);
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest);
-void expire_dns_assets(pdns_asset *passet, time_t expire_t);
-void delete_dns_asset(pdns_asset *passet);
-void delete_dns_record(pdns_record *pdnsr);
+void expire_dns_assets(pdns_record *pdnsr, time_t expire_t);
+void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr);
+void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet);
+
+globalconfig config;
 
 /* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
 //#define DBUCKET_SIZE     16769023
@@ -241,8 +243,8 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
             dlog("[*] rname/answer match\n");
             // We have this, update & if its over 24h since last print - print it, then return
             passet->last_seen = pi->pheader->ts.tv_sec;
-            passet->sip       = pi->cxt->s_ip;
-            passet->cip       = pi->cxt->d_ip;
+            passet->cip       = pi->cxt->s_ip; // This should always be the client IP
+            passet->sip       = pi->cxt->d_ip; // This should always be the server IP
             dlog("[*] DNS asset updated...\n");
             if ((passet->last_seen - passet->last_print) >= DNSPRINTTIME) {
                 print_passet(passet, lname_node);
@@ -280,8 +282,8 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
     passet->first_seen = pi->pheader->ts.tv_sec;
     passet->last_seen  = pi->pheader->ts.tv_sec;
     passet->af         = pi->cxt->af;
-    passet->sip        = pi->cxt->s_ip;
-    passet->cip        = pi->cxt->d_ip;
+    passet->cip        = pi->cxt->s_ip; // This should always be the client IP
+    passet->sip        = pi->cxt->d_ip; // This should always be the server IP
     passet->prev       = NULL;
     len                = strlen((char *)rname_str);
     passet->answer     = calloc(1, (len + 1));
@@ -334,7 +336,7 @@ void print_passet(pdns_asset *p, pdns_record *l) {
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
-    fprintf(fd,"%lu||%s||%s||",p->last_seen, ip_addr_s, ip_addr_c);
+    fprintf(fd,"%lu||%s||%s||",p->last_seen, ip_addr_c, ip_addr_s);
 
     //u_ntop(p->sip, p->af, ip_addr_s);
     //fprintf(fd,"%s||",ip_addr_s);
@@ -442,12 +444,13 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     return pdnsr;
 }
 
-void expire_dns_records() {
+void expire_dns_records()
+{
     pdns_record *pdnsr;
     time_t expire_t;
-    expire_t = time(NULL) - DNSCACHETIMEOUT;
+    expire_t = (config.tstamp - DNSCACHETIMEOUT);
 
-    dlog("[D] Checking for DNS records and assets to be expired\n");
+    dlog("[D] Checking for DNS records to be expired\n");
 
     uint32_t iter;
     for (iter = 0; iter < DBUCKET_SIZE; iter++) {
@@ -455,37 +458,162 @@ void expire_dns_records() {
         while (pdnsr != NULL) {
             if (pdnsr->last_seen <= expire_t) {
                 // Expire the record and all its assets
-                delete_dns_record(pdnsr);
-            }
-            if (pdnsr != NULL) {
+                /* remove from the hash */
+                if (pdnsr->prev)
+                    pdnsr->prev->next = pdnsr->next;
+                if (pdnsr->next)
+                    pdnsr->next->prev = pdnsr->prev;
+                pdns_record *tmp = pdnsr;
+
+                pdnsr = pdnsr->next;
+
+                delete_dns_record(tmp, &dbucket[iter]);
+                if (pdnsr == NULL) {
+                    dbucket[iter] = NULL;
+                }
+            } else {
                 // Search through a domain record for assets to expire
-                expire_dns_assets(pdnsr->passet, expire_t);
+                expire_dns_assets(pdnsr, expire_t);
+                pdnsr = pdnsr->next;
             }
-            pdnsr = pdnsr->next;
         }
     }
 }
 
-void expire_dns_assets(pdns_asset *passet, time_t expire_t) {
+void expire_all_dns_records()
+{
+    pdns_record *pdnsr;
+
+    dlog("[D] Expiring all domain records\n");
+
+    uint32_t iter;
+    for (iter = 0; iter < DBUCKET_SIZE; iter++) {
+        pdnsr = dbucket[iter];
+        while (pdnsr != NULL) {
+            // Expire the record and all its assets
+            /* remove from the hash */
+            if (pdnsr->prev)
+                pdnsr->prev->next = pdnsr->next;
+            if (pdnsr->next)
+                pdnsr->next->prev = pdnsr->prev;
+            pdns_record *tmp = pdnsr;
+
+            pdnsr = pdnsr->next;
+
+            delete_dns_record(tmp, &dbucket[iter]);
+            if (pdnsr == NULL) {
+                dbucket[iter] = NULL;
+            }
+        }
+    }
+}
+
+void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr)
+{
+    pdns_record *prev       = pdnsr->prev;       /* OLDER dns record */
+    pdns_record *next       = pdnsr->next;       /* NEWER dns record */
+    pdns_asset  *asset      = pdnsr->passet;
+    pdns_asset  *tmp_asset;
+ 
+    dlog("[D] Deleting domain record: %s\n", pdnsr->qname);
+
+    /* Delete all domain assets */
+    while (asset != NULL) {
+        tmp_asset = asset;
+        asset = asset->next;
+        delete_dns_asset(&pdnsr->passet, tmp_asset);
+    }
+
+    if (prev == NULL) {
+        // beginning of list
+        *bucket_ptr = next;
+        // not only entry
+        if (next)
+            next->prev = NULL;
+    } else if (next == NULL) {
+        // at end of list!
+        prev->next = NULL;
+    } else {
+        // a node.
+        prev->next = next;
+        next->prev = prev;
+    }
+
+    // Free and set to NULL 
+    free(pdnsr->qname);
+    free(pdnsr);
+    pdnsr = NULL;
+}
+
+void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
+{
+    dlog("[D] Checking for DNS assets to be expired\n");
+
+    pdns_asset *passet = pdnsr->passet;
+
     while ( passet != NULL ) {
         if (passet->last_seen <= expire_t) {
-            //Expire the asset
-            delete_dns_asset(passet);
+            /* Remove the asset from the linked list */
+            if (passet->prev)
+                passet->prev->next = passet->next;
+            if (passet->next)
+                passet->next->prev = passet->prev;
+            pdns_asset *tmp = passet;
+
+            passet = passet->next;
+
+            /* Delete the asset */
+            delete_dns_asset(&pdnsr->passet, tmp);
+        } else {
+            passet = passet->next;
         }
-        passet = passet->next;
     }
     return;
 }
 
-void delete_dns_asset(pdns_asset *passet) {
-    // TODO
-    plog("[D] Should have deleted domain asset: %s\n", passet->answer);
-    return;
-}
+void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
+{
+    dlog("[D] Deleting domain asset: %s\n", passet->answer);
 
-void delete_dns_record(pdns_record *pdnsr) {
-    // TODO
-    plog("[D] Should have deleted domain record: %s\n", pdnsr->qname);
+    if (passet == NULL)
+        return;
+
+    pdns_asset *tmp_pa = NULL;
+    pdns_asset *next_pa = NULL;
+    pdns_asset *prev_pa = NULL;
+
+    tmp_pa  = passet;
+    next_pa = tmp_pa->next;
+    prev_pa = tmp_pa->prev;
+
+    if (prev_pa == NULL) {
+        /*
+         * beginning of list 
+         */
+        *passet_head = next_pa;
+        /*
+         * not only entry 
+         */
+        if (next_pa)
+            next_pa->prev = NULL;
+    } else if (next_pa == NULL) {
+        /*
+         * at end of list! 
+         */
+        prev_pa->next = NULL;
+    } else {
+        /*
+         * a node 
+         */
+        prev_pa->next = next_pa;
+        next_pa->prev = prev_pa;
+    }
+
+    free(passet->rr);
+    passet->rr = NULL;
+    free(passet->answer);
+    free(passet);
+    passet = NULL;
     return;
 }
 
