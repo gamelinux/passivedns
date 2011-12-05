@@ -510,7 +510,7 @@ void end_all_sessions()
         while (cxt != NULL) {
             connection *tmp = cxt;
 
-            cxt = cxt->next;
+            cxt = cxt->prev;
             del_connection(tmp, &bucket[cxkey]);
             if (cxt == NULL) {
                 bucket[cxkey] = NULL;
