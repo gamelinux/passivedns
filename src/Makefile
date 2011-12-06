@@ -5,9 +5,6 @@ OCFLAGS=-O3
 DCFLAGS=-Wall -g -DDEBUG
 PCFLAGS=-g -pg
 LDFLAGS=-lpcap -lldns
-# dump_dns.o -lresolv
-# gcc $(OCFLAGS) -c dump_dns.c
-LDFLAGS=-lpcap -lldns
 
 ifeq ($(UNAME), FreeBSD)
     LDFLAGS=-lpcap
@@ -17,6 +14,11 @@ all:
 	gcc $(OCFLAGS) -c dns.c
 	gcc $(OCFLAGS) -c passivedns.c
 	gcc -o passivedns dns.o passivedns.o $(LDFLAGS)
+
+static:
+	gcc -static $(OCFLAGS) -c dns.c
+	gcc -static $(OCFLAGS) -c passivedns.c
+	gcc -static -o passivedns dns.o passivedns.o $(LDFLAGS) -lc -lnsl -lcrypto -lz
 
 debug: 
 	gcc $(DCFLAGS) -c dns.c
