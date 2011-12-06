@@ -1,10 +1,7 @@
 
 # PassiveDNS
 
-* Implement comandline option for log filename
-* Clean up/Expire domains/domain-assets
-
-* Clean up memory on exit - remove all records/assets
+* Implement comandline option for chroot
 
 * Add some stats
 * Add abuility to read log file when starting up
