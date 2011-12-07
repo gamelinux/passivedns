@@ -13,22 +13,14 @@ and general digital forensics.
 PassiveDNS sniffes the interface or reads a pcap-file and outputs the DNS-server answers.
 
 Example output from version 0.2.0 in the log file (/var/log/passivedns.log):
+
 #timestamp||dns-client ||dns-server||RR class||Query||Query Type||Answer
-1322849924||192.168.1.1||8.8.8.8||IN||clients1.google.com.||A||173.194.32.3
 1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||CNAME||yt-video-upload.l.google.com.
 1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||A||74.125.43.117
 1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||A||74.125.43.116
 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.
 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||A||193.104.215.61
 1322849924||192.168.1.1||81.167.36.3||IN||i1.ytimg.com.||CNAME||ytimg.l.google.com.
-
-
-
-Example output from version 0.1.1:
-# timestamp||sniffing-host|dns-server-IP||<The answer from the DNS server>
-1304063713||localhost||8.8.8.8||QUERY,NOERROR,31882,qr|rd|ra||1||gamelinux.org,IN,A||1||gamelinux.org,IN,A,361,85.19.221.54||0||0
-1304063713||localhost||8.8.8.8||QUERY,NOERROR,45422,qr|rd|ra||1||gamelinux.org,IN,AAAA||0||1||gamelinux.org,IN,SOA,1800,ns.netimage.no,hostmaster.netimage.no,2010102501,3600,3600,3024000,86400||0
-1304063713||localhost||8.8.8.8||QUERY,NOERROR,13533,qr|rd|ra||1||gamelinux.org,IN,MX||1||gamelinux.org,IN,MX,361,1,mail.gamelinux.org||0||0
-
+1322849924||192.168.1.1||8.8.8.8||IN||clients1.google.com.||A||173.194.32.3
 
 
