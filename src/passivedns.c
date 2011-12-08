@@ -508,9 +508,13 @@ void end_all_sessions()
     for (cxkey = 0; cxkey < BUCKET_SIZE; cxkey++) {
         cxt = bucket[cxkey];
         while (cxt != NULL) {
+            if (cxt->prev)
+                cxt->prev->next = cxt->next;
+            if (cxt->next)
+                cxt->next->prev = cxt->prev;
             connection *tmp = cxt;
 
-            cxt = cxt->prev;
+            cxt = cxt->next;
             del_connection(tmp, &bucket[cxkey]);
             if (cxt == NULL) {
                 bucket[cxkey] = NULL;
@@ -576,14 +580,14 @@ void end_sessions()
 
                 ended = expired = 0;
 
-                cxt = cxt->prev;
+                cxt = cxt->next;
 
                 del_connection(tmp, &bucket[iter]);
                 if (cxt == NULL) {
                     bucket[iter] = NULL;
                 }
             } else {
-                cxt = cxt->prev;
+                cxt = cxt->next;
             }
         }
     }
@@ -927,7 +931,7 @@ void game_over()
         print_pdns_stats();
         if (config.handle != NULL) pcap_close(config.handle);
         expire_all_dns_records();
-        void end_all_sessions();
+        end_all_sessions();
         //free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
