@@ -109,6 +109,8 @@ warn "[*] Looking for passive DNS data in file: $PDNSFILE\n";
 file_watch($PDNSFILE);
 exit;
 
+=head1 FUNCTIONS
+
 =head2 setup_db
 
  Checks if the pdns table exists, if not make it.
@@ -184,6 +186,9 @@ sub put_dns_to_db {
     my ($ts, $cip, $sip, $rr, $query, $type, $answer) = @_;
     my $tsl = $ts;
     my $ttl = 0;    
+
+    $query  =~ s/^(.*).$/$1/;
+    $answer =~ s/^(.*).$/$1/;
 
     my ($sql, $sth);
 
