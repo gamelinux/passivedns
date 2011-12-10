@@ -1,0 +1,32 @@
+#
+#  ______                                           ____   __  __  _____
+# |  __  |                         @               |    \ |  \ | ||  ___| (TM)
+# | _____|.------. .-----. .-----. _ -. .-.------. | |\  ||   \| ||___  |
+# |  |    |  __  ||__  --'|__  --'| |\ Y /| _--__|_| |/  ||      || \_| |
+# |__|    |____|_||______||______||_| \_/ |_______/|____/ |__|\__||_____|
+#
+#
+
+# Usage
+########
+
+# passivedns
+root@localhost: ./passivedns -i eth1 -l /var/log/passivedns.log
+
+
+
+
+# pdns2db.pl
+root@localhost: apt-get install libdatetime-perl
+
+First you need to add a user to the mysql db:
+
+mysql> GRANT USAGE ON *.* TO 'pdns'@'localhost' IDENTIFIED BY 'pdns';
+mysql> GRANT SELECT,CREATE,INSERT,UPDATE ON pdns.* TO 'pdns'@'localhost';
+mysql> flush privileges;
+mysql> CREATE DATABASE pdns;
+
+Then you need to start up pdns2db.pl
+
+root@localhost: perl pdns2db.pl --file /var/log/passivedns.log
+

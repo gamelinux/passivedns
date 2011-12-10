@@ -187,8 +187,8 @@ sub put_dns_to_db {
     my $tsl = $ts;
     my $ttl = 0;    
 
-    $query  =~ s/^(.*).$/$1/;
-    $answer =~ s/^(.*).$/$1/;
+    $query  =~ s/^(.*)\.$/$1/;
+    $answer =~ s/^(.*)\.$/$1/;
 
     my ($sql, $sth);
 
