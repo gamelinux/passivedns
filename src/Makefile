@@ -7,7 +7,8 @@ PCFLAGS=-g -pg
 LDFLAGS=-lpcap -lldns
 
 ifeq ($(UNAME), FreeBSD)
-    LDFLAGS=-lpcap
+    OCFLAGS=-I/usr/local/include -O3
+    LDFLAGS=-L/usr/local/lib -lpcap -lldns
 endif
 
 all:
