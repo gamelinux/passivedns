@@ -581,6 +581,7 @@ void end_sessions()
                 ended = expired = 0;
 
                 cxt = cxt->next;
+                //cxt = cxt->prev;
 
                 del_connection(tmp, &bucket[iter]);
                 if (cxt == NULL) {
@@ -588,6 +589,7 @@ void end_sessions()
                 }
             } else {
                 cxt = cxt->next;
+                //cxt = cxt->prev;
             }
         }
     }
@@ -654,16 +656,16 @@ void check_interrupt()
 void sig_alarm_handler()
 {
     time_t now_t;
+    //config.tstamp = time(); // config.tstamp will stand still if there is now packets
     now_t = config.tstamp;
 
-    dlog("[D] Got SIG ALRM\n");
+    dlog("[D] Got SIG ALRM: %lu\n", now_t);
     /* Each time check for timed out sessions */
     set_end_sessions();
     
     /* Only check for timed-out dns records each 10 minutes */
     if ( (now_t - config.dnslastchk) >= 600 ) {
         set_end_dns_records();
-        config.dnslastchk = now_t;
     }
     alarm(TIMEOUT);
 }
@@ -674,6 +676,7 @@ void set_end_dns_records()
 
     if (config.inpacket == 0) {
         expire_dns_records();
+        config.dnslastchk = config.tstamp;
         config.intr_flag &= ~INTERRUPT_DNS;
     }
 }
@@ -942,6 +945,8 @@ void game_over()
 void print_pdns_stats()
 {
     olog("\n");
+    olog("-- Total DNS records allocated            :%12u\n",config.p_s.dns_records);
+    olog("-- Total DNS assets allocated             :%12u\n",config.p_s.dns_assets);
     olog("-- Total packets received from libpcap    :%12u\n",config.p_s.got_packets);
     olog("-- Total Ethernet packets received        :%12u\n",config.p_s.eth_recv);
     olog("-- Total VLAN packets received            :%12u\n",config.p_s.vlan_recv);
@@ -959,6 +964,9 @@ void usage()
     olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: udp and port 53).\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
+    olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
+    olog(" -C <sec>        Seconds to cache DNS objects in memory (default %u).\n",DNSCACHETIMEOUT);
+    olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n",DNSPRINTTIME);
     olog(" -D              Run as daemon.\n");
     olog(" -h              This help message.\n\n");
 }
@@ -974,18 +982,21 @@ int main(int argc, char *argv[])
     //set_default_config_options();
     config.inpacket = config.intr_flag = 0;
     config.dnslastchk = 0;
-    char *pconfile;
+    //char *pconfile;
 #define BPFF "(udp and port 53)"
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
+    config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
+    config.dnsprinttime = DNSPRINTTIME;
+    config.dnscachetimeout =  DNSCACHETIMEOUT;
 
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
 
-#define ARGS "i:r:l:hb:Dp:"
+#define ARGS "i:r:l:hb:Dp:C:P:S:"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1003,6 +1014,15 @@ int main(int argc, char *argv[])
             break;
         case 'p':
             config.pidfile = strdup(optarg);
+            break;
+        case 'C':
+            config.dnscachetimeout = strtol(optarg, NULL, 0);
+            break;
+        case 'P':
+            config.dnsprinttime = strtol(optarg, NULL, 0);
+            break;
+        case 'S':
+            config.mem_limit_max = (strtol(optarg, NULL, 0) * 1024 * 1024);
             break;
         case 'D':
             daemon = 1;

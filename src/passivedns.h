@@ -22,7 +22,7 @@
 /*  I N C L U D E S  **********************************************************/
 
 /*  D E F I N E S  ************************************************************/
-#define VERSION                       "0.2.4"
+#define VERSION                       "0.2.5"
 #define TIMEOUT                       60
 #define BUCKET_SIZE                   1211
 #define SNAPLENGTH                    1600
@@ -433,7 +433,8 @@ typedef struct _pdns_stat {
     uint32_t udp_recv;      /* number of udp packets received */
     uint32_t icmp_recv;     /* number of icmp packets received */
     uint32_t othert_recv;   /* number of other transport layer packets received */
-    uint32_t assets;        /* total number of assets detected */
+    uint32_t dns_records;   /* total number of DNS records detected */
+    uint32_t dns_assets;    /* total number of DNS assets detected */
     uint32_t tcp_os_assets; /* total number of tcp os assets detected */
     uint32_t udp_os_assets; /* total number of udp os assets detected */
     uint32_t icmp_os_assets;/* total number of icmp os assets detected */
@@ -476,6 +477,10 @@ typedef struct _globalconfig {
     uint8_t      ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
     uint8_t      cof;                    /* Flags for other; icmp,udp,other,.... */
     uint32_t     payload;                /* dump how much of the payload ?  */
+    uint64_t     mem_limit_max;          /* Try soft limit memory use */
+    uint64_t     mem_limit_size;         /* Current memory size */
+    uint32_t     dns_records;            /* total number of DNS records in memory */
+    uint32_t     dns_assets;             /* total number of DNS assets in memory */
     uint64_t     cxtrackerid;            /* cxtracker ID counter */
     char         errbuf[PCAP_ERRBUF_SIZE];   /**/
     char        *bpff;                   /**/

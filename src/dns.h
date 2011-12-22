@@ -1,24 +1,29 @@
 void dns_parser (packetinfo *pi);
 void expire_dns_records();
 void expire_all_dns_records();
-
+void update_config_mem_counters();
 
 /* To avoid spaming the logfile with duplicate dns info 
  * we only print a dns record one time each 24H. This way
  * you will get a last seen timestamp update once a day
  * at least. If the record changes, it will be classified
- * as a new record, and printent.
+ * as a new record, and printent. If a record expires and
+ * it has been updated since last_print time, it will be
+ * printed again.
  */
 #define DNSPRINTTIME          86400    /* 24H = 86400 sec */
 
 /* How long we should hold a dns record in our internal
- * cache. It should never be less than DNSPRINTTIME, as that
- * will make it possible to get more than one instance of
- * the record each day in the logfile. That said, setting
- * DNSCACHETIMEOUT to 43200 etc, might help memory usage if
- * that is a concern. 
+ * cache. It should preferably not be less than DNSPRINTTIME,
+ * as that will make it possible to get more than one instance
+ * of the record each day in the logfile. That said, setting
+ * DNSCACHETIMEOUT to DNSPRINTTIME/2 etc, might help memory
+ * usage if that is a concern AND you probably will get a better
+ * granularity on the DNS time stamps in the log file.
+ * My recomendations are DNSPRINTTIME == 24h and
+ * DNSCACHETIMEOUT == 12h.
  */
-#define DNSCACHETIMEOUT        86400    /* 24H = 86400 sec */
+#define DNSCACHETIMEOUT       43200    /* 12h=43200sec */
 
 typedef enum {
     QUESTION,

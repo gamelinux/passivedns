@@ -243,8 +243,11 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
             passet->last_seen = pi->pheader->ts.tv_sec;
             passet->cip       = pi->cxt->s_ip; // This should always be the client IP
             passet->sip       = pi->cxt->d_ip; // This should always be the server IP
+            if (rr->_ttl > passet->rr->_ttl) {
+                passet->rr->_ttl = rr->_ttl; // Catch the highest TTL seen
+            }
             dlog("[*] DNS asset updated...\n");
-            if ((passet->last_seen - passet->last_print) >= DNSPRINTTIME) {
+            if ((passet->last_seen - passet->last_print) >= config.dnsprinttime) {
                 print_passet(passet, lname_node);
             }
             return;
@@ -257,6 +260,8 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
     if ( passet == NULL ) {
         passet = (pdns_asset*) calloc(1, sizeof(pdns_asset));
         dlog("[*] Allocated a new dns asset...\n");
+        config.p_s.dns_assets++;
+        config.dns_assets++;
         prr = (ldns_rr*) calloc(1, sizeof(ldns_rr));
         prr->_owner        = rr->_owner;
         prr->_ttl          = rr->_ttl;
@@ -320,13 +325,12 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
 void print_passet(pdns_asset *p, pdns_record *l) {
 
     FILE *fd;
-    char filename[4096];
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
     fd = fopen(config.logfile, "a");
     if (fd == NULL) {
-        plog("[E] ERROR: Cant open file %s\n",filename);
+        plog("[E] ERROR: Cant open file %s\n",config.logfile);
         p->last_print = p->last_seen;
         return;
     }
@@ -405,6 +409,8 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     if ( pdnsr == NULL ) {
         pdnsr = (pdns_record*) calloc(1, sizeof(pdns_record));
         dlog("[*] Allocated a new dns record...\n");
+        config.p_s.dns_records++;
+        config.dns_records++;
     }
     if (head != NULL ) {
         head->prev = pdnsr;
@@ -429,37 +435,69 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
 void expire_dns_records()
 {
     pdns_record *pdnsr;
+    uint8_t run = 0;
     time_t expire_t;
-    expire_t = (config.tstamp - DNSCACHETIMEOUT);
+    time_t oldest;
+    //expire_t = (config.tstamp - DNSCACHETIMEOUT);
+    expire_t = (config.tstamp - config.dnscachetimeout);
+    oldest = config.tstamp; 
 
     dlog("[D] Checking for DNS records to be expired\n");
 
-    uint32_t iter;
-    for (iter = 0; iter < DBUCKET_SIZE; iter++) {
-        pdnsr = dbucket[iter];
-        while (pdnsr != NULL) {
-            if (pdnsr->last_seen <= expire_t) {
-                // Expire the record and all its assets
-                /* remove from the hash */
-                if (pdnsr->prev)
-                    pdnsr->prev->next = pdnsr->next;
-                if (pdnsr->next)
-                    pdnsr->next->prev = pdnsr->prev;
-                pdns_record *tmp = pdnsr;
+    while ( run == 0 ) {
+        uint32_t iter;
+        run = 1;
+        for (iter = 0; iter < DBUCKET_SIZE; iter++) {
+            pdnsr = dbucket[iter];
+            while (pdnsr != NULL) {
+                if (pdnsr->last_seen < oldest) // Find the LRU asset timestamp
+                    oldest = pdnsr->last_seen;
 
-                pdnsr = pdnsr->next;
-
-                delete_dns_record(tmp, &dbucket[iter]);
-                if (pdnsr == NULL) {
-                    dbucket[iter] = NULL;
+                if (pdnsr->last_seen <= expire_t) {
+                    // Expire the record and all its assets
+                    /* remove from the hash */
+                    if (pdnsr->prev)
+                        pdnsr->prev->next = pdnsr->next;
+                    if (pdnsr->next)
+                        pdnsr->next->prev = pdnsr->prev;
+                    pdns_record *tmp = pdnsr;
+    
+                    pdnsr = pdnsr->next;
+    
+                    delete_dns_record(tmp, &dbucket[iter]);
+                    if (pdnsr == NULL) {
+                        dbucket[iter] = NULL;
+                    }
+                } else {
+                    // Search through a domain record for assets to expire
+                    expire_dns_assets(pdnsr, expire_t);
+                    pdnsr = pdnsr->next;
                 }
-            } else {
-                // Search through a domain record for assets to expire
-                expire_dns_assets(pdnsr, expire_t);
-                pdnsr = pdnsr->next;
             }
         }
+
+        update_config_mem_counters();
+        /* If we are using more memory than mem_limit_max
+         * decrease expire_t too the oldest seen asset at least
+         */
+        if (config.mem_limit_size > config.mem_limit_max) {
+            expire_t = (oldest + 300); // Oldest asset + 5 minutes
+            oldest = config.tstamp;
+            run = 0;
+        }
     }
+}
+
+void update_config_mem_counters()
+{
+    config.mem_limit_size = (sizeof(pdns_record) * config.dns_records) + (sizeof(pdns_asset) * config.dns_assets);
+
+    dlog("DNS and Memory stats:\n");
+    dlog("DNS Records         :       %12u\n",config.dns_records);
+    dlog("DNS Assets          :       %12u\n",config.dns_assets);
+    dlog("Current memory size :       %12lu Bytes\n",config.mem_limit_size);
+    dlog("Max memory size     :       %12lu Bytes\n",config.mem_limit_max);
+    dlog("------------------------------------------------\n");
 }
 
 void expire_all_dns_records()
@@ -501,6 +539,11 @@ void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr)
 
     /* Delete all domain assets */
     while (asset != NULL) {
+        /* Print the asset before we expires if it
+         * has been updated since it last was printed */
+        if (asset->last_seen > asset->last_print) {
+            print_passet(asset, pdnsr);
+        }
         tmp_asset = asset;
         asset = asset->next;
         delete_dns_asset(&pdnsr->passet, tmp_asset);
@@ -525,6 +568,7 @@ void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr)
     free(pdnsr->qname);
     free(pdnsr);
     pdnsr = NULL;
+    config.dns_records--;
 }
 
 void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
@@ -535,6 +579,11 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
 
     while ( passet != NULL ) {
         if (passet->last_seen <= expire_t) {
+            /* Print the asset before we expires if it
+             * has been updated since it last was printed */
+            if (passet->last_seen > passet->last_print) {
+                print_passet(passet, pdnsr);
+            }
             /* Remove the asset from the linked list */
             if (passet->prev)
                 passet->prev->next = passet->next;
@@ -596,6 +645,6 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
     free(passet->answer);
     free(passet);
     passet = NULL;
-    return;
+    config.dns_assets--;
 }
 
