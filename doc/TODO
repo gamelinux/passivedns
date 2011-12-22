@@ -15,3 +15,5 @@
 * Adding abuility for custom output formating 
 
 
+### Evaluate:
+      DNAME, MX, NAPTR, NS, RP, SOA, SRV, TXT
