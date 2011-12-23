@@ -477,6 +477,8 @@ typedef struct _globalconfig {
     uint8_t      ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
     uint8_t      cof;                    /* Flags for other; icmp,udp,other,.... */
     uint32_t     payload;                /* dump how much of the payload ?  */
+    uint32_t     curcxt;
+    uint32_t     llcxt;
     uint64_t     mem_limit_max;          /* Try soft limit memory use */
     uint64_t     mem_limit_size;         /* Current memory size */
     uint32_t     dns_records;            /* total number of DNS records in memory */

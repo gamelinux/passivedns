@@ -435,8 +435,8 @@ connection *cxt_new(packetinfo *pi)
 
     cxt->af = pi->af;
     if(pi->tcph) cxt->s_tcpFlags |= pi->tcph->t_flags;
-    cxt->s_total_bytes = pi->packet_bytes;
-    cxt->s_total_pkts = 1;
+    //cxt->s_total_bytes = pi->packet_bytes;
+    //cxt->s_total_pkts = 1;
     cxt->start_time = pi->pheader->ts.tv_sec;
     cxt->last_pkt_time = pi->pheader->ts.tv_sec;
 
@@ -458,6 +458,7 @@ connection *cxt_new(packetinfo *pi)
     cxt->c_asset = NULL;
     cxt->s_asset = NULL;
     cxt->reversed = 0;
+    config.curcxt++;
 
     return cxt;
 }
@@ -504,10 +505,12 @@ void end_all_sessions()
 {
     connection *cxt;
     int cxkey;
+    config.llcxt = 0;
 
     for (cxkey = 0; cxkey < BUCKET_SIZE; cxkey++) {
         cxt = bucket[cxkey];
         while (cxt != NULL) {
+            config.llcxt++;
             if (cxt->prev)
                 cxt->prev->next = cxt->next;
             if (cxt->next)
@@ -521,6 +524,8 @@ void end_all_sessions()
             }
         }
     }
+    dlog("Current CXT: %10u\n", config.curcxt);
+    dlog("CXT in List: %10u\n", config.llcxt);
 }
 
 void end_sessions()
@@ -528,15 +533,16 @@ void end_sessions()
     connection *cxt;
     time_t check_time;
     check_time = config.tstamp;
+    //time(&check_time);
     int ended, expired = 0;
-    uint32_t curcxt = 0;
+    config.llcxt = 0;
 
     int iter;
     for (iter = 0; iter < BUCKET_SIZE; iter++) {
         cxt = bucket[iter];
         while (cxt != NULL) {
             ended = 0;
-            curcxt++;
+            config.llcxt++;
             /* TCP */
             if (cxt->proto == IP_PROTO_TCP) {
                 /* * FIN from both sides */
@@ -581,18 +587,18 @@ void end_sessions()
                 ended = expired = 0;
 
                 cxt = cxt->next;
-                //cxt = cxt->prev;
 
                 del_connection(tmp, &bucket[iter]);
-                if (cxt == NULL) {
+                if (cxt->prev == NULL && cxt->next == NULL && cxt == NULL) {
                     bucket[iter] = NULL;
                 }
             } else {
                 cxt = cxt->next;
-                //cxt = cxt->prev;
             }
         }
     }
+    dlog("Current CXT: %10u\n", config.curcxt);
+    dlog("CXT in List: %10u\n", config.llcxt);
 }
 
 void del_connection(connection * cxt, connection ** bucket_ptr)
@@ -618,6 +624,7 @@ void del_connection(connection * cxt, connection ** bucket_ptr)
     // Free and set to NULL 
     free(cxt);
     cxt = NULL;
+    config.curcxt--;
 }
 
 const char *u_ntop_src(packetinfo *pi, char *dest)
