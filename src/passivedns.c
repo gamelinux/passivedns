@@ -42,7 +42,6 @@
 #include <errno.h>
 #include <ctype.h>
 #include "passivedns.h"
-//#include "dump_dns.h"
 #include "dns.h"
 
 #ifndef CONFDIR

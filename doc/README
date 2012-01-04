@@ -13,9 +13,6 @@
 # passivedns
 root@localhost: ./passivedns -i eth1 -l /var/log/passivedns.log
 
-
-
-
 # pdns2db.pl
 root@localhost: apt-get install libdatetime-perl
 
@@ -29,4 +26,12 @@ mysql> CREATE DATABASE pdns;
 Then you need to start up pdns2db.pl
 
 root@localhost: perl pdns2db.pl --file /var/log/passivedns.log
+
+# Old School archiving of passivedns.log
+# While passivedns is running;
+$ mkdir /var/log/passivedns-archive/
+$ mv /var/log/passivedns.log /var/log/passivedns-archive/
+$ gzip -S ".`date +%s`.gz" /var/log/passivedns-archive/passivedns.log 
+# Searching
+$ zgrep "gamelinux.org" /var/log/passivedns-archive/*
 
