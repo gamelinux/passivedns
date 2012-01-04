@@ -32,7 +32,7 @@ use DBI;
 
 =head1 VERSION
 
-0.1
+0.2
 
 =head1 SYNOPSIS
 
@@ -41,6 +41,7 @@ use DBI;
  OPTIONS:
 
  --file         : set the file to monitor for passivedns entries
+ --batch        : process a file and exit when done
  --daemon       : enables daemon mode
  --debug        : enable debug messages (default: 0 (disabled))
  --help         : this help message
@@ -63,9 +64,11 @@ our $DB_PASSWORD   = "pdns";
 our $DBI           = "DBI:mysql:$DB_NAME:$DB_HOST:$DB_PORT";
 our $TABLE_NAME    = "pdns";
 our $AUTOCOMMIT    = 0;
+our $BATCH         = 0;
 
 GetOptions(
    'file=s'         => \$PDNSFILE,
+   'batch'          => \$BATCH,
    'debug=s'        => \$DEBUG,
    'daemon'         => \$DAEMON,
 );
@@ -157,6 +160,10 @@ sub file_watch {
       parseLogfile ($logfile, $pos, $startsize);
       $pos = $startsize;
 
+      if ($BATCH == 1) {
+         print "[*] Processing of $logfile is done, exiting!\n";
+         exit 0;
+      }
       sleep $TIMEOUT;
    }
 }
