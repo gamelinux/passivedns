@@ -194,8 +194,10 @@ sub put_dns_to_db {
     my $tsl = $ts;
     my $ttl = 0;    
 
-    $query  =~ s/^(.*)\.$/$1/;
-    $answer =~ s/^(.*)\.$/$1/;
+    $query  =~ s/^(.*)\.$/$1/; # Strip trailing dot
+    $answer =~ s/^(.*)\.$/$1/; # Strip trailing dot
+    $query  =~ s/(')/\\$1/g; # Wash "user-input" for non-friendly sql chars
+    $answer =~ s/(')/\\$1/g; # Wash "user-input" for non-friendly sql chars
 
     my ($sql, $sth);
 
