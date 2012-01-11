@@ -79,6 +79,7 @@ int connection_tracking(packetinfo *pi);
 connection *cxt_new(packetinfo *pi);
 void del_connection(connection *, connection **);
 void print_pdns_stats();
+void free_config();
 
 //void dump_payload(const uint8_t* data,uint16_t dlen);
 void game_over ();
@@ -941,12 +942,26 @@ void game_over()
         if (config.handle != NULL) pcap_close(config.handle);
         expire_all_dns_records();
         end_all_sessions();
-        //free_config();
+        free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
     }
     config.intr_flag |= INTERRUPT_END;
 }
+
+void free_config()
+{
+    if (config.cfilter.bf_insns != NULL) free (config.cfilter.bf_insns);
+// Grr - no nice way to tell if the settings comes from configfile or not :/
+    //if (config.pidfile != NULL) free(config.pidfile);
+    if (config.user_name != NULL) free(config.user_name);
+    if (config.group_name != NULL) free(config.group_name);
+    //if (config.bpff != NULL) free(config.bpff);
+    //if (config.dev != NULL) free(config.dev);
+    if (config.pcap_file != NULL) free(config.pcap_file);
+    //if (config.logfile != NULL) free(config.logfile);
+}
+
 
 void print_pdns_stats()
 {
