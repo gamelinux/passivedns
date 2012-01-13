@@ -447,8 +447,8 @@ void print_passet(pdns_asset *p, pdns_record *l) {
             break;
     }
 
-    fprintf(fd,"||%s\n", p->answer);
-    //fprintf(fd,"||%s||%u\n", p->answer,p->rr->_ttl); // Do we want TTL ?
+    //fprintf(fd,"||%s\n", p->answer);
+    fprintf(fd,"||%s||%u\n", p->answer,p->rr->_ttl); // Do we want TTL ?
     fclose(fd);
 
     p->last_print = p->last_seen;

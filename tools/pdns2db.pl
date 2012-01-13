@@ -178,7 +178,7 @@ sub parseLogfile {
        my $line =<LOGFILE>;
        chomp ($line);
        my @elements = split/\|\|/,$line;
-       unless(@elements == 7) {
+       unless(@elements == 8) {
             warn "[*] Error: Not valid Nr. of args in format: '$fname'";
             next LINE;
        }
@@ -188,11 +188,10 @@ sub parseLogfile {
 }
 
 sub put_dns_to_db {
-    # 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.
-    # 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||A||193.104.215.61
-    my ($ts, $cip, $sip, $rr, $query, $type, $answer) = @_;
+    # 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.||3600
+    # 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||A||193.104.215.61||600
+    my ($ts, $cip, $sip, $rr, $query, $type, $answer, $ttl) = @_;
     my $tsl = $ts;
-    my $ttl = 0;    
 
     $query  =~ s/^(.*)\.$/$1/; # Strip trailing dot
     $answer =~ s/^(.*)\.$/$1/; # Strip trailing dot
