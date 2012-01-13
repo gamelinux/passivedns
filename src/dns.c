@@ -150,7 +150,7 @@ archive_lname_list(packetinfo   *pi,
         ldns_rr       *rr;
         ldns_rdf      *rname;
         unsigned char *rname_str = 0;
-        int            data_offset = 0;
+        int            data_offset = -1;
 
         ldns_buffer_clear(buf);
 
@@ -177,11 +177,54 @@ archive_lname_list(packetinfo   *pi,
             /* at the moment, we only really care about
              * rr's that have an addr or cname for the rname. */
             case LDNS_RR_TYPE_AAAA:
+                if (config.dnsf & DNS_CHK_AAAA)
+                    data_offset = 0;
+                break; 
             case LDNS_RR_TYPE_A:
-            case LDNS_RR_TYPE_PTR:
-            case LDNS_RR_TYPE_CNAME:
-                data_offset = 0;
+                if (config.dnsf & DNS_CHK_A)
+                    data_offset = 0;
                 break;
+            case LDNS_RR_TYPE_PTR:
+                if (config.dnsf & DNS_CHK_PTR)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_CNAME:
+                if (config.dnsf & DNS_CHK_CNAME)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_DNAME:
+                if (config.dnsf & DNS_CHK_DNAME)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_NAPTR:
+                if (config.dnsf & DNS_CHK_NAPTR)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_RP:
+                if (config.dnsf & DNS_CHK_RP)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_SRV:
+                if (config.dnsf & DNS_CHK_SRV)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_TXT:
+                if (config.dnsf & DNS_CHK_TXT)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_SOA:
+                if (config.dnsf & DNS_CHK_SOA)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_MX:
+                if (config.dnsf & DNS_CHK_MX)
+                    data_offset = 0;
+                break;
+            case LDNS_RR_TYPE_NS:
+                if (config.dnsf & DNS_CHK_NS)
+                    data_offset = 0;
+                break;
+
             default:
                 data_offset = -1;
                 break;
@@ -374,6 +417,30 @@ void print_passet(pdns_asset *p, pdns_record *l) {
              break;
         case LDNS_RR_TYPE_CNAME:
              fprintf(fd,"CNAME");
+             break;
+        case LDNS_RR_TYPE_DNAME:
+             fprintf(fd,"DNAME");
+             break;
+        case LDNS_RR_TYPE_NAPTR:
+             fprintf(fd,"NAPTR");
+             break;
+        case LDNS_RR_TYPE_RP:
+             fprintf(fd,"RP");
+             break;
+        case LDNS_RR_TYPE_SRV:
+             fprintf(fd,"SRV");
+             break;
+        case LDNS_RR_TYPE_TXT:
+             fprintf(fd,"TXT");
+             break;
+        case LDNS_RR_TYPE_SOA:
+             fprintf(fd,"SOA");
+             break;
+        case LDNS_RR_TYPE_NS:
+             fprintf(fd,"NS");
+             break;
+        case LDNS_RR_TYPE_MX:
+             fprintf(fd,"MX");
              break;
         default:
             fprintf(fd,"%d",p->rr->_rr_type);
@@ -648,3 +715,85 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
     config.dns_assets--;
 }
 
+void parse_dns_flags (char *args)
+{
+    int i   = 0;
+    int ok  = 0;
+    int len = 0;
+    uint8_t tmpf;
+
+    tmpf = config.dnsf; 
+    len = strlen(args);
+
+    if (len == 0) {
+        plog("[W] No flags are specified!\n");
+        plog("[*] Continuing with default flags...\n");
+        return;
+    }
+
+    config.dnsf = 0;
+
+    for (i = 0; i < len; i++){
+        switch(args[i]) {
+            case '4': // A
+               config.dnsf |= DNS_CHK_A; 
+               ok++;
+               break;
+            case '6': // AAAA
+               config.dnsf |= DNS_CHK_AAAA;
+               ok++;
+               break;
+            case 'P': // PTR
+               config.dnsf |= DNS_CHK_PTR;
+               ok++;
+               break;
+            case 'C': // CNAME
+               config.dnsf |= DNS_CHK_CNAME;
+               ok++;
+               break;
+            case 'D': // DNAME
+               config.dnsf |= DNS_CHK_DNAME;
+               ok++;
+               break;
+            case 'N': // NAPTR
+               config.dnsf |= DNS_CHK_NAPTR;
+               ok++;
+               break;
+            case 'R': // RP
+               config.dnsf |= DNS_CHK_RP;
+               ok++;
+               break;
+            case 'S': // SRV
+               config.dnsf |= DNS_CHK_SRV;
+               ok++;
+               break;
+            case 'T': // TXT
+               config.dnsf |= DNS_CHK_TXT;
+               ok++;
+               break;
+            case 'O': // SOA
+               config.dnsf |= DNS_CHK_SOA;
+               ok++;
+               break;
+            case 'M': // MX
+               config.dnsf |= DNS_CHK_MX;
+               ok++;
+               break;
+            case 'n': // NS
+               config.dnsf |= DNS_CHK_NS;
+               ok++;
+               break;
+            case '\0':
+               dlog("[W] Bad DNS flag - ending flag checks!\n");
+               ok = 0;
+               continue;
+            default:
+               plog("[*] Unknown DNS flag '%c'\n",args[i]);
+               break;
+        }
+    }
+    if (ok == 0) {
+        plog("[W] No valid flags parsed, continuing with defaults.\n");
+        config.dnsf = tmpf;
+    }
+}

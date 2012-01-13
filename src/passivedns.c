@@ -538,6 +538,8 @@ void end_sessions()
     config.llcxt = 0;
 
     int iter;
+plog("A\n");
+
     for (iter = 0; iter < BUCKET_SIZE; iter++) {
         cxt = bucket[iter];
         while (cxt != NULL) {
@@ -563,6 +565,7 @@ void end_sessions()
             else if (cxt->proto == IP_PROTO_UDP
                      && (check_time - cxt->last_pkt_time) > 60) {
                 expired = 1;
+plog("B\n");
             }
             /* ICMP */
             else if (cxt->proto == IP_PROTO_ICMP
@@ -589,9 +592,9 @@ void end_sessions()
                 cxt = cxt->next;
 
                 del_connection(tmp, &bucket[iter]);
-                if (cxt->prev == NULL && cxt->next == NULL && cxt == NULL) {
-                    bucket[iter] = NULL;
-                }
+                //if (cxt->prev == NULL && cxt->next == NULL && cxt == NULL) {
+                //    bucket[iter] = NULL;
+                //}
             } else {
                 cxt = cxt->next;
             }
@@ -975,8 +978,11 @@ void print_pdns_stats()
 
 void usage()
 {
+    olog("\n");
     olog("USAGE:\n");
-    olog(" $ passivedns [options]\n");
+    olog(" $ passivedns [options]\n\n");
+    olog(" passivedns version %s\n",VERSION);
+    olog(" %s\n", pcap_lib_version());
     olog("\n");
     olog(" OPTIONS:\n");
     olog("\n");
@@ -988,8 +994,14 @@ void usage()
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default %u).\n",DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n",DNSPRINTTIME);
+    olog(" -X <flags>      Manually set DNS RR Types to care about(Default -X 46CDNPRS).\n");
     olog(" -D              Run as daemon.\n");
     olog(" -h              This help message.\n\n");
+    olog(" FLAGS:\n");
+    olog("\n");
+    olog("  4:A    6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA\n");
+    olog("  P:PTR  R:RP    S:SRV    T:TXT    M:MX     n:NS\n");
+    olog("\n");
 }
 
 extern int optind, opterr, optopt; // getopt()
@@ -1011,13 +1023,26 @@ int main(int argc, char *argv[])
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
     config.dnsprinttime = DNSPRINTTIME;
     config.dnscachetimeout =  DNSCACHETIMEOUT;
+    config.dnsf = 0;
+    config.dnsf |= DNS_CHK_A;
+    config.dnsf |= DNS_CHK_AAAA;
+    config.dnsf |= DNS_CHK_PTR;
+    config.dnsf |= DNS_CHK_CNAME;
+    config.dnsf |= DNS_CHK_DNAME;
+    config.dnsf |= DNS_CHK_NAPTR;
+    config.dnsf |= DNS_CHK_RP;
+    config.dnsf |= DNS_CHK_SRV;
+//    config.dnsf |= DNS_CHK_TXT;
+//    config.dnsf |= DNS_CHK_SOA;
+//    config.dnsf |= DNS_CHK_NS;
+//    config.dnsf |= DNS_CHK_MX;
 
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
 
-#define ARGS "i:r:l:hb:Dp:C:P:S:"
+#define ARGS "i:r:l:hb:Dp:C:P:S:X:"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1044,6 +1069,9 @@ int main(int argc, char *argv[])
             break;
         case 'S':
             config.mem_limit_max = (strtol(optarg, NULL, 0) * 1024 * 1024);
+            break;
+        case 'X':
+            parse_dns_flags(optarg);
             break;
         case 'D':
             daemon = 1;

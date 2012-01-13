@@ -3,6 +3,20 @@ void expire_dns_records();
 void expire_all_dns_records();
 void update_config_mem_counters();
 
+/* Default flags for types to handle */
+#define DNS_CHK_AAAA       0x0001
+#define DNS_CHK_A          0x0002
+#define DNS_CHK_PTR        0x0004
+#define DNS_CHK_CNAME      0x0008
+#define DNS_CHK_DNAME      0x0010
+#define DNS_CHK_NAPTR      0x0020
+#define DNS_CHK_RP         0x0040
+#define DNS_CHK_SRV        0x0080
+#define DNS_CHK_TXT        0x0100
+#define DNS_CHK_SOA        0x0200
+#define DNS_CHK_MX         0x0400
+#define DNS_CHK_NS         0x0800
+
 /* To avoid spaming the logfile with duplicate dns info 
  * we only print a dns record one time each 24H. This way
  * you will get a last seen timestamp update once a day
