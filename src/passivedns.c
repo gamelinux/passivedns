@@ -592,9 +592,9 @@ plog("B\n");
                 cxt = cxt->next;
 
                 del_connection(tmp, &bucket[iter]);
-                //if (cxt->prev == NULL && cxt->next == NULL && cxt == NULL) {
-                //    bucket[iter] = NULL;
-                //}
+                if (cxt->prev == NULL && cxt->next == NULL && cxt == NULL) {
+                    bucket[iter] = NULL;
+                }
             } else {
                 cxt = cxt->next;
             }
