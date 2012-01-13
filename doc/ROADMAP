@@ -1,0 +1,47 @@
+# Version 2.0.0
+   == Production ready and stable ==
+ - Customizable output of fields
+
+# Version 1.5.0
+   == Production ready and stable ==
+ - Reads passivedns.log file on startup
+   populating the cache with objects seen
+   less than cache-timeout.
+
+# Version 1.0.0
+   == Production ready and stable ==
+ - Tested/protected for:
+   * hardening:
+     - spoofing
+     - poisoning
+     - other
+   * evation ?
+   * flooding ?
+   * BOF (fuzz the crap out of it)
+
+# Version 0.5.0 
+   == Production ready and stable ==
+ - support specifying RR types via switch:
+     A, AAAA, PTR, CNAME, DNAME, NAPTR,
+     RP, SRV, TXT, SOA, MX and NS
+ - soft emory limiting for caching of DNS objects
+ - cmdline switch for specifying print-time
+ - cmdline switch for specifying cache-time
+ - cmdline for chroot
+ - cmdline for drop privs
+ - cmdline for specifying log file 
+ - sniff traffic from an interface
+ - process pcap files
+ - cmdline for specifying BPF filter
+ - cmdline for specifying pidfile
+ - daemon mode
+ - some stats when exiting
+   * max concurrent records cached
+   * max concurrent sessions (cxt)
+   * max session memory usage (cxt)
+ - output fields:
+   timestamp||dns-client||dns-server||RR class||Query||Query Type||Answer||TTL
+
+
+
+

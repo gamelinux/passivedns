@@ -12,15 +12,15 @@ and general digital forensics.
 
 PassiveDNS sniffes the interface or reads a pcap-file and outputs the DNS-server answers.
 
-Example output from version 0.2.0 in the log file (/var/log/passivedns.log):
+Example output from version 0.2.8 in the log file (/var/log/passivedns.log):
 
-#timestamp||dns-client ||dns-server||RR class||Query||Query Type||Answer
-1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||CNAME||yt-video-upload.l.google.com.
-1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||A||74.125.43.117
-1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||A||74.125.43.116
-1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.
-1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||A||193.104.215.61
-1322849924||192.168.1.1||81.167.36.3||IN||i1.ytimg.com.||CNAME||ytimg.l.google.com.
-1322849924||192.168.1.1||8.8.8.8||IN||clients1.google.com.||A||173.194.32.3
+#timestamp||dns-client ||dns-server||RR class||Query||Query Type||Answer||TTL
+1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||CNAME||yt-video-upload.l.google.com.||420447
+1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||A||74.125.43.117||46587
+1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||A||74.125.43.116||420509
+1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.||43200
+1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||A||193.104.215.61||43200
+1322849924||192.168.1.1||81.167.36.3||IN||i1.ytimg.com.||CNAME||ytimg.l.google.com.||43200
+1322849924||192.168.1.1||8.8.8.8||IN||clients1.google.com.||A||173.194.32.3||43200
 
 
