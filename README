@@ -7,10 +7,13 @@
 #
 #
 
-A tool to collect DNS records passively to aid Incident handling, Network Security Monitoring
-and general digital forensics.
+A tool to collect DNS records passively to aid Incident handling, Network
+Security Monitoring (NSM) and general digital forensics.
 
-PassiveDNS sniffes the interface or reads a pcap-file and outputs the DNS-server answers.
+PassiveDNS sniffes traffic from an interface or reads a pcap-file and outputs
+the DNS-server answers to a log file. PassiveDNS can cache/aggregate duplicate
+DNS answers in-memory, limiting the amount of data in the logfile without
+loosing the essens in the DNS answer.
 
 Example output from version 0.2.8 in the log file (/var/log/passivedns.log):
 
@@ -24,3 +27,64 @@ Example output from version 0.2.8 in the log file (/var/log/passivedns.log):
 1322849924||192.168.1.1||8.8.8.8||IN||clients1.google.com.||A||173.194.32.3||43200
 
 
+** How can PassiveDNS be used: **
+
+Typical usages:
+
+1) Search for domain or IP history when working on an incident.
+   Example:
+   Company has malware talking to bad.twittertoday.com.
+   At current time, the domain is resolving to say 202.29.94.200
+   You search your Flowdata and find the clients talking to that IP and
+   remidate. You look at the Flowdata, and you discover that the date
+   and time the clients first talked to that IP, and concludes that as
+   the time of infection...
+
+   But using PassiveDNS data, quering the domain, you get following history:
+
+ FirstSeen  | LastSeen   | TYPE | TTL |        Query         |   Answer
+----------------------------------------------------------------------------
+ 2011-12-01 | 2011-12-11 |    A |  60 | bad.twittertoday.com |  71.51.115.11
+ 2011-12-11 | 2011-12-18 |    A |  60 | bad.twittertoday.com |     127.0.0.1
+ 2011-12-18 | 2012-01-14 |    A |  60 | bad.twittertoday.com | 202.29.94.200
+
+   Going back and searching for 71.51.115.11 in your Flowdata, you find
+   traffic back to the FirstSeen data, and you also see more clients
+   initially infected (so you did not manage to remidate/check out all your
+   clients in the first run by just looking at IP 202.29.94.200). Doing
+   forensics on the the clients you missed in the first run, reveals that
+   they have downloaded a different malware and deleted the initial one,
+   that beeing the reason you did not see flows from them to 202.29.94.200.
+   The new malware gives you new domains and IPs to go look for...
+
+2) Say you have an indication of malicious C&C traffic going to an IP on
+   port 80. The domain used by the alleged malware is supposed to be
+   cc.twittertoday.com. Searching you Flowdata, reveals lots of clients
+   talking to that IP, and you might think that the whole company is p0wned.
+   A quick search in your PassiveDNS DB shows you that the IP in question is
+   also hosting 300 + websites and you might even spot a website hosted on
+   that IP that you are familiar with and that you know lots of people in the
+   company would legit visit daily.
+   Searching your PassiveDNS DB gives you no hits for the domain in question,
+   hopefully meaning that you dont have that malware talking to that domain
+   in your network.
+
+3) You know that *.twittertoday.com are often used in malware and the
+   subdomains change randomly. Many have rules for such domains in their
+   IDS/IPS, sucking up unnecessary juice from the systems. Having a script
+   pre-loaded with a list of regexp of domains and subdomains to watch for
+   and giving you an alert when they hit will give you much better detection
+   on threat based on domains.
+
+   You can also do a whois for all new top domains seen, correlate the whois
+   info with a list of know bad info, such as the name of the person or
+   company that has registered the domain, telephone/fax numbers, address
+   and so on, ending up with a score that might be high enough for triggering
+   an alert to you :)
+
+
+Questions, suggestions, sugar or flame is always welcome :)
+
+I hope PassiveDNS gives you a new tool to fight malware and its herders...
+
+(c)2011-2012  -  Edward Bjarte Fjellskål
