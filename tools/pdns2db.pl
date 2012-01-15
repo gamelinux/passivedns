@@ -26,13 +26,15 @@ use DateTime;
 use Getopt::Long qw/:config auto_version auto_help/;
 use DBI;
 
+#use Data::Dumper;
+
 =head1 NAME
 
  pdns2db.pl - Load passive DNS data from passivedns into a DB
 
 =head1 VERSION
 
-0.2
+0.3
 
 =head1 SYNOPSIS
 
@@ -40,38 +42,76 @@ use DBI;
 
  OPTIONS:
 
- --file         : set the file to monitor for passivedns entries
- --batch        : process a file and exit when done
- --daemon       : enables daemon mode
- --debug        : enable debug messages (default: 0 (disabled))
- --help         : this help message
- --version      : show pdns2db.pl version
+ --file <file>          : set the file to monitor for passivedns entries (/var/log/passivedns.log)
+ --batch                : process a file and exit when done
+ --skiplist <file>      : file with a list of domains to skip DB insertion
+ --whitelist <file>     : file with a list of domains to not check for in blacklist
+ --blacklist <file>     : file with a list of domains to alert on
+ --skiplist-pcre <file> : file with regexp list of domains to skip DB insertion
+ --whitelist-pcre <file>: file with regexp list of domains to not check for in blacklist
+ --blacklist-pcre <file>: file with regexp list of domains to alert on
+ --alertlog <file>      : file to log alerts to (/var/log/passivedns-alert.log)
+ --daemon               : enables daemon mode
+ --verbose              : enables some verboseness
+ --debug <int>          : enable debug messages (default: 0 (disabled))
+ --help                 : this help message
+ --version              : show pdns2db.pl version
 
 =cut
 
-our $VERSION       = 0.1;
+our $VERSION       = 0.3;
 our $DEBUG         = 0;
+our $VERBOSE       = 0;
 our $DAEMON        = 0;
 our $TIMEOUT       = 1;
-my  $PDNSFILE      = "/var/log/passivedns.log";
+my  $PDNSFILE      = q(/var/log/passivedns.log);
 my  $LOGFILE       = q(/var/log/passivedns-run.log);
+my  $ALERTLOG      = q(/var/log/passivedns-alert.log);
 my  $PIDFILE       = q(/var/run/pdns2db.pid);
 our $DB_NAME       = "pdns";
 our $DB_HOST       = "127.0.0.1";
 our $DB_PORT       = "3306";
 our $DB_USERNAME   = "pdns";
-our $DB_PASSWORD   = "pdns";
+our $DB_PASSWORD   = "123pdns111";
 our $DBI           = "DBI:mysql:$DB_NAME:$DB_HOST:$DB_PORT";
 our $TABLE_NAME    = "pdns";
 our $AUTOCOMMIT    = 0;
 our $BATCH         = 0;
+my $DOMAIN_BLACKLIST_FILE       = undef;
+my $DOMAIN_BLACKLIST_FILE_PCRE  = undef;
+my $DOMAIN_WHITELIST_FILE       = undef;
+my $DOMAIN_WHITELIST_FILE_PCRE  = undef;
+my $DOMAIN_DBSKIPLIST_FILE      = undef;
+my $DOMAIN_DBSKIPLIST_FILE_PCRE = undef;
 
 GetOptions(
-   'file=s'         => \$PDNSFILE,
-   'batch'          => \$BATCH,
-   'debug=s'        => \$DEBUG,
-   'daemon'         => \$DAEMON,
+   'file=s'           => \$PDNSFILE,
+   'skiplist=s'       => \$DOMAIN_DBSKIPLIST_FILE,
+   'skiplist-pcre=s'  => \$DOMAIN_DBSKIPLIST_FILE_PCRE,
+   'whitelist=s'      => \$DOMAIN_WHITELIST_FILE,
+   'whitelist-pcre=s' => \$DOMAIN_WHITELIST_FILE_PCRE,
+   'blacklist=s'      => \$DOMAIN_BLACKLIST_FILE,
+   'blacklist-pcre=s' => \$DOMAIN_BLACKLIST_FILE_PCRE,
+   'alertlog=s'       => \$ALERTLOG,
+   'batch'            => \$BATCH,
+   'debug=s'          => \$DEBUG,
+   'daemon'           => \$DAEMON,
 );
+
+our $HASH_BLACKLIST = {};
+our $HASH_WHITELIST = {};
+our $HASH_DBSKIPLIST= {};
+$HASH_BLACKLIST->{'pcre'}    = [load_domain_list_pcre($DOMAIN_BLACKLIST_FILE_PCRE)]  if $DOMAIN_BLACKLIST_FILE_PCRE;
+$HASH_BLACKLIST->{'static'}  = load_domain_list_static($DOMAIN_BLACKLIST_FILE)       if $DOMAIN_BLACKLIST_FILE;
+$HASH_WHITELIST->{'pcre'}    = [load_domain_list_pcre($DOMAIN_WHITELIST_FILE_PCRE)]  if $DOMAIN_WHITELIST_FILE_PCRE;
+$HASH_WHITELIST->{'static'}  = load_domain_list_static($DOMAIN_WHITELIST_FILE)       if $DOMAIN_WHITELIST_FILE;
+$HASH_DBSKIPLIST->{'pcre'}   = [load_domain_list_pcre($DOMAIN_DBSKIPLIST_FILE_PCRE)] if $DOMAIN_DBSKIPLIST_FILE_PCRE;
+$HASH_DBSKIPLIST->{'static'} = load_domain_list_static($DOMAIN_DBSKIPLIST_FILE)      if $DOMAIN_DBSKIPLIST_FILE;
+
+if (($HASH_WHITELIST) && (not $HASH_BLACKLIST)){
+    warn "[W] Whitelist without Blacklist does not make sens!\n";
+    $HASH_WHITELIST = undef; 
+}
 
 # Signal handlers
 use vars qw(%sources);
@@ -177,11 +217,35 @@ sub parseLogfile {
     while (tell (LOGFILE) < $stop) {
        my $line =<LOGFILE>;
        chomp ($line);
+       my $wret = 0;
+       my $bret = 0;
+       my $sret = 0;
+
        my @elements = split/\|\|/,$line;
        unless(@elements == 8) {
-            warn "[*] Error: Not valid Nr. of args in format: '$fname'";
+            warn "[W] Not valid Nr. of args in format: '$fname'";
             next LINE;
        }
+
+       my ($ts, $cip, $sip, $rr, $query, $type, $answer, $ttl) = @elements;
+       $query  =~ s/^(.*)\.$/$1/;
+       $answer =~ s/^(.*)\.$/$1/;
+
+       if (($HASH_DBSKIPLIST) && ($sret = match_domain($query, $answer, $HASH_DBSKIPLIST))) {
+           print "[*] Domain marked to skip DB insertion: $query or $answer\n" if $VERBOSE;
+           next LINE;
+       } elsif (($HASH_WHITELIST) && ($HASH_BLACKLIST) &&($wret = match_domain($query, $answer, $HASH_WHITELIST))) {
+           print "[*] Whitelisted domain: $query or $answer\n" if $VERBOSE;
+       } elsif (($HASH_BLACKLIST) && ($bret = match_domain($query, $answer, $HASH_BLACKLIST))) {
+           print "[*] Blacklisted domain: $query or $answer\n" if $VERBOSE;
+           if (open (ALOG, ">> $ALERTLOG") ) {
+               print ALOG $line, "\n";
+               close (ALOG);
+           } else {
+               warn "[W] Problems with open($ALERTLOG): $!\n";
+           }
+       }
+
        put_dns_to_db(@elements);
     }
     close(LOGFILE);
@@ -208,7 +272,7 @@ sub put_dns_to_db {
                '$query','$rr','$type','$answer','$ttl',FROM_UNIXTIME($ts),FROM_UNIXTIME($tsl)
              ) ON DUPLICATE KEY UPDATE LAST_SEEN=FROM_UNIXTIME($ts), TTL = '$ttl'
              ];
-      warn "$sql\n" if $DEBUG;
+      warn "[D] $sql\n" if $DEBUG > 1;
       $sth = $dbh->prepare($sql);
       $sth->execute;
       $sth->finish;
@@ -276,12 +340,110 @@ sub checkif_table_exist {
        $dbh->do($sql);
     };
     if ($dbh->err) {
-       warn "[W] Table $tablename does not exist.\n" if $DEBUG;
+       warn "[D] Table $tablename does not exist.\n" if $DEBUG;
        return 0;
     }
     else{
        return 1;
     }
+}
+
+=head2 load_domain_list
+
+ Loads domains from file
+
+ File format:
+ <domain written in regexp>
+
+ Example:
+  ^news\..*daily\.com$
+
+=cut
+
+sub load_domain_list_pcre {
+    my $file = shift;
+    my %signatures;
+    my $cnt = 0;
+
+    open(my $FH, "<", $file) or die "[E] Could not open '$file': $!";
+
+    LINE:
+    while (my $line = readline $FH) {
+        chomp $line;
+        $line =~ s/\#.*//;
+        next LINE unless($line); # empty line
+        # One should check for a more or less sane signature file.
+
+        print "[D] $line\n" if $DEBUG;
+        $signatures{$line} = [qr{$line}];
+        $cnt++;
+    }
+    print "[D] Loaded $cnt domains\n" if $DEBUG;
+
+    return map { $signatures{$_} }
+            sort { length $b <=> length $a }
+             keys %signatures;
+}
+
+sub load_domain_list_static {
+    my $file = shift;
+    my $signatures = {};
+    my $cnt = 0;
+
+    open(my $FH, "<", $file) or die "[E] Could not open '$file': $!";
+
+    LINE:
+    while (my $line = readline $FH) {
+        chomp $line;
+        $line =~ s/\#.*//;
+        next LINE unless($line); # empty line
+        # One should check for a more or less sane signature file.
+
+        print "[D] $line\n" if $DEBUG;
+        $signatures->{"$line"} = 1;
+        $cnt++;
+    }
+    print "[D] Loaded $cnt static domains\n" if $DEBUG;
+
+    return $signatures;
+}
+
+=head2 match_domain
+
+ Takes input: $domain, $@domain_list_to_match_on
+ Returns 1 if found, 0 if not.
+
+=cut
+
+sub match_domain {
+    my ($query, $answer, $MHASH) = @_;
+
+    # First we should match agains "static" domain list.
+    if ($MHASH->{'static'}->{"$query"}) {
+        print "[D] Domain $query match on static query domain: $query\n" if $DEBUG;
+        return 1;
+    } elsif ($MHASH->{'static'}->{"$answer"}) {
+        print "[D] Domain $answer match on static answer domain: $answer\n" if $DEBUG;
+        return 1;
+    } else {
+        print "[D] No static match on domain: $query or $answer\n" if $DEBUG;
+    }
+
+    # Check domain against domains in expensive pcre list
+    my $CRAP = $MHASH->{'pcre'};
+    for my $s (@$CRAP) {
+        my $re = $s->[0];
+        if ($query =~ /$re/) {
+            print "[D] Domain $query match on pcre: $re\n" if $DEBUG;
+            return 1;
+        } elsif ($answer =~ /$re/) {
+            print "[D] Domain $answer match on pcre: $re\n" if $DEBUG;
+            return 1;
+        }
+    }
+
+    print "[D] No pcre match on domain: $query or $answer\n" if $DEBUG;
+    return 0;
 }
 
 =head2 game_over
