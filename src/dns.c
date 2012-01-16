@@ -715,6 +715,7 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
     free(passet->rr);
     passet->rr = NULL;
     free(passet->answer);
+    passet->answer = NULL;
     free(passet);
     passet = NULL;
     config.dns_assets--;

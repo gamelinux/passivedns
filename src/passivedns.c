@@ -664,7 +664,7 @@ void check_interrupt()
 void sig_alarm_handler()
 {
     time_t now_t;
-    //config.tstamp = time(); // config.tstamp will stand still if there is now packets
+    //config.tstamp = time(); // config.tstamp will stand still if there is no packets
     now_t = config.tstamp;
 
     dlog("[D] Got SIG ALRM: %lu\n", now_t);
