@@ -218,7 +218,7 @@ archive_lname_list(packetinfo   *pi,
                 break;
             case LDNS_RR_TYPE_MX:
                 if (config.dnsf & DNS_CHK_MX)
-                    data_offset = 0;
+                    data_offset = 1;
                 break;
             case LDNS_RR_TYPE_NS:
                 if (config.dnsf & DNS_CHK_NS)
