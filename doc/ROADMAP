@@ -24,7 +24,7 @@
  - support specifying RR types via switch:
      A, AAAA, PTR, CNAME, DNAME, NAPTR,
      RP, SRV, TXT, SOA, MX and NS
- - soft emory limiting for caching of DNS objects
+ - soft memory limiting for caching of DNS objects
  - cmdline switch for specifying print-time
  - cmdline switch for specifying cache-time
  - cmdline for chroot

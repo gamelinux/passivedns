@@ -227,10 +227,13 @@ archive_lname_list(packetinfo   *pi,
 
             default:
                 data_offset = -1;
+                dlog("[D] ldns_rr_get_type: %d\n",ldns_rr_get_type(rr));
                 break;
         }
 
         if (data_offset == -1) {
+            dlog("[D] LDNS_RR_TYPE not enabled/supported: %d\n",ldns_rr_get_type(rr));
+            //data_offset = 0;
             continue;
         }
 
@@ -245,6 +248,7 @@ archive_lname_list(packetinfo   *pi,
         rname = ldns_rr_rdf(rr, data_offset);
 
         if (rname == NULL) {
+            dlog("[D] ldns_rr_rdf for rname returned NULL\n");
             continue;
         }
 
@@ -252,9 +256,10 @@ archive_lname_list(packetinfo   *pi,
         rname_str = (unsigned char *)ldns_buffer2str(buf);
 
         if (rname_str == NULL) {
+            dlog("[D] ldns_buffer2str on rname returned NULL\n");
             continue;
         }
-        dlog("[*] rname_str:%s\n", rname_str);
+        dlog("[D] rname_str:%s\n", rname_str);
 
         // CHECK IF THE NODE HAS THE ASSOCIATED ENTRY, IF NOT ADD IT.
         associated_lookup_or_make_insert(lname_node, pi, rname_str, rr);
@@ -737,50 +742,62 @@ void parse_dns_flags (char *args)
         switch(args[i]) {
             case '4': // A
                config.dnsf |= DNS_CHK_A; 
+               dlog("[D] Enabling flag: DNS_CHK_A\n");
                ok++;
                break;
             case '6': // AAAA
                config.dnsf |= DNS_CHK_AAAA;
+               dlog("[D] Enabling flag: DNS_CHK_AAAA\n");
                ok++;
                break;
             case 'P': // PTR
                config.dnsf |= DNS_CHK_PTR;
+               dlog("[D] Enabling flag: DNS_CHK_PTR\n");
                ok++;
                break;
             case 'C': // CNAME
                config.dnsf |= DNS_CHK_CNAME;
+               dlog("[D] Enabling flag: DNS_CHK_CNAME\n");
                ok++;
                break;
             case 'D': // DNAME
                config.dnsf |= DNS_CHK_DNAME;
+               dlog("[D] Enabling flag: DNS_CHK_DNAME\n");
                ok++;
                break;
             case 'N': // NAPTR
                config.dnsf |= DNS_CHK_NAPTR;
+               dlog("[D] Enabling flag: DNS_CHK_NAPTR\n");
                ok++;
                break;
             case 'R': // RP
                config.dnsf |= DNS_CHK_RP;
+               dlog("[D] Enabling flag: DNS_CHK_RP\n");
                ok++;
                break;
             case 'S': // SRV
                config.dnsf |= DNS_CHK_SRV;
+               dlog("[D] Enabling flag: DNS_CHK_SRV\n");
                ok++;
                break;
             case 'T': // TXT
                config.dnsf |= DNS_CHK_TXT;
+               dlog("[D] Enabling flag: DNS_CHK_TXT\n");
                ok++;
                break;
             case 'O': // SOA
                config.dnsf |= DNS_CHK_SOA;
+               dlog("[D] Enabling flag: DNS_CHK_SOA\n");
                ok++;
                break;
             case 'M': // MX
                config.dnsf |= DNS_CHK_MX;
+               dlog("[D] Enabling flag: DNS_CHK_MX\n");
                ok++;
                break;
             case 'n': // NS
                config.dnsf |= DNS_CHK_NS;
+               dlog("[D] Enabling flag: DNS_CHK_NS\n");
                ok++;
                break;
             case '\0':

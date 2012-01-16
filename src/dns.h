@@ -2,6 +2,7 @@ void dns_parser (packetinfo *pi);
 void expire_dns_records();
 void expire_all_dns_records();
 void update_config_mem_counters();
+void parse_dns_flags (char *args);
 
 /* Default flags for types to handle */
 #define DNS_CHK_AAAA       0x0001

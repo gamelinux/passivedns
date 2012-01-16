@@ -538,7 +538,6 @@ void end_sessions()
     config.llcxt = 0;
 
     int iter;
-plog("A\n");
 
     for (iter = 0; iter < BUCKET_SIZE; iter++) {
         cxt = bucket[iter];
@@ -565,7 +564,6 @@ plog("A\n");
             else if (cxt->proto == IP_PROTO_UDP
                      && (check_time - cxt->last_pkt_time) > 60) {
                 expired = 1;
-plog("B\n");
             }
             /* ICMP */
             else if (cxt->proto == IP_PROTO_ICMP
@@ -651,7 +649,7 @@ const char *u_ntop_src(packetinfo *pi, char *dest)
 
 void check_interrupt()
 {
-    dlog("[D] In interrupt. Flag:%d",config.intr_flag);
+    dlog("[D] In interrupt. Flag: %d\n",config.intr_flag);
     if (ISSET_INTERRUPT_END(config)) {
         game_over();
     } else if (ISSET_INTERRUPT_SESSION(config)) {

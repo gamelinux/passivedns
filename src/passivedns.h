@@ -474,7 +474,7 @@ typedef struct _globalconfig {
     uint8_t      setfilter;
     uint8_t      drop_privs_flag;
     uint8_t      daemon_flag;
-    uint8_t      dnsf;                   /* Flags for DNS RR Type checks to do */
+    uint64_t     dnsf;                   /* Flags for DNS RR Type checks to do */
     uint8_t      ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
     uint8_t      cof;                    /* Flags for other; icmp,udp,other,.... */
     uint32_t     payload;                /* dump how much of the payload ?  */
