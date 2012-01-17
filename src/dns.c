@@ -10,8 +10,8 @@
 #include "passivedns.h"
 #include "dns.h"
 
-static int archive(packetinfo *pi, ldns_rr_list *questions, ldns_rr_list *answers, ldns_rr_list *authorities);
-static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf);
+static int archive(packetinfo *pi, ldns_pkt *decoded_dns);
+static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf, uint8_t rcode);
 void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr);
 pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
 void print_passet(pdns_asset *p, pdns_record *l);
@@ -40,9 +40,6 @@ uint64_t hash(unsigned char *str) {
 void dns_parser (packetinfo *pi) {
     ldns_status   status;
     ldns_pkt     *decoded_dns;
-    ldns_rr_list *questions;
-    ldns_rr_list *answers;
-    ldns_rr_list *authorities;
 
     status = ldns_wire2pkt(&decoded_dns,pi->payload, pi->plen);
 
@@ -54,18 +51,15 @@ void dns_parser (packetinfo *pi) {
     /* we only care about answers, no questions allowed! */
     if (ldns_pkt_qr(decoded_dns)) {
         //dns_store(dns_db, decoded_dns);
-        if (!ldns_pkt_qdcount(decoded_dns) || !ldns_pkt_ancount(decoded_dns)) {
+        if (!ldns_pkt_qdcount(decoded_dns)) { //|| !ldns_pkt_ancount(decoded_dns)) {
             /* no questions or answers */
-            dlog("[D] dns_archiver() packet did not contain answer\n");
+            dlog("[D] DNS packet did not contain a question!\n");
             ldns_pkt_free(decoded_dns);
             return;
         }
 
-        questions   = ldns_pkt_question(decoded_dns);
-        answers     = ldns_pkt_answer(decoded_dns);
-        authorities = ldns_pkt_authority(decoded_dns);
         // send it off to the linked list
-        if (archive(pi, questions, answers, authorities) < 0) {
+        if (archive(pi, decoded_dns) < 0) {
             dlog("[D] dns_archiver(): archive() returned -1\n");
         }
     }
@@ -74,23 +68,31 @@ void dns_parser (packetinfo *pi) {
 }
 
 static int
-archive(packetinfo   *pi,
-        ldns_rr_list *questions,
-        ldns_rr_list *answers,
-        ldns_rr_list *authorities)
+archive(packetinfo *pi, ldns_pkt *decoded_dns)
 {
     ldns_buffer *dns_buffer;
     int          qa_rrcount;
     int          an_rrcount;
     int          au_rrcount;
     int          i;
+    uint8_t      rcode;
+    ldns_rr_list *questions;
+    ldns_rr_list *answers;
+    ldns_rr_list *authorities;
+
+    questions   = ldns_pkt_question(decoded_dns);
+    answers     = ldns_pkt_answer(decoded_dns);
+    authorities = ldns_pkt_authority(decoded_dns);
 
     qa_rrcount = ldns_rr_list_rr_count(questions);
     an_rrcount = ldns_rr_list_rr_count(answers);
     au_rrcount = ldns_rr_list_rr_count(authorities);
+
     dns_buffer = ldns_buffer_new(LDNS_MIN_BUFLEN);
+    rcode = ldns_pkt_get_rcode(decoded_dns);
 
     dlog("[*] %d qa_rrcount\n", qa_rrcount);
+    
 
     for (i = 0; i < qa_rrcount; i++) {
         ldns_rr  *question_rr;
@@ -100,16 +102,15 @@ archive(packetinfo   *pi,
         question_rr = ldns_rr_list_rr(questions, i);
         rdf_data    = ldns_rr_owner(question_rr);
 
-        dlog("[D] archive(): rdf_data = %p\n", rdf_data);
+        dlog("[D] rdf_data = %p\n", rdf_data);
 
         /* plop all the answers into the correct archive_node_t's
          * associated_nodes hash. */
-        ret = archive_lname_list(pi, rdf_data, answers, dns_buffer);
+        ret = archive_lname_list(pi, rdf_data, answers, dns_buffer, rcode);
 
         if (ret < 0) {
             dlog("[D] archive_lname_list() returned error\n");
         }
-        /* archive_lname_list(archive_hash, rdf_data, authorities, dns_buffer); */
     }
 
     ldns_buffer_free(dns_buffer);
@@ -120,7 +121,8 @@ static int
 archive_lname_list(packetinfo   *pi,
                    ldns_rdf     *lname,
                    ldns_rr_list *list,
-                   ldns_buffer  *buf)
+                   ldns_buffer  *buf,
+                   uint8_t       rcode)
 {
     int             list_count;
     unsigned char  *lname_str = 0;
@@ -144,8 +146,43 @@ archive_lname_list(packetinfo   *pi,
         dlog("[D] ldns_buffer2str(%p) returned null\n", buf);
         return(-1);
     }
-    dlog("[D] lname_str:%s\n", lname_str);
 
+    dlog("[D] lname_str:%s\n", lname_str);
+    dlog("[D] list_count:%d\n",list_count);
+
+    if (list_count == 0 && rcode == 3) {
+        dlog("[D] NXDOMAIN\n");
+        /* PROBLEM:
+         * As there is no valid ldns_rr here and we cant fake one that will
+         * be very unique, we cant push this to the normal
+         * bucket[hash->linked_list]. We should probably allocate a static
+         * bucket[MAX_NXDOMAIN] to hold NXDOMAINS, and when that is full, pop
+         * out the oldest (LRU). A simple script quering for random non existing
+         * domains could easly put stress on passivedns (think conficker etc.)
+         * if the bucket is to big or non efficient. We would still store data
+         * such as: fistseen,lastseen,client_ip,server_ip,class,query,NXDOMAIN
+         */
+
+         /*
+         if (config.dnsf & DNS_CHK_NXDOMAIN) {
+            // CHECK IF THE NODE EXISTS, IF NOT MAKE IT - RETURN POINTER TO NODE
+            if (lname_node == NULL) {
+                dnshash = hash(lname_str);
+                dlog("[D] Hash: %lu\n", dnshash);
+                lname_node = pdnsr_lookup_or_make_new(dnshash, pi, lname_str);
+            }
+            unsigned char *rname_str = 0;
+            dlog("[D] rname_str:%s\n", rname_str);
+
+            // CHECK IF THE NODE HAS THE ASSOCIATED ENTRY, IF NOT ADD IT.
+            associated_lookup_or_make_insert(lname_node, pi, rname_str, rr);
+            free(rname_str);
+        }
+        free(lname_str);
+        return(0);
+        */
+    }
+   
     for (i = 0; i < list_count; i++) {
         ldns_rr       *rr;
         ldns_rdf      *rname;
