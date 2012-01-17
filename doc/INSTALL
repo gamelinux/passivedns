@@ -1,3 +1,10 @@
+# General:
+  # PassiveDNS was developed on a Ubuntu 10.04 platform, so all main testing was done there.
+  # Ubuntu 10.04 ships with libldns 1.6.1 and libpcap 1.0.0. I have compiled it static and dynamic
+  # and tried it out on different linux OSes with great luck.
+  # I try to keep the git tags "stable" and the master branch might be under development.
+  # If you have issues with the current master, please read doc/ISSUES
+
 FreeBSD Install
   $ pkg_add -r gmake git ldns
   $ rehash
@@ -5,7 +12,6 @@ FreeBSD Install
   $ git clone git://github.com/gamelinux/passivedns.git
   $ cd passivedns/src/
   $ gmake
-
 
 Ubuntu
   $ sudo apt-get install git-core binutils-dev libldns1 libldns-dev libpcap-dev 
