@@ -472,8 +472,9 @@ typedef struct _globalconfig {
     uint8_t      print_updates;          /* Prints updates */
     uint8_t      use_syslog;             /* Use syslog or not */
     uint8_t      setfilter;
-    uint8_t      drop_privs_flag;
-    uint8_t      daemon_flag;
+    uint8_t      drop_privs_flag;        /* Flag marking to drop privs */
+    uint8_t      chroot_flag;            /* Flag for going chroot */
+    uint8_t      daemon_flag;            /* Flag for going daemon */
     uint64_t     dnsf;                   /* Flags for DNS RR Type checks to do */
     uint8_t      ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
     uint8_t      cof;                    /* Flags for other; icmp,udp,other,.... */

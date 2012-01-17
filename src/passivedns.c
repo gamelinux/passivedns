@@ -699,46 +699,29 @@ void set_end_sessions()
     }
 }
 
-int set_chroot(void)
-{
-    char *absdir;
-    //char *logdir;
-    int abslen;
+static int set_chroot(void) {
+   char *absdir;
 
-    /*
-     * logdir = get_abs_path(logpath); 
-     */
+   /* logdir = get_abs_path(logpath); */
 
-    /*
-     * change to the directory 
-     */
-    if (chdir(config.chroot_dir) != 0) {
-        elog("set_chroot: Can not chdir to \"%s\": %s\n", config.chroot_dir,
-               strerror(errno));
-    }
+   /* change to the directory */
+   if ( chdir(config.chroot_dir) != 0 ) {
+      printf("set_chroot: Can not chdir to \"%s\": %s\n",config.chroot_dir,strerror(errno));
+   }
 
-    /*
-     * always returns an absolute pathname 
-     */
-    absdir = getcwd(NULL, 0);
-    abslen = strlen(absdir);
+   /* always returns an absolute pathname */
+   absdir = getcwd(NULL, 0);
 
-    /*
-     * make the chroot call 
-     */
-    if (chroot(absdir) < 0) {
-        elog("Can not chroot to \"%s\": absolute: %s: %s\n", config.chroot_dir,
-               absdir, strerror(errno));
-        exit(3);
-    }
+   /* make the chroot call */
+   if ( chroot(absdir) < 0 ) {
+      printf("Can not chroot to \"%s\": absolute: %s: %s\n",config.chroot_dir,absdir,strerror(errno));
+   }
 
-    if (chdir("/") < 0) {
-        elog("Can not chdir to \"/\" after chroot: %s\n",
-               strerror(errno));
-        exit(3);
-    }
+   if ( chdir("/") < 0 ) {
+        printf("Can not chdir to \"/\" after chroot: %s\n",strerror(errno));
+   }
 
-    return 0;
+   return 0;
 }
 
 int drop_privs(void)
@@ -758,7 +741,7 @@ int drop_privs(void)
             gr = getgrnam(config.group_name);
             if(!gr){
                 if(config.chroot_dir){
-                    elog("ERROR: you have chrootetd and must set numeric group ID.\n");
+                    elog("ERROR: you have chrooted and must set numeric group ID.\n");
                     exit(1);
                 }else{
                     elog("ERROR: couldn't get ID for group %s, group does not exist.", config.group_name)
@@ -957,6 +940,7 @@ void free_config()
     //if (config.pidfile != NULL) free(config.pidfile);
     if (config.user_name != NULL) free(config.user_name);
     if (config.group_name != NULL) free(config.group_name);
+    if (config.chroot_dir != NULL) free(config.chroot_dir);
     //if (config.bpff != NULL) free(config.bpff);
     //if (config.dev != NULL) free(config.dev);
     if (config.pcap_file != NULL) free(config.pcap_file);
@@ -993,6 +977,9 @@ void usage()
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default %u).\n",DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n",DNSPRINTTIME);
     olog(" -X <flags>      Manually set DNS RR Types to care about(Default -X 46CDNPRS).\n");
+    olog(" -u <uid>        User ID to drop privileges to.\n");
+    olog(" -g <gid>        Group ID to drop privileges to.\n");
+    olog(" -T <dir>        Directory to chroot into.\n");
     olog(" -D              Run as daemon.\n");
     olog(" -h              This help message.\n\n");
     olog(" FLAGS:\n");
@@ -1040,7 +1027,7 @@ int main(int argc, char *argv[])
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
 
-#define ARGS "i:r:l:hb:Dp:C:P:S:X:"
+#define ARGS "i:r:l:hb:Dp:C:P:S:X:u:g:T:"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1073,6 +1060,18 @@ int main(int argc, char *argv[])
             break;
         case 'D':
             daemon = 1;
+            break;
+        case 'T':
+            config.chroot_dir = strdup(optarg);
+            config.chroot_flag = 1;
+            break;
+        case 'u':
+            config.user_name = strdup(optarg);
+            config.drop_privs_flag = 1;
+            break;
+        case 'g':
+            config.group_name = strdup(optarg);
+            config.drop_privs_flag = 1;
             break;
         case 'h':
             usage();
