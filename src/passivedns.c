@@ -927,6 +927,7 @@ void game_over()
     if (config.inpacket == 0) {
         print_pdns_stats();
         if (config.handle != NULL) pcap_close(config.handle);
+        config.handle = NULL;
         expire_all_dns_records();
         end_all_sessions();
         free_config();

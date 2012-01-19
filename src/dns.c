@@ -405,19 +405,25 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
     return dest;
 }
 
-// A=1, 5=CNAME, PTR=12, AAAA=28
-// timestamp||dns-client||dns-server-IP||class||domain||query type||answer
 void print_passet(pdns_asset *p, pdns_record *l) {
 
     FILE *fd;
+    uint8_t screen;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
-    fd = fopen(config.logfile, "a");
-    if (fd == NULL) {
-        plog("[E] ERROR: Cant open file %s\n",config.logfile);
-        p->last_print = p->last_seen;
-        return;
+    if (config.logfile[0] == '-' && config.logfile[1] == '\0' ) {
+        if (config.handle == NULL) return;
+        screen = 1;
+        fd = stdout;
+    } else {
+        screen = 0;
+        fd = fopen(config.logfile, "a");
+        if (fd == NULL) {
+            plog("[E] ERROR: Cant open file %s\n",config.logfile);
+            p->last_print = p->last_seen;
+            return;
+        }
     }
 
     u_ntop(p->sip, p->af, ip_addr_s);
@@ -489,9 +495,10 @@ void print_passet(pdns_asset *p, pdns_record *l) {
             break;
     }
 
-    //fprintf(fd,"||%s\n", p->answer);
-    fprintf(fd,"||%s||%u\n", p->answer,p->rr->_ttl); // Do we want TTL ?
-    fclose(fd);
+    fprintf(fd,"||%s||%u\n", p->answer,p->rr->_ttl);
+    
+    if (screen == 0)
+        fclose(fd);
 
     p->last_print = p->last_seen;
 }
