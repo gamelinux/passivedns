@@ -128,10 +128,10 @@ void prepare_eth (packetinfo *pi)
     return;
 }
 
-void parse_eth (packetinfo *pi)
+/* void parse_eth (packetinfo *pi)
 {
     return;
-}
+} */
 
 void check_vlan (packetinfo *pi)
 {
@@ -854,14 +854,14 @@ int create_pid_file(const char *path)
     }
     snprintf(pid_buffer, sizeof(pid_buffer), "%d\n", (int)getpid());
     if (ftruncate(fd, 0) != 0) {
-        fclose(fd);
+        close(fd);
         return ERROR;
     }
     if (write(fd, pid_buffer, strlen(pid_buffer)) != 0) {
-        fclose(fd);
+        close(fd);
         return ERROR;
     }
-    fclose(fd);
+    close(fd);
     return SUCCESS;
 }
 
@@ -1132,7 +1132,7 @@ int main(int argc, char *argv[])
                 elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
             openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
             olog("[*] Daemonizing...\n\n");
-            daemonize(NULL);
+            daemonize();
         }
 
     }

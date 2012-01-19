@@ -2,6 +2,7 @@
 UNAME := $(shell uname -s)
 
 OCFLAGS=-O3
+#DCFLAGS=-Wall -Wextra -Werror -g -DDEBUG
 DCFLAGS=-Wall -g -DDEBUG
 PCFLAGS=-g -pg
 LDFLAGS=-lpcap -lldns
