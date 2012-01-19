@@ -854,11 +854,14 @@ int create_pid_file(const char *path)
     }
     snprintf(pid_buffer, sizeof(pid_buffer), "%d\n", (int)getpid());
     if (ftruncate(fd, 0) != 0) {
+        fclose(fd);
         return ERROR;
     }
     if (write(fd, pid_buffer, strlen(pid_buffer)) != 0) {
+        fclose(fd);
         return ERROR;
     }
+    fclose(fd);
     return SUCCESS;
 }
 

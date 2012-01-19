@@ -11,7 +11,7 @@ www.facebook.com
 www.twitter.com
 8.8.8.8
 8.8.4.4
-
+current.cvd.clamav.net
 
 # Example 2: PCRE formated DOMAINS/IPs
 # work with: --skiplist-pcre, --whitelist-pcre or --blacklist-pcre
