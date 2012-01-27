@@ -243,7 +243,7 @@ archive_lname_list(packetinfo   *pi,
                 break;
             case LDNS_RR_TYPE_SRV:
                 if (config.dnsf & DNS_CHK_SRV)
-                    data_offset = 0;
+                    data_offset = 3;
                 break;
             case LDNS_RR_TYPE_TXT:
                 if (config.dnsf & DNS_CHK_TXT)
