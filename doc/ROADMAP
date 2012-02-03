@@ -1,3 +1,10 @@
+# Version 2+
+ - Slackspace inspection:
+   * inside dns packet
+   * outside dns packet
+ - Entropy checkin on fqdn, TLD, LLD, SLD etc
+ - detect clients that has many NXDOMAIN responces
+
 # Version 2.0.0
    == Production ready and stable ==
  - Customizable output of fields
