@@ -186,6 +186,12 @@ sub file_watch {
    while (1) {
       $startsize = (stat $logfile)[7];
 
+      if (!defined $startsize) {
+         # No such file (Log rotate?)
+         sleep $TIMEOUT;
+         next;
+      }
+
       if (!defined $pos) {
          # Initial run.
          $pos = $startsize;
