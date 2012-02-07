@@ -45,12 +45,15 @@ use DBI;
  --file <file>          : set the file to monitor for passivedns entries (/var/log/passivedns.log)
  --batch                : process a file and exit when done
  --skiplist <file>      : file with a list of domains to skip DB insertion
+ --onlylist <file>      : file with a list of domains to only insert into DB
  --whitelist <file>     : file with a list of domains to not check for in blacklist
  --blacklist <file>     : file with a list of domains to alert on
  --skiplist-pcre <file> : file with regexp list of domains to skip DB insertion
+ --onlylist-pcre <file> : file with regexp list of domains to only insert into DB
  --whitelist-pcre <file>: file with regexp list of domains to not check for in blacklist
  --blacklist-pcre <file>: file with regexp list of domains to alert on
  --alertlog <file>      : file to log alerts to (/var/log/passivedns-alert.log)
+ --nodb                 : dont talk to the DB at all
  --daemon               : enables daemon mode
  --verbose              : enables some verboseness
  --debug <int>          : enable debug messages (default: 0 (disabled))
@@ -77,12 +80,16 @@ our $DBI           = "DBI:mysql:$DB_NAME:$DB_HOST:$DB_PORT";
 our $TABLE_NAME    = "pdns";
 our $AUTOCOMMIT    = 0;
 our $BATCH         = 0;
+our $dbh;
+our $NODB          = 0;
 my $DOMAIN_BLACKLIST_FILE       = undef;
 my $DOMAIN_BLACKLIST_FILE_PCRE  = undef;
 my $DOMAIN_WHITELIST_FILE       = undef;
 my $DOMAIN_WHITELIST_FILE_PCRE  = undef;
 my $DOMAIN_DBSKIPLIST_FILE      = undef;
 my $DOMAIN_DBSKIPLIST_FILE_PCRE = undef;
+my $DOMAIN_DBONLYLIST_FILE      = undef;
+my $DOMAIN_DBONLYLIST_FILE_PCRE = undef;
 
 GetOptions(
    'file=s'           => \$PDNSFILE,
@@ -92,8 +99,11 @@ GetOptions(
    'whitelist-pcre=s' => \$DOMAIN_WHITELIST_FILE_PCRE,
    'blacklist=s'      => \$DOMAIN_BLACKLIST_FILE,
    'blacklist-pcre=s' => \$DOMAIN_BLACKLIST_FILE_PCRE,
+   'onlylist=s'       => \$DOMAIN_DBONLYLIST_FILE,
+   'onlylist-pcre=s'  => \$DOMAIN_DBONLYLIST_FILE_PCRE,
    'alertlog=s'       => \$ALERTLOG,
    'batch'            => \$BATCH,
+   'nodb'             => \$NODB,
    'debug=s'          => \$DEBUG,
    'daemon'           => \$DAEMON,
    'verbose'          => \$VERBOSE,
@@ -102,12 +112,15 @@ GetOptions(
 our $HASH_BLACKLIST = {};
 our $HASH_WHITELIST = {};
 our $HASH_DBSKIPLIST= {};
+our $HASH_DBONLYLIST= {};
 $HASH_BLACKLIST->{'pcre'}    = [load_domain_list_pcre($DOMAIN_BLACKLIST_FILE_PCRE)]  if $DOMAIN_BLACKLIST_FILE_PCRE;
 $HASH_BLACKLIST->{'static'}  = load_domain_list_static($DOMAIN_BLACKLIST_FILE)       if $DOMAIN_BLACKLIST_FILE;
 $HASH_WHITELIST->{'pcre'}    = [load_domain_list_pcre($DOMAIN_WHITELIST_FILE_PCRE)]  if $DOMAIN_WHITELIST_FILE_PCRE;
 $HASH_WHITELIST->{'static'}  = load_domain_list_static($DOMAIN_WHITELIST_FILE)       if $DOMAIN_WHITELIST_FILE;
 $HASH_DBSKIPLIST->{'pcre'}   = [load_domain_list_pcre($DOMAIN_DBSKIPLIST_FILE_PCRE)] if $DOMAIN_DBSKIPLIST_FILE_PCRE;
 $HASH_DBSKIPLIST->{'static'} = load_domain_list_static($DOMAIN_DBSKIPLIST_FILE)      if $DOMAIN_DBSKIPLIST_FILE;
+$HASH_DBONLYLIST->{'pcre'}   = [load_domain_list_pcre($DOMAIN_DBONLYLIST_FILE_PCRE)] if $DOMAIN_DBONLYLIST_FILE_PCRE;
+$HASH_DBONLYLIST->{'static'} = load_domain_list_static($DOMAIN_DBONLYLIST_FILE)      if $DOMAIN_DBONLYLIST_FILE;
 
 if (($HASH_WHITELIST) && (not $HASH_BLACKLIST)){
     warn "[W] Whitelist without Blacklist does not make sens!\n";
@@ -143,10 +156,12 @@ if ( $DAEMON ) {
    open (STDERR, ">&STDOUT");
 }
 
-warn "[*] Connecting to database...\n";
-my $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1}) or die "$DBI::errstr";
-# Setup the pdns table, if not exist
-setup_db();
+if ($NODB == 0) {
+    warn "[*] Connecting to database...\n";
+    $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1}) or die "$DBI::errstr";
+    # Setup the pdns table, if not exist
+    setup_db();
+}
 
 # Start file_watch() which looks for new dns data and puts them into db
 warn "[*] Looking for passive DNS data in file: $PDNSFILE\n";
@@ -241,7 +256,9 @@ sub parseLogfile {
        if (($HASH_DBSKIPLIST) && ($sret = match_domain($query, $answer, $HASH_DBSKIPLIST))) {
            print "[*] Domain marked to skip DB insertion: $query or $answer\n" if $VERBOSE;
            next LINE;
-       } elsif (($HASH_WHITELIST) && ($HASH_BLACKLIST) &&($wret = match_domain($query, $answer, $HASH_WHITELIST))) {
+       }
+
+       if (($HASH_WHITELIST) && ($HASH_BLACKLIST) &&($wret = match_domain($query, $answer, $HASH_WHITELIST))) {
            print "[*] Whitelisted domain: $query or $answer\n" if $VERBOSE;
        } elsif (($HASH_BLACKLIST) && ($bret = match_domain($query, $answer, $HASH_BLACKLIST))) {
            print "[*] Blacklisted domain: $query or $answer\n" if $VERBOSE;
@@ -253,7 +270,12 @@ sub parseLogfile {
            }
        }
 
-       put_dns_to_db(@elements);
+       if (($HASH_DBONLYLIST) && ($sret = match_domain($query, $answer, $HASH_DBONLYLIST))) {
+           print "[*] Onlylisted domain: $query or $answer\n" if $VERBOSE;
+           put_dns_to_db(@elements) if $NODB == 0;
+       } elsif (not defined $HASH_DBONLYLIST) {
+           put_dns_to_db(@elements) if $NODB == 0;
+       }
     }
     close(LOGFILE);
 }
