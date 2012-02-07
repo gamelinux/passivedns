@@ -96,6 +96,7 @@ GetOptions(
    'batch'            => \$BATCH,
    'debug=s'          => \$DEBUG,
    'daemon'           => \$DAEMON,
+   'verbose'          => \$VERBOSE,
 );
 
 our $HASH_BLACKLIST = {};
@@ -377,6 +378,8 @@ sub load_domain_list_pcre {
     while (my $line = readline $FH) {
         chomp $line;
         $line =~ s/\#.*//;
+        $line =~ s/\t//g;
+        $line =~ s/ //g;
         next LINE unless($line); # empty line
         # One should check for a more or less sane signature file.
 
@@ -402,6 +405,8 @@ sub load_domain_list_static {
     while (my $line = readline $FH) {
         chomp $line;
         $line =~ s/\#.*//;
+        $line =~ s/\t//g;
+        $line =~ s/ //g;
         next LINE unless($line); # empty line
         # One should check for a more or less sane signature file.
 
