@@ -161,6 +161,8 @@ if ($NODB == 0) {
     $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1}) or die "$DBI::errstr";
     # Setup the pdns table, if not exist
     setup_db();
+} else {
+    warn "[*] Skipping database operations...\n";
 }
 
 # Start file_watch() which looks for new dns data and puts them into db
