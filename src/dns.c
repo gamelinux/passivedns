@@ -41,19 +41,70 @@ void dns_parser (packetinfo *pi) {
     ldns_status   status;
     ldns_pkt     *decoded_dns;
 
-    status = ldns_wire2pkt(&decoded_dns,pi->payload, pi->plen);
+    status = LDNS_STATUS_ERR; 
+
+/* In DNS tcp messages the first 2 bytes signal the
+ * amount of data to expect. So we need to skip them in the read.
+ */
+
+    if ( pi->af == AF_INET ) {
+        switch (pi->ip4->ip_p) {
+            case IP_PROTO_TCP:
+                status = ldns_wire2pkt(&decoded_dns,pi->payload + 2, pi->plen - 2);
+                break;
+            case IP_PROTO_UDP:
+                status = ldns_wire2pkt(&decoded_dns,pi->payload, pi->plen);
+                break;
+            default:
+                break;
+        }
+    } else if ( pi->af == AF_INET6 ) {
+        switch (pi->ip6->next) {
+            case IP_PROTO_TCP:
+                status = ldns_wire2pkt(&decoded_dns,pi->payload + 2, pi->plen - 2);
+                break;
+            case IP_PROTO_UDP:
+                status = ldns_wire2pkt(&decoded_dns,pi->payload, pi->plen);
+                break;
+            default:
+                break;
+        }
+    }
 
     if (status != LDNS_STATUS_OK) {
         dlog("[D] ldns_wire2pkt status = %d\n", status);
         return;
     }
 
+    /* We dont want to process Truncated packets */
+    if (ldns_pkt_tc(decoded_dns)) {
+       dlog("[D] Skipping DNS packet with Truncated (TC) bit set!\n");
+       ldns_pkt_free(decoded_dns);
+       return;
+    }
+
     /* we only care about answers, no questions allowed! */
     if (ldns_pkt_qr(decoded_dns)) {
-        //dns_store(dns_db, decoded_dns);
-        if (!ldns_pkt_qdcount(decoded_dns)) { //|| !ldns_pkt_ancount(decoded_dns)) {
+        /* From isc.org wording: 
+         * We do not collect any of the query-response traffic that
+         * occurs when the client sets the RD or "Recursion Desired"
+         * bit to 1, that is, the traffic that occurs between DNS
+         * "stub" clients and the caching server itself, since only the
+         * traffic generated in response to a cache miss (RD bit set to 0)
+         * is strictly needed in order to build a passive DNS database.
+         */
+        if (ldns_pkt_rd(decoded_dns)) {
+            dlog("[D] DNS packet with Recursion Desired (RD) bit set!\n");
+            /* I cant see that is works for normal client traffic - you
+             * would get nothing.... Maybe a cmdline switch ?
+             */ 
+            //ldns_pkt_free(decoded_dns);
+            //return;
+        }
+
+        if (!ldns_pkt_qdcount(decoded_dns)) {
             /* no questions or answers */
-            dlog("[D] DNS packet did not contain a question!\n");
+            dlog("[D] DNS packet did not contain a question, skipping!\n");
             ldns_pkt_free(decoded_dns);
             return;
         }

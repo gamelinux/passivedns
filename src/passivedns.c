@@ -168,10 +168,10 @@ void prepare_ip4 (packetinfo *pi)
 void parse_ip4 (packetinfo *pi)
 {
     switch (pi->ip4->ip_p) {
-     /* case IP_PROTO_TCP:
+      case IP_PROTO_TCP:
             prepare_tcp(pi);
             parse_tcp(pi);
-            break;            */
+            break;            
         case IP_PROTO_UDP:
             prepare_udp(pi);
             parse_udp(pi);
@@ -233,27 +233,19 @@ void prepare_ip6 (packetinfo *pi)
     pi->af = AF_INET6;
     pi->ip6 = (ip6_header *) (pi->packet + pi->eth_hlen);
     pi->packet_bytes = pi->ip6->len;
-    // may be dropped due to macros plus
-    //pi->ip_src = PI_IP6SRC(pi);
-    //pi->ip_dst = PI_IP6DST(pi);
-    //pi->our = filter_packet(pi->af, &PI_IP6SRC(pi));
-    //vlog(0x3, "Got %s IPv6 Packet...\n", (pi->our?"our":"foregin"));
+    //vlog(0x3, "Got IPv6 Packet...\n");
     return;
 }
 
 void parse_ip6 (packetinfo *pi)
 {
     switch (pi->ip6->next) {
-    /*  case IP_PROTO_TCP:
+        case IP_PROTO_TCP:
             prepare_tcp(pi);
-            if (!pi->our)
-                break;
             parse_tcp(pi);
-            break;                  */
+            break;
         case IP_PROTO_UDP:
             prepare_udp(pi);
-            if (!pi->our)
-                break;
             parse_udp(pi);
             break;
         case IP_PROTO_IP4:
@@ -338,8 +330,12 @@ void prepare_udp (packetinfo *pi)
 
 void parse_tcp (packetinfo *pi)
 {
-    //olog("\n[*] Got TCP packet...\n");
+    if (pi->plen <= 0) return;
+
+    /* Traffic comes from port 53 and the client has sent at least one package on that
+     * connecton (Maybe asking for an aswere :) */
     if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
+        dlog("[D] Parsing TCP packet...\n");
         dns_parser(pi);
     }   
     return;
@@ -347,11 +343,12 @@ void parse_tcp (packetinfo *pi)
 
 void parse_udp (packetinfo *pi)
 {
-    //olog("\n[*] Got UDP packet...\n");
+    if (pi->plen <= 0) return;
 
     /* Traffic comes from port 53 and the client has sent at least one package on that
      * connecton (Maybe asking for an aswere :) */
     if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
+        dlog("[D] Parsing UDP packet...\n");
         dns_parser(pi);
     }
     return;
@@ -435,8 +432,6 @@ connection *cxt_new(packetinfo *pi)
 
     cxt->af = pi->af;
     if(pi->tcph) cxt->s_tcpFlags |= pi->tcph->t_flags;
-    //cxt->s_total_bytes = pi->packet_bytes;
-    //cxt->s_total_pkts = 1;
     cxt->start_time = pi->pheader->ts.tv_sec;
     cxt->last_pkt_time = pi->pheader->ts.tv_sec;
 
@@ -524,8 +519,8 @@ void end_all_sessions()
             }
         }
     }
-    dlog("Current CXT: %10u\n", config.curcxt);
-    dlog("CXT in List: %10u\n", config.llcxt);
+    dlog("CXT in list before cleaning: %10u\n", config.llcxt);
+    dlog("CXT in list after  cleaning: %10u\n", config.curcxt);
 }
 
 void end_sessions()
@@ -584,13 +579,14 @@ void end_sessions()
                 if (cxt->next)
                     cxt->next->prev = cxt->prev;
                 connection *tmp = cxt;
+                connection *tmp_pre = cxt->prev;
 
                 ended = expired = 0;
 
                 cxt = cxt->next;
 
                 del_connection(tmp, &bucket[iter]);
-                if (cxt->prev == NULL && cxt->next == NULL && cxt == NULL) {
+                if (cxt == NULL && tmp_pre == NULL) {
                     bucket[iter] = NULL;
                 }
             } else {
@@ -598,8 +594,8 @@ void end_sessions()
             }
         }
     }
-    dlog("Current CXT: %10u\n", config.curcxt);
-    dlog("CXT in List: %10u\n", config.llcxt);
+    dlog("CXT in list before cleaning: %10u\n", config.llcxt);
+    dlog("CXT in list after  cleaning: %10u\n", config.curcxt);
 }
 
 void del_connection(connection * cxt, connection ** bucket_ptr)
