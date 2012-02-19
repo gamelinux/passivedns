@@ -1001,7 +1001,7 @@ int main(int argc, char *argv[])
     config.inpacket = config.intr_flag = 0;
     config.dnslastchk = 0;
     //char *pconfile;
-#define BPFF "(udp and port 53)"
+#define BPFF "(port 53)"
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
