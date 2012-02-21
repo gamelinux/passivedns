@@ -332,9 +332,10 @@ void parse_tcp (packetinfo *pi)
 {
     if (pi->plen <= 0) return;
 
-    /* Traffic comes from port 53 and the client has sent at least one package on that
-     * connecton (Maybe asking for an aswere :) */
-    if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
+    /* Reliable traffic comes from the servers (normally on port 53 or 5353)
+     * and the client has sent at least one package on that
+     * connecton (Maybe asking for an aswer :) */
+    if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
         dlog("[D] Parsing TCP packet...\n");
         dns_parser(pi);
     }   
@@ -345,9 +346,10 @@ void parse_udp (packetinfo *pi)
 {
     if (pi->plen <= 0) return;
 
-    /* Traffic comes from port 53 and the client has sent at least one package on that
-     * connecton (Maybe asking for an aswere :) */
-    if ( ntohs(pi->s_port) == 53 && pi->cxt->s_total_pkts > 0 ) {
+    /* Reliable traffic comes from the servers (normally on port 53 or 5353)
+     * and the client has sent at least one package on that
+     * connecton (Maybe asking for an aswer :) */
+    if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
         dlog("[D] Parsing UDP packet...\n");
         dns_parser(pi);
     }
