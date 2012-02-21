@@ -127,6 +127,11 @@ if (($HASH_WHITELIST) && (not $HASH_BLACKLIST)){
     $HASH_WHITELIST = undef; 
 }
 
+if ((not defined $HASH_DBONLYLIST->{'static'}) && (not defined $HASH_DBONLYLIST->{'pcre'})) {
+    # Should also check that there are any entries if they are defined.
+    $HASH_DBONLYLIST = undef;
+}
+
 # Signal handlers
 use vars qw(%sources);
 #$SIG{"HUP"}   = \&recreate_merge_table;
