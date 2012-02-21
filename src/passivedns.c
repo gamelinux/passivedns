@@ -971,7 +971,7 @@ void usage()
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
     olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
-    olog(" -b 'BPF'        Berkley Packet Filter (default: udp and port 53).\n");
+    olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default %u).\n",DNSCACHETIMEOUT);
@@ -1001,7 +1001,7 @@ int main(int argc, char *argv[])
     config.inpacket = config.intr_flag = 0;
     config.dnslastchk = 0;
     //char *pconfile;
-#define BPFF "(port 53)"
+#define BPFF "port 53"
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
