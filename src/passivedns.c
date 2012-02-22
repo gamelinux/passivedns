@@ -349,10 +349,10 @@ void parse_udp (packetinfo *pi)
     /* Reliable traffic comes from the servers (normally on port 53 or 5353)
      * and the client has sent at least one package on that
      * connecton (Maybe asking for an aswer :) */
-    if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
+    //if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
         dlog("[D] Parsing UDP packet...\n");
         dns_parser(pi);
-    }
+    //}
     return;
 }
 

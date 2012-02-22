@@ -154,7 +154,6 @@ print "                                            === PassiveDNS ===\n\n";
 print "       FirstSeen     |       LastSeen       |  TYPE |  TTL   |               Query                |  Answer\n";
 print "---------------------------------------------------------------------------------------------------------------------\n";
 while (my ($query, $answer, $firstseen, $lastseen, $ttl, $maptype) = $pri->fetchrow_array()) {
-# 2010-10-07 11:33:40 2011-03-08 15:25:04 60.10.4.94      A      N/A   exchange.dynamicdns.co.uk
     next if not defined $query or not defined $answer;
     $cnt++;
     #my $FS = strftime "%Y-%m-%d %H:%M:%S", localtime($firstseen);

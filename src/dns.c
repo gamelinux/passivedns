@@ -11,6 +11,7 @@
 #include "dns.h"
 
 static int archive(packetinfo *pi, ldns_pkt *decoded_dns);
+static int archive_query(packetinfo *pi, ldns_pkt *decoded_dns);
 static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf, uint8_t rcode);
 void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr);
 pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
@@ -83,8 +84,18 @@ void dns_parser (packetinfo *pi) {
        return;
     }
 
-    /* we only care about answers, no questions allowed! */
+    /* we only care about answers when we record data */
     if (ldns_pkt_qr(decoded_dns)) {
+        dlog("[D] DNS Answer\n");
+        /* Check the DNS ID */
+        if ( (pi->cxt->plid == ldns_pkt_id(decoded_dns)) ) {
+            plog("[D] DNS Query ID match Answer ID: %d\n", pi->cxt->plid);
+        } else {
+            plog("[D] DNS Query ID did not match Answer ID: %d != %d\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
+            //ldns_pkt_free(decoded_dns);
+            //return;
+        }
+
         /* From isc.org wording: 
          * We do not collect any of the query-response traffic that
          * occurs when the client sets the RD or "Recursion Desired"
@@ -111,11 +122,69 @@ void dns_parser (packetinfo *pi) {
 
         // send it off to the linked list
         if (archive(pi, decoded_dns) < 0) {
-            dlog("[D] dns_archiver(): archive() returned -1\n");
+            dlog("[D] archive() returned -1\n");
+        }
+    } else {
+        /* We need to get the DNS ID from the Query to later match with the
+         * DNS ID in the answer - to harden the implementation.
+         */
+        dlog("[D] DNS Query\n");
+
+        if (!ldns_pkt_qdcount(decoded_dns)) {
+            /* no questions or answers */
+            dlog("[D] DNS packet did not contain a question, skipping!\n");
+            ldns_pkt_free(decoded_dns);
+            return;
+        }
+
+        if ( (pi->cxt->plid = ldns_pkt_id(decoded_dns)) ) {
+            dlog("[D] DNS Query ID: %d\n", pi->cxt->plid);
+        } else {
+            dlog("[E] Error getting DNS Query ID!\n");
+            ldns_pkt_free(decoded_dns);
+            return;
+        }
+
+        if (archive_query(pi, decoded_dns) < 0) {
+            dlog("[D] archiver_query() returned -1\n");
         }
     }
 
     ldns_pkt_free(decoded_dns);
+}
+
+static int
+archive_query(packetinfo *pi, ldns_pkt *decoded_dns)
+{
+    ldns_buffer *dns_buffer;
+    int          qa_rrcount;
+    int          i;
+    uint8_t      rcode;
+    ldns_rr_list *questions;
+
+    questions  = ldns_pkt_question(decoded_dns);
+    qa_rrcount = ldns_rr_list_rr_count(questions);
+    dns_buffer = ldns_buffer_new(LDNS_MIN_BUFLEN);
+    rcode = ldns_pkt_get_rcode(decoded_dns);
+    dlog("[*] %d qa_rrcount\n", qa_rrcount);
+
+    for (i = 0; i < qa_rrcount; i++) {
+        ldns_rr  *question_rr;
+        ldns_rdf *rdf_data;
+        int       ret;
+
+        question_rr = ldns_rr_list_rr(questions, i);
+        rdf_data    = ldns_rr_owner(question_rr);
+
+        dlog("[D] rdf_data = %p\n", rdf_data);
+        ret = archive_lname_list(pi, rdf_data, questions, dns_buffer, rcode);
+
+        if (ret < 0) {
+            dlog("[D] archive_lname_list() returned error\n");
+        }
+    }
+    ldns_buffer_free(dns_buffer);
+    return(0);
 }
 
 static int

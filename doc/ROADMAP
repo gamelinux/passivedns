@@ -4,6 +4,8 @@
    * outside dns packet
  - Entropy checkin on fqdn, TLD, LLD, SLD etc
  - detect clients that has many NXDOMAIN responces
+ - Look at cxt when timing out that has no Client Transaction ID
+   but a Server Transaction ID.
 
 # Version 2.0.0
    == Production ready and stable ==
