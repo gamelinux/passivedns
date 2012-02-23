@@ -86,6 +86,12 @@ void dns_parser (packetinfo *pi) {
 
     /* we only care about answers when we record data */
     if (ldns_pkt_qr(decoded_dns)) {
+        /* Answer must come from the server, and the client has to have sent a packet! */
+        if ( pi->sc != SC_SERVER || pi->cxt->s_total_pkts == 0 ) {
+            plog("[D] DNS Answer without a question?: %d:%d\n",pi->cxt->plid,ldns_pkt_id(decoded_dns));
+            ldns_pkt_free(decoded_dns);
+            return;
+        }
         dlog("[D] DNS Answer\n");
         /* Check the DNS ID */
         if ( (pi->cxt->plid == ldns_pkt_id(decoded_dns)) ) {
@@ -128,6 +134,23 @@ void dns_parser (packetinfo *pi) {
         /* We need to get the DNS ID from the Query to later match with the
          * DNS ID in the answer - to harden the implementation.
          */
+
+        /* Question must come from the client, and the server can not have sent a packet! */
+        if ( pi->sc != SC_CLIENT ) {
+            plog("[D] DNS Query not from a client!?!\n");
+            ldns_pkt_free(decoded_dns);
+            return;
+        }
+        
+        /* Check for reuse of a session and a hack for
+         * no timeout of sessions when reading pcaps :/
+         * 60 Secs are default UDP timeout, and should
+         * be enough for a TCP session of DNS too.
+         */
+        if ( (pi->cxt->plid != 0 && pi->cxt->plid != ldns_pkt_id(decoded_dns)) && ((pi->cxt->last_pkt_time - pi->cxt->start_time) <= 60) ) {
+            plog("[D] DNS Query on an established DNS session - TID: Old:%d New:%d\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
+        }
+
         dlog("[D] DNS Query\n");
 
         if (!ldns_pkt_qdcount(decoded_dns)) {
