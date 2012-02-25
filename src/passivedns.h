@@ -245,7 +245,7 @@ typedef struct _connection {
     uint8_t  s_tcpFlags;          /* tcpflags sent by source */
     uint8_t  d_tcpFlags;          /* tcpflags sent by destination */
     uint8_t  check;               /* Flags spesifying checking */
-    uint16_t plid;                /* Protocol layer ID (DNS ID) */
+    uint16_t plid;                /* Protocol layer ID (DNS TID) */
     struct   _asset *c_asset;     /* pointer to src asset */
     struct   _asset *s_asset;     /* pointer to server asset */
 } connection;

@@ -221,7 +221,7 @@ archive_query(packetinfo *pi, ldns_pkt *decoded_dns)
     }
     ldns_buffer_free(dns_buffer);
     return(0);
-}
+} 
 
 static int
 archive(packetinfo *pi, ldns_pkt *decoded_dns)
