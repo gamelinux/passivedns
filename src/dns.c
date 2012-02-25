@@ -79,7 +79,7 @@ void dns_parser (packetinfo *pi) {
 
     /* We dont want to process Truncated packets */
     if (ldns_pkt_tc(decoded_dns)) {
-       dlog("[D] Skipping DNS packet with Truncated (TC) bit set!\n");
+       dlog("[D] DNS packet with Truncated (TC) bit set! Skipping!\n");
        ldns_pkt_free(decoded_dns);
        return;
     }
@@ -88,18 +88,18 @@ void dns_parser (packetinfo *pi) {
     if (ldns_pkt_qr(decoded_dns)) {
         /* Answer must come from the server, and the client has to have sent a packet! */
         if ( pi->sc != SC_SERVER || pi->cxt->s_total_pkts == 0 ) {
-            plog("[D] DNS Answer without a question?: %d:%d\n",pi->cxt->plid,ldns_pkt_id(decoded_dns));
+            dlog("[D] DNS Answer without a Question?: Query TID = %d and Answer TID = %d\n",pi->cxt->plid,ldns_pkt_id(decoded_dns));
             ldns_pkt_free(decoded_dns);
             return;
         }
         dlog("[D] DNS Answer\n");
-        /* Check the DNS ID */
+        /* Check the DNS TID */
         if ( (pi->cxt->plid == ldns_pkt_id(decoded_dns)) ) {
-            plog("[D] DNS Query ID match Answer ID: %d\n", pi->cxt->plid);
+            dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
         } else {
-            plog("[D] DNS Query ID did not match Answer ID: %d != %d\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
-            //ldns_pkt_free(decoded_dns);
-            //return;
+            dlog("[D] DNS Query TID did not match Answer TID: %d != %d - Skipping!\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
+            ldns_pkt_free(decoded_dns);
+            return;
         }
 
         /* From isc.org wording: 
@@ -112,8 +112,12 @@ void dns_parser (packetinfo *pi) {
          */
         if (ldns_pkt_rd(decoded_dns)) {
             dlog("[D] DNS packet with Recursion Desired (RD) bit set!\n");
-            /* I cant see that is works for normal client traffic - you
-             * would get nothing.... Maybe a cmdline switch ?
+            /* Between DNS-server to DNS-server, we should drop this kind
+             * of traffic if we are thinking hardening and correctness!
+             * But for people trying this out in a corporate network etc,
+             * between a client and a DNS proxy, will need this most likely
+             * to see any traffic at all. In the future, this might be
+             * controlled by a cmdline switch.
              */ 
             //ldns_pkt_free(decoded_dns);
             //return;
@@ -121,7 +125,7 @@ void dns_parser (packetinfo *pi) {
 
         if (!ldns_pkt_qdcount(decoded_dns)) {
             /* no questions or answers */
-            dlog("[D] DNS packet did not contain a question, skipping!\n");
+            dlog("[D] DNS packet did not contain a question. Skipping!\n");
             ldns_pkt_free(decoded_dns);
             return;
         }
@@ -131,46 +135,55 @@ void dns_parser (packetinfo *pi) {
             dlog("[D] archive() returned -1\n");
         }
     } else {
-        /* We need to get the DNS ID from the Query to later match with the
-         * DNS ID in the answer - to harden the implementation.
+        /* We need to get the DNS TID from the Query to later match with the
+         * DNS TID in the answer - to harden the implementation.
          */
 
-        /* Question must come from the client, and the server can not have sent a packet! */
+        /* Question must come from the client (and the server should not have sent a packet). */
         if ( pi->sc != SC_CLIENT ) {
-            plog("[D] DNS Query not from a client!?!\n");
+            dlog("[D] DNS Query not from a client? Skipping!\n");
             ldns_pkt_free(decoded_dns);
             return;
         }
         
         /* Check for reuse of a session and a hack for
-         * no timeout of sessions when reading pcaps :/
-         * 60 Secs are default UDP timeout, and should
+         * no timeout of sessions when reading pcaps atm. :/
+         * 60 Secs are default UDP timeout in cxt, and should
          * be enough for a TCP session of DNS too.
          */
         if ( (pi->cxt->plid != 0 && pi->cxt->plid != ldns_pkt_id(decoded_dns)) && ((pi->cxt->last_pkt_time - pi->cxt->start_time) <= 60) ) {
-            plog("[D] DNS Query on an established DNS session - TID: Old:%d New:%d\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
+            dlog("[D] DNS Query on an established DNS session - TID: Old:%d New:%d\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
+            /* Some clients have bad or strange random src
+             * port generator and will gladly reuse the same
+             * src port several times in a short time period.
+             * To implment this fully, each cxt should be include
+             * the TID in its tuple, but still this will make a mess :/
+             */
+        } else {
+            dlog("[D] New DNS Query\n");
         }
-
-        dlog("[D] DNS Query\n");
 
         if (!ldns_pkt_qdcount(decoded_dns)) {
             /* no questions or answers */
-            dlog("[D] DNS packet did not contain a question, skipping!\n");
+            dlog("[D] DNS Query packet did not contain a question? Skipping!\n");
             ldns_pkt_free(decoded_dns);
             return;
         }
 
         if ( (pi->cxt->plid = ldns_pkt_id(decoded_dns)) ) {
-            dlog("[D] DNS Query ID: %d\n", pi->cxt->plid);
+            dlog("[D] DNS Query with TID = %d\n", pi->cxt->plid);
         } else {
-            dlog("[E] Error getting DNS Query ID!\n");
+            dlog("[E] Error getting DNS TID from Query!\n");
             ldns_pkt_free(decoded_dns);
             return;
         }
 
+        /* Dont make entry for this yet */
+        /*
         if (archive_query(pi, decoded_dns) < 0) {
             dlog("[D] archiver_query() returned -1\n");
         }
+        */
     }
 
     ldns_pkt_free(decoded_dns);
