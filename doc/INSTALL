@@ -15,6 +15,7 @@ FreeBSD Install
 
 Ubuntu
   $ sudo apt-get install git-core binutils-dev libldns1 libldns-dev libpcap-dev 
+  # libdate-simple-perl is also needed for pdns2db.pl
   $ git clone git://github.com/gamelinux/passivedns.git
   $ cd passivedns/src/
   $ make
