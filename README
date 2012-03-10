@@ -26,6 +26,7 @@ Example output from version 0.2.8 in the log file (/var/log/passivedns.log):
 1322849924||192.168.1.1||81.167.36.3||IN||i1.ytimg.com.||CNAME||ytimg.l.google.com.||43200
 1322849924||192.168.1.1||8.8.8.8||IN||clients1.google.com.||A||173.194.32.3||43200
 
+PassiveDNS works on IPv4 and IPv6 traffic and parse DNS traffic over TCP and UDP.
 
 ** How can PassiveDNS be used: **
 

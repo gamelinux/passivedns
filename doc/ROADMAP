@@ -28,6 +28,10 @@
    * evation ?
    * flooding ?
    * BOF (fuzz the crap out of it)
+ - some stats when exiting
+   * max concurrent records cached
+   * max concurrent sessions (cxt)
+   * max session memory usage (cxt)
 
 # Version 0.5.0 
    == Production ready and stable ==
@@ -45,10 +49,6 @@
  - cmdline for specifying BPF filter
  - cmdline for specifying pidfile
  - daemon mode
- - some stats when exiting
-   * max concurrent records cached
-   * max concurrent sessions (cxt)
-   * max session memory usage (cxt)
  - output fields:
    timestamp||dns-client||dns-server||RR class||Query||Query Type||Answer||TTL
 

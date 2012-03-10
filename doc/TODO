@@ -1,10 +1,6 @@
 
 # PassiveDNS
 
-* Implement comandline option for chroot
-
-* Look into limiting memory usage
-
 * Add some stats
 * Add abuility to read log file when starting up
   - Import domains that has timestamp less then "$cachetimeout" ago
@@ -14,6 +10,3 @@
 
 * Adding abuility for custom output formating 
 
-
-### Evaluate:
-      DNAME, MX, NAPTR, NS, RP, SOA, SRV, TXT
