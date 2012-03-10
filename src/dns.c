@@ -481,6 +481,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
           if (strcmp((const char *)rname_str,(const char *)passet->answer) == 0 ) {
             dlog("[*] rname/answer match\n");
             // We have this, update & if its over 24h since last print - print it, then return
+            passet->seen++;
             passet->last_seen = pi->pheader->ts.tv_sec;
             passet->cip       = pi->cxt->s_ip; // This should always be the client IP
             passet->sip       = pi->cxt->d_ip; // This should always be the server IP
@@ -510,6 +511,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
         prr->_rr_type      = rr->_rr_type;
         prr->_rr_class     = rr->_rr_class;
         prr->_rdata_fields = rr->_rdata_fields;
+        passet->seen++;
         passet->rr = prr;
     } else {
         dlog("[D] BAD\n");
@@ -651,6 +653,7 @@ void print_passet(pdns_asset *p, pdns_record *l) {
             break;
     }
 
+    //fprintf(fd,"||%s||%u||%lu\n", p->answer,p->rr->_ttl,p->seen);
     fprintf(fd,"||%s||%u\n", p->answer,p->rr->_ttl);
     
     if (screen == 0)

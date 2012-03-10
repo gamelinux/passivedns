@@ -61,6 +61,7 @@ typedef struct _pdns_asset {
     time_t                 last_seen;  /* Last seen (unix timestamp) */
     time_t                 last_print; /* Last time asset was printet */
     struct ldns_struct_rr *rr;         /* PTR,MX,TXT,A,AAAA...  */
+    uint64_t               seen;       /* Number of times seen */
     unsigned char         *answer;     /* Answer, like 8.8.8.8 or 2001:67c:21e0::16 */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
