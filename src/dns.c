@@ -491,6 +491,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
             dlog("[*] DNS asset updated...\n");
             if ((passet->last_seen - passet->last_print) >= config.dnsprinttime) {
                 print_passet(passet, lname_node);
+                passet->seen = 0;
             }
             return;
           }
@@ -511,7 +512,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
         prr->_rr_type      = rr->_rr_type;
         prr->_rr_class     = rr->_rr_class;
         prr->_rdata_fields = rr->_rdata_fields;
-        passet->seen++;
+        passet->seen = 1;
         passet->rr = prr;
     } else {
         dlog("[D] BAD\n");
@@ -540,6 +541,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
     lname_node->passet = passet;
 
     print_passet(passet, lname_node);
+    passet->seen = 0;
 
     return;
 }
