@@ -32,6 +32,11 @@
    * max concurrent records cached
    * max concurrent sessions (cxt)
    * max session memory usage (cxt)
+   * DNS counts:
+     - how many was IPv6
+     - how many was IPv4
+     - how many was TCP
+     - how many was UDP
 
 # Version 0.5.0 
    == Production ready and stable ==
