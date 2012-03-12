@@ -15,7 +15,7 @@ the DNS-server answers to a log file. PassiveDNS can cache/aggregate duplicate
 DNS answers in-memory, limiting the amount of data in the logfile without
 loosing the essens in the DNS answer.
 
-Example output from version 0.2.8 in the log file (/var/log/passivedns.log):
+Example output from version 0.2.8->Current in the log file (/var/log/passivedns.log):
 
 #timestamp||dns-client ||dns-server||RR class||Query||Query Type||Answer||TTL
 1322849924||192.168.1.1||81.167.36.3||IN||upload.youtube.com.||CNAME||yt-video-upload.l.google.com.||420447
