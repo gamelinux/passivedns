@@ -17,6 +17,11 @@ void parse_dns_flags (char *args);
 #define DNS_CHK_SOA        0x0200
 #define DNS_CHK_MX         0x0400
 #define DNS_CHK_NS         0x0800
+// Last one is nxdomain
+#define DNS_CHK_NXDOMAIN   0x8000
+
+// Flag for indicating an NXDOMAIN
+#define DNS_NXDOMAIN       0x01
 
 /* To avoid spaming the logfile with duplicate dns info 
  * we only print a dns record one time each 24H. This way
@@ -73,7 +78,10 @@ typedef struct _pdns_asset {
 typedef struct _pdns_record {
     time_t                 first_seen; /* First seen (unix timestamp) */
     time_t                 last_seen;  /* Last seen (unix timestamp) */
+    time_t                 last_print; /* Last time record(NXD) was printet */
+    uint64_t               seen;       /* Number of times seen */
     unsigned char         *qname;      /* Query name (gamelinux.org) */
+    uint8_t                nxflag;     /* Flag to indicate if this is a NXDOMAIN */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */

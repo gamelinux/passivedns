@@ -1023,6 +1023,7 @@ int main(int argc, char *argv[])
 //    config.dnsf |= DNS_CHK_SOA;
 //    config.dnsf |= DNS_CHK_NS;
 //    config.dnsf |= DNS_CHK_MX;
+    config.dnsf |= DNS_CHK_NXDOMAIN;
 
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);

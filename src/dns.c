@@ -12,10 +12,11 @@
 
 static int archive(packetinfo *pi, ldns_pkt *decoded_dns);
 static int archive_query(packetinfo *pi, ldns_pkt *decoded_dns);
-static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf, uint8_t rcode);
+static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf, ldns_pkt *decoded_dns);
 void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr);
 pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
 void print_passet(pdns_asset *p, pdns_record *l);
+void print_passet_nxd(pdns_record *l, ldns_rdf *lname, ldns_rr *rr);
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest);
 void expire_dns_assets(pdns_record *pdnsr, time_t expire_t);
 void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr);
@@ -213,7 +214,7 @@ archive_query(packetinfo *pi, ldns_pkt *decoded_dns)
         rdf_data    = ldns_rr_owner(question_rr);
 
         dlog("[D] rdf_data = %p\n", rdf_data);
-        ret = archive_lname_list(pi, rdf_data, questions, dns_buffer, rcode);
+        ret = archive_lname_list(pi, rdf_data, questions, dns_buffer, decoded_dns);
 
         if (ret < 0) {
             dlog("[D] archive_lname_list() returned error\n");
@@ -228,28 +229,21 @@ archive(packetinfo *pi, ldns_pkt *decoded_dns)
 {
     ldns_buffer *dns_buffer;
     int          qa_rrcount;
-    int          an_rrcount;
-    int          au_rrcount;
     int          i;
-    uint8_t      rcode;
     ldns_rr_list *questions;
     ldns_rr_list *answers;
-    ldns_rr_list *authorities;
 
     questions   = ldns_pkt_question(decoded_dns);
-    answers     = ldns_pkt_answer(decoded_dns);
-    authorities = ldns_pkt_authority(decoded_dns);
+    answers     = ldns_pkt_answer(decoded_dns);    // Move -> archive_lname_list
 
     qa_rrcount = ldns_rr_list_rr_count(questions);
-    an_rrcount = ldns_rr_list_rr_count(answers);
-    au_rrcount = ldns_rr_list_rr_count(authorities);
 
     dns_buffer = ldns_buffer_new(LDNS_MIN_BUFLEN);
-    rcode = ldns_pkt_get_rcode(decoded_dns);
 
     dlog("[*] %d qa_rrcount\n", qa_rrcount);
     
-
+    // Do we ever have more than one Question?
+    // If we do - are we handling it correct ?
     for (i = 0; i < qa_rrcount; i++) {
         ldns_rr  *question_rr;
         ldns_rdf *rdf_data;
@@ -262,7 +256,7 @@ archive(packetinfo *pi, ldns_pkt *decoded_dns)
 
         /* plop all the answers into the correct archive_node_t's
          * associated_nodes hash. */
-        ret = archive_lname_list(pi, rdf_data, answers, dns_buffer, rcode);
+        ret = archive_lname_list(pi, rdf_data, answers, dns_buffer, decoded_dns);
 
         if (ret < 0) {
             dlog("[D] archive_lname_list() returned error\n");
@@ -278,7 +272,7 @@ archive_lname_list(packetinfo   *pi,
                    ldns_rdf     *lname,
                    ldns_rr_list *list,
                    ldns_buffer  *buf,
-                   uint8_t       rcode)
+                   ldns_pkt     *decoded_dns)
 {
     int             list_count;
     unsigned char  *lname_str = 0;
@@ -286,6 +280,7 @@ archive_lname_list(packetinfo   *pi,
     int             i;
     pdns_record    *lname_node = NULL;
     uint64_t        dnshash;
+    uint8_t       rcode;
 
     ldns_buffer_clear(buf);
     status = ldns_rdf2buffer_str(buf, lname);
@@ -306,8 +301,10 @@ archive_lname_list(packetinfo   *pi,
     dlog("[D] lname_str:%s\n", lname_str);
     dlog("[D] list_count:%d\n",list_count);
 
+    rcode = ldns_pkt_get_rcode(decoded_dns);
+
     if (list_count == 0 && rcode == 3) {
-        dlog("[D] NXDOMAIN\n");
+        dlog("[D] NXDOMAIN: %s\n", lname_str);
         /* PROBLEM:
          * As there is no valid ldns_rr here and we cant fake one that will
          * be very unique, we cant push this to the normal
@@ -318,25 +315,32 @@ archive_lname_list(packetinfo   *pi,
          * if the bucket is to big or non efficient. We would still store data
          * such as: fistseen,lastseen,client_ip,server_ip,class,query,NXDOMAIN
          */
-
-         /*
          if (config.dnsf & DNS_CHK_NXDOMAIN) {
+            ldns_rr_list *questions;
+            ldns_rr_class class;
+            ldns_rr_type  type;
+            ldns_rr *rr;
+
             // CHECK IF THE NODE EXISTS, IF NOT MAKE IT - RETURN POINTER TO NODE
             if (lname_node == NULL) {
                 dnshash = hash(lname_str);
                 dlog("[D] Hash: %lu\n", dnshash);
                 lname_node = pdnsr_lookup_or_make_new(dnshash, pi, lname_str);
             }
-            unsigned char *rname_str = 0;
-            dlog("[D] rname_str:%s\n", rname_str);
-
-            // CHECK IF THE NODE HAS THE ASSOCIATED ENTRY, IF NOT ADD IT.
-            associated_lookup_or_make_insert(lname_node, pi, rname_str, rr);
-            free(rname_str);
+            /* Set the NXDOMAIN flag: */
+            //lname_node->nxflag |= DNS_NXDOMAIN;
+            questions   = ldns_pkt_question(decoded_dns);
+            rr = ldns_rr_list_rr(questions, 0);
+            class = ldns_rr_get_class(rr);
+            type  = ldns_rr_get_type(rr);
+            /* Print the NXDOMAIN */
+            if ((lname_node->last_seen - lname_node->last_print) >= config.dnsprinttime) {
+                print_passet_nxd(lname_node, lname, rr);
+                lname_node->seen = 0;
+            }
         }
         free(lname_str);
         return(0);
-        */
     }
    
     for (i = 0; i < list_count; i++) {
@@ -565,6 +569,107 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
     return dest;
 }
 
+void print_passet_nxd(pdns_record *l, ldns_rdf *lname, ldns_rr *rr){
+    FILE *fd;
+    uint8_t screen;
+    static char ip_addr_s[INET6_ADDRSTRLEN];
+    static char ip_addr_c[INET6_ADDRSTRLEN];
+
+    if (config.logfile[0] == '-' && config.logfile[1] == '\0' ) {
+        if (config.handle == NULL) return;
+        screen = 1;
+        fd = stdout;
+    } else {
+        screen = 0;
+        fd = fopen(config.logfile, "a");
+        if (fd == NULL) {
+            plog("[E] ERROR: Cant open file %s\n",config.logfile);
+            l->last_print = l->last_seen;
+            return;
+        }
+    }
+
+    u_ntop(l->sip, l->af, ip_addr_s);
+    u_ntop(l->cip, l->af, ip_addr_c);
+
+    /* example output:
+     * 1329575805||100.240.60.160||80.160.30.30||IN||sadf.googles.com.||A||NXDOMAIN||0
+     */
+    fprintf(fd,"%lu||%s||%s||",l->last_seen, ip_addr_c, ip_addr_s);
+
+    switch (ldns_rr_get_class(rr)) {
+        case LDNS_RR_CLASS_IN:
+             fprintf(fd,"IN");
+             break;
+        case LDNS_RR_CLASS_CH:
+             fprintf(fd,"CH");
+             break;
+        case LDNS_RR_CLASS_HS:
+             fprintf(fd,"HS");
+             break;
+        case LDNS_RR_CLASS_NONE:
+             fprintf(fd,"NONE");
+             break;
+        case LDNS_RR_CLASS_ANY:
+             fprintf(fd,"ANY");
+             break; 
+        default:
+             fprintf(fd,"%d",ldns_rr_get_class(rr));
+             break;
+    }    
+    
+    fprintf(fd,"||%s||",l->qname);
+
+    switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_PTR:
+             fprintf(fd,"PTR");
+             break;
+        case LDNS_RR_TYPE_A:
+             fprintf(fd,"A");
+             break;
+        case LDNS_RR_TYPE_AAAA:
+             fprintf(fd,"AAAA");
+             break;
+        case LDNS_RR_TYPE_CNAME:
+             fprintf(fd,"CNAME");
+             break;
+        case LDNS_RR_TYPE_DNAME:
+             fprintf(fd,"DNAME");
+             break;
+        case LDNS_RR_TYPE_NAPTR:
+             fprintf(fd,"NAPTR");
+             break;
+        case LDNS_RR_TYPE_RP:
+             fprintf(fd,"RP");
+             break;
+        case LDNS_RR_TYPE_SRV:
+             fprintf(fd,"SRV");
+             break;
+        case LDNS_RR_TYPE_TXT:
+             fprintf(fd,"TXT");
+             break;
+        case LDNS_RR_TYPE_SOA:
+             fprintf(fd,"SOA");
+             break;
+        case LDNS_RR_TYPE_NS:
+             fprintf(fd,"NS");
+             break;
+        case LDNS_RR_TYPE_MX:
+             fprintf(fd,"MX");
+             break; 
+        default:
+            fprintf(fd,"%d",ldns_rdf_get_type(lname));
+            break;
+    }
+
+    fprintf(fd,"||NXDOMAIN||0\n");
+
+    if (screen == 0)
+        fclose(fd);
+
+    l->last_print = l->last_seen;
+}
+
 void print_passet(pdns_asset *p, pdns_record *l) {
 
     FILE *fd;
@@ -675,8 +780,8 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
         // if found, update & return dnsr
         if (strcmp((const char *)lname_str,(const char *)pdnsr->qname) == 0) { // match :)
             pdnsr->last_seen = pi->pheader->ts.tv_sec;
-            pdnsr->sip       = pi->cxt->s_ip;
-            pdnsr->cip       = pi->cxt->d_ip;
+            pdnsr->cip       = pi->cxt->s_ip; // This should always be the client IP
+            pdnsr->sip       = pi->cxt->d_ip; // This should always be the server IP
             return pdnsr;
         }
         pdnsr = pdnsr->next;
@@ -696,6 +801,7 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     pdnsr->first_seen = pi->pheader->ts.tv_sec;
     pdnsr->last_seen  = pi->pheader->ts.tv_sec;
     pdnsr->af         = pi->cxt->af;
+    pdnsr->nxflag     = 0;
     pdnsr->sip        = pi->cxt->s_ip;
     pdnsr->cip        = pi->cxt->d_ip;
     pdnsr->next       = head;
@@ -1004,6 +1110,11 @@ void parse_dns_flags (char *args)
             case 'n': // NS
                config.dnsf |= DNS_CHK_NS;
                dlog("[D] Enabling flag: DNS_CHK_NS\n");
+               ok++;
+               break;
+            case 'x': // NXDOMAIN
+               config.dnsf |= DNS_CHK_NXDOMAIN;
+               dlog("[D] Enabling flag: DNS_CHK_NXDOMAIN\n");
                ok++;
                break;
             case '\0':
