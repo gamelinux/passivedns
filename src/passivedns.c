@@ -973,6 +973,7 @@ void usage()
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
     olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
+    olog(" -L <file>       Name of NXDOMAIN logfile (default: /var/log/passivedns-nxd.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -988,6 +989,7 @@ void usage()
     olog("\n");
     olog("  4:A    6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA\n");
     olog("  P:PTR  R:RP    S:SRV    T:TXT    M:MX     n:NS\n");
+    olog("  x:NXD\n");
     olog("\n");
 }
 
@@ -1006,6 +1008,7 @@ int main(int argc, char *argv[])
 #define BPFF "port 53"
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
+    config.logfile_nxd = "/var/log/passivedns-nxd.log";
     config.pidfile = "/var/run/passivedns.pid";
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
     config.dnsprinttime = DNSPRINTTIME;
@@ -1030,7 +1033,7 @@ int main(int argc, char *argv[])
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
 
-#define ARGS "i:r:l:hb:Dp:C:P:S:X:u:g:T:"
+#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1039,6 +1042,9 @@ int main(int argc, char *argv[])
             break;
         case 'r':
             config.pcap_file = strdup(optarg);
+            break;
+        case 'L':
+            config.logfile_nxd = strdup(optarg);
             break;
         case 'l':
             config.logfile = strdup(optarg);

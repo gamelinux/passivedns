@@ -575,15 +575,15 @@ void print_passet_nxd(pdns_record *l, ldns_rdf *lname, ldns_rr *rr){
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
-    if (config.logfile[0] == '-' && config.logfile[1] == '\0' ) {
+    if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0' ) {
         if (config.handle == NULL) return;
         screen = 1;
         fd = stdout;
     } else {
         screen = 0;
-        fd = fopen(config.logfile, "a");
+        fd = fopen(config.logfile_nxd, "a");
         if (fd == NULL) {
-            plog("[E] ERROR: Cant open file %s\n",config.logfile);
+            plog("[E] ERROR: Cant open file %s\n",config.logfile_nxd);
             l->last_print = l->last_seen;
             return;
         }

@@ -492,6 +492,7 @@ typedef struct _globalconfig {
     char        *user_filter;            /**/
     char        *net_ip_string;          /**/
     char        *logfile;                /* Filename of /var/log/passivedns.log */
+    char        *logfile_nxd;            /* Filename for NXDOMAIN logging /var/log/passivedns-nxd.log */
     char        *fifo;                   /* Path to FIFO output */
     char        *pcap_file;              /* Filename to pcap too read */
     char        *dev;                    /* Device name to use for sniffing */
