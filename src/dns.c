@@ -802,8 +802,8 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     pdnsr->last_seen  = pi->pheader->ts.tv_sec;
     pdnsr->af         = pi->cxt->af;
     pdnsr->nxflag     = 0;
-    pdnsr->sip        = pi->cxt->s_ip;
-    pdnsr->cip        = pi->cxt->d_ip;
+    pdnsr->cip        = pi->cxt->s_ip; // This should always be the client IP
+    pdnsr->sip        = pi->cxt->d_ip; // This should always be the server IP
     pdnsr->next       = head;
     pdnsr->prev       = NULL;
     pdnsr->passet     = NULL;
