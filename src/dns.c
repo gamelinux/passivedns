@@ -11,7 +11,6 @@
 #include "dns.h"
 
 static int archive(packetinfo *pi, ldns_pkt *decoded_dns);
-static int archive_query(packetinfo *pi, ldns_pkt *decoded_dns);
 static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf, ldns_pkt *decoded_dns);
 void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr);
 pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
@@ -189,40 +188,6 @@ void dns_parser (packetinfo *pi) {
 
     ldns_pkt_free(decoded_dns);
 }
-
-static int
-archive_query(packetinfo *pi, ldns_pkt *decoded_dns)
-{
-    ldns_buffer *dns_buffer;
-    int          qa_rrcount;
-    int          i;
-    uint8_t      rcode;
-    ldns_rr_list *questions;
-
-    questions  = ldns_pkt_question(decoded_dns);
-    qa_rrcount = ldns_rr_list_rr_count(questions);
-    dns_buffer = ldns_buffer_new(LDNS_MIN_BUFLEN);
-    rcode = ldns_pkt_get_rcode(decoded_dns);
-    dlog("[*] %d qa_rrcount\n", qa_rrcount);
-
-    for (i = 0; i < qa_rrcount; i++) {
-        ldns_rr  *question_rr;
-        ldns_rdf *rdf_data;
-        int       ret;
-
-        question_rr = ldns_rr_list_rr(questions, i);
-        rdf_data    = ldns_rr_owner(question_rr);
-
-        dlog("[D] rdf_data = %p\n", rdf_data);
-        ret = archive_lname_list(pi, rdf_data, questions, dns_buffer, decoded_dns);
-
-        if (ret < 0) {
-            dlog("[D] archive_lname_list() returned error\n");
-        }
-    }
-    ldns_buffer_free(dns_buffer);
-    return(0);
-} 
 
 static int
 archive(packetinfo *pi, ldns_pkt *decoded_dns)

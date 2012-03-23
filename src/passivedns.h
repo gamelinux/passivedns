@@ -246,8 +246,6 @@ typedef struct _connection {
     uint8_t  d_tcpFlags;          /* tcpflags sent by destination */
     uint8_t  check;               /* Flags spesifying checking */
     uint16_t plid;                /* Protocol layer ID (DNS TID) */
-    struct   _asset *c_asset;     /* pointer to src asset */
-    struct   _asset *s_asset;     /* pointer to server asset */
 } connection;
 #define CXT_DONT_CHECK_SERVER     0x01  /* Dont check server packets */
 #define CXT_DONT_CHECK_CLIENT     0x02  /* Dont check client packets */
@@ -477,8 +475,6 @@ typedef struct _globalconfig {
     uint8_t      chroot_flag;            /* Flag for going chroot */
     uint8_t      daemon_flag;            /* Flag for going daemon */
     uint64_t     dnsf;                   /* Flags for DNS RR Type checks to do */
-    uint8_t      ctf;                    /* Flags for TCP checks, SYN,RST,FIN.... */
-    uint8_t      cof;                    /* Flags for other; icmp,udp,other,.... */
     uint32_t     payload;                /* dump how much of the payload ?  */
     uint32_t     curcxt;
     uint32_t     llcxt;
@@ -493,7 +489,6 @@ typedef struct _globalconfig {
     char        *net_ip_string;          /**/
     char        *logfile;                /* Filename of /var/log/passivedns.log */
     char        *logfile_nxd;            /* Filename for NXDOMAIN logging /var/log/passivedns-nxd.log */
-    char        *fifo;                   /* Path to FIFO output */
     char        *pcap_file;              /* Filename to pcap too read */
     char        *dev;                    /* Device name to use for sniffing */
     char        *dpath;                  /* ... ??? seriously ???... */

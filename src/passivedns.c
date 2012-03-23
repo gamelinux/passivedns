@@ -28,7 +28,7 @@
 #include <netinet/in.h> 
 #include <signal.h>
 #include <pcap.h>
-#include <resolv.h>
+//#include <resolv.h>
 #include <getopt.h>
 #include <time.h>
 #include <sys/types.h>
@@ -452,8 +452,6 @@ connection *cxt_new(packetinfo *pi)
     cxt->proto = pi->proto;
 
     cxt->check = 0x00;
-    cxt->c_asset = NULL;
-    cxt->s_asset = NULL;
     cxt->reversed = 0;
     config.curcxt++;
 
@@ -470,8 +468,6 @@ int cxt_update_client(connection *cxt, packetinfo *pi)
 
     pi->cxt = cxt;
     pi->sc = SC_CLIENT;
-    //if(!cxt->c_asset)
-    //    cxt->c_asset = pi->asset; // connection client asset
     if (cxt->s_total_bytes > MAX_BYTE_CHECK
         || cxt->s_total_pkts > MAX_PKT_CHECK) {
         return 0;   // Dont Check!
@@ -489,8 +485,6 @@ int cxt_update_server(connection *cxt, packetinfo *pi)
 
     pi->cxt = cxt;
     pi->sc = SC_SERVER;
-    //if(!cxt->s_asset)
-    //    cxt->s_asset = pi->asset; // server asset
     if (cxt->d_total_bytes > MAX_BYTE_CHECK
         || cxt->d_total_pkts > MAX_PKT_CHECK) {
         return 0;   // Dont check!
