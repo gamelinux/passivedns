@@ -973,7 +973,7 @@ void usage()
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
     olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
-    olog(" -L <file>       Name of NXDOMAIN logfile (default: /var/log/passivedns-nxd.log).\n");
+    olog(" -L <file>       Name of NXDOMAIN logfile (default: /var/log/passivedns.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1008,7 +1008,7 @@ int main(int argc, char *argv[])
 #define BPFF "port 53"
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
-    config.logfile_nxd = "/var/log/passivedns-nxd.log";
+    config.logfile_nxd = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
     config.dnsprinttime = DNSPRINTTIME;
@@ -1026,7 +1026,7 @@ int main(int argc, char *argv[])
 //    config.dnsf |= DNS_CHK_SOA;
 //    config.dnsf |= DNS_CHK_NS;
 //    config.dnsf |= DNS_CHK_MX;
-    config.dnsf |= DNS_CHK_NXDOMAIN;
+//    config.dnsf |= DNS_CHK_NXDOMAIN;
 
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
