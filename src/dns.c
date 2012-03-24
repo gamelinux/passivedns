@@ -10,6 +10,20 @@
 #include "passivedns.h"
 #include "dns.h"
 
+<<<<<<< HEAD
+=======
+static int archive(packetinfo *pi, ldns_pkt *decoded_dns);
+static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf, ldns_pkt *decoded_dns);
+void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr);
+pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
+void print_passet(pdns_asset *p, pdns_record *l);
+void print_passet_nxd(pdns_record *l, ldns_rdf *lname, ldns_rr *rr);
+const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest);
+void expire_dns_assets(pdns_record *pdnsr, time_t expire_t);
+void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr);
+void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet);
+
+>>>>>>> c04111e126e481dbac97aa6a2fa1a091ae2ef32b
 globalconfig config;
 
 /* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
@@ -180,11 +194,27 @@ void dns_parser (packetinfo *pi) {
     ldns_pkt_free(dns_pkt);
 }
 
+<<<<<<< HEAD
 int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt) {
     int            rrcount_query;
     int            j;
     ldns_rr_list  *dns_query_domains;
     ldns_buffer   *dns_buff;
+=======
+static int
+archive(packetinfo *pi, ldns_pkt *decoded_dns)
+{
+    ldns_buffer *dns_buffer;
+    int          qa_rrcount;
+    int          i;
+    ldns_rr_list *questions;
+    ldns_rr_list *answers;
+
+    questions   = ldns_pkt_question(decoded_dns);
+    answers     = ldns_pkt_answer(decoded_dns);    // Move -> archive_lname_list
+
+    qa_rrcount = ldns_rr_list_rr_count(questions);
+>>>>>>> c04111e126e481dbac97aa6a2fa1a091ae2ef32b
 
     dns_query_domains = ldns_pkt_question(dns_pkt);
     rrcount_query     = ldns_rr_list_rr_count(dns_query_domains);

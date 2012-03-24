@@ -28,7 +28,7 @@
 #include <netinet/in.h> 
 #include <signal.h>
 #include <pcap.h>
-#include <resolv.h>
+//#include <resolv.h>
 #include <getopt.h>
 #include <time.h>
 #include <sys/types.h>
@@ -457,8 +457,6 @@ connection *cxt_new(packetinfo *pi)
     cxt->proto = pi->proto;
 
     cxt->check = 0x00;
-    cxt->c_asset = NULL;
-    cxt->s_asset = NULL;
     cxt->reversed = 0;
     config.curcxt++;
 
@@ -475,8 +473,6 @@ int cxt_update_client(connection *cxt, packetinfo *pi)
 
     pi->cxt = cxt;
     pi->sc = SC_CLIENT;
-    //if(!cxt->c_asset)
-    //    cxt->c_asset = pi->asset; // connection client asset
     if (cxt->s_total_bytes > MAX_BYTE_CHECK
         || cxt->s_total_pkts > MAX_PKT_CHECK) {
         return 0;   // Dont Check!
@@ -494,8 +490,6 @@ int cxt_update_server(connection *cxt, packetinfo *pi)
 
     pi->cxt = cxt;
     pi->sc = SC_SERVER;
-    //if(!cxt->s_asset)
-    //    cxt->s_asset = pi->asset; // server asset
     if (cxt->d_total_bytes > MAX_BYTE_CHECK
         || cxt->d_total_pkts > MAX_PKT_CHECK) {
         return 0;   // Dont check!
@@ -978,7 +972,7 @@ void usage()
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
     olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
-    olog(" -L <file>       Name of NXDOMAIN logfile (default: /var/log/passivedns-nxd.log).\n");
+    olog(" -L <file>       Name of NXDOMAIN logfile (default: /var/log/passivedns.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1013,7 +1007,7 @@ int main(int argc, char *argv[])
 #define BPFF "port 53"
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
-    config.logfile_nxd = "/var/log/passivedns-nxd.log";
+    config.logfile_nxd = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
     config.dnsprinttime = DNSPRINTTIME;
@@ -1031,7 +1025,7 @@ int main(int argc, char *argv[])
 //    config.dnsf |= DNS_CHK_SOA;
 //    config.dnsf |= DNS_CHK_NS;
 //    config.dnsf |= DNS_CHK_MX;
-    config.dnsf |= DNS_CHK_NXDOMAIN;
+//    config.dnsf |= DNS_CHK_NXDOMAIN;
 
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
