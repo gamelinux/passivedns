@@ -1,8 +1,7 @@
-void dns_parser (packetinfo *pi);
-void expire_dns_records();
-void expire_all_dns_records();
-void update_config_mem_counters();
-void parse_dns_flags (char *args);
+#ifndef DNS_H
+#define DNS_H
+
+#include <ldns/ldns.h>
 
 /* Default flags for types to handle */
 #define DNS_CHK_AAAA       0x0001
@@ -45,16 +44,6 @@ void parse_dns_flags (char *args);
  */
 #define DNSCACHETIMEOUT       43200    /* 12h=43200sec */
 
-typedef enum {
-    QUESTION,
-    ANSWER
-} query_type_t;
-
-typedef struct {
-    query_type_t   query_type;
-    char          *key;
-} archive_node_t;
-
 /* HASH: 
  *     [DOMAIN_HASH_BUCKET]_
  *                          |__[Q-TYPE_BUCKET]_<--- PTR,MX,A... 
@@ -90,3 +79,21 @@ typedef struct _pdns_record {
     struct _pdns_record   *prev;       /* Prev dns record */
 } pdns_record;
 
+/* Declare */
+int process_dns_answer (packetinfo *pi, ldns_pkt *decoded_dns);
+int cache_dns_objects (packetinfo *pi, ldns_rdf *rdf_data, ldns_buffer *buff, ldns_pkt *dns_pkt);
+pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *domain_name);
+const char *u_ntop (const struct in6_addr ip_addr, int af, char *dest);
+void dns_parser (packetinfo *pi);
+void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr, unsigned char *rdomain_name);
+void print_passet (pdns_asset *p, pdns_record *l);
+void print_passet_nxd (pdns_record *l, ldns_rdf *lname, ldns_rr *rr);
+void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
+void expire_dns_records();
+void expire_all_dns_records();
+void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr);
+void delete_dns_asset (pdns_asset **passet_head, pdns_asset *passet);
+void update_config_mem_counters();
+void parse_dns_flags (char *args);
+
+#endif //DNS_H

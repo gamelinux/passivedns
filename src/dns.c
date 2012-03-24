@@ -3,24 +3,12 @@
 #include <string.h>
 #include <time.h>
 #include <sys/types.h>
-#include <ldns/ldns.h>
+//#include <ldns/ldns.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pcap.h>
 #include "passivedns.h"
 #include "dns.h"
-
-static int archive(packetinfo *pi, ldns_pkt *decoded_dns);
-static int archive_query(packetinfo *pi, ldns_pkt *decoded_dns);
-static int archive_lname_list(packetinfo *pi, ldns_rdf *lname,ldns_rr_list *list, ldns_buffer *buf, ldns_pkt *decoded_dns);
-void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr);
-pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str);
-void print_passet(pdns_asset *p, pdns_record *l);
-void print_passet_nxd(pdns_record *l, ldns_rdf *lname, ldns_rr *rr);
-const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest);
-void expire_dns_assets(pdns_record *pdnsr, time_t expire_t);
-void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr);
-void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet);
 
 globalconfig config;
 
@@ -41,7 +29,7 @@ uint64_t hash(unsigned char *str) {
 
 void dns_parser (packetinfo *pi) {
     ldns_status   status;
-    ldns_pkt     *decoded_dns;
+    ldns_pkt     *dns_pkt;
 
     status = LDNS_STATUS_ERR; 
 
@@ -52,10 +40,10 @@ void dns_parser (packetinfo *pi) {
     if ( pi->af == AF_INET ) {
         switch (pi->ip4->ip_p) {
             case IP_PROTO_TCP:
-                status = ldns_wire2pkt(&decoded_dns,pi->payload + 2, pi->plen - 2);
+                status = ldns_wire2pkt(&dns_pkt,pi->payload + 2, pi->plen - 2);
                 break;
             case IP_PROTO_UDP:
-                status = ldns_wire2pkt(&decoded_dns,pi->payload, pi->plen);
+                status = ldns_wire2pkt(&dns_pkt,pi->payload, pi->plen);
                 break;
             default:
                 break;
@@ -63,10 +51,10 @@ void dns_parser (packetinfo *pi) {
     } else if ( pi->af == AF_INET6 ) {
         switch (pi->ip6->next) {
             case IP_PROTO_TCP:
-                status = ldns_wire2pkt(&decoded_dns,pi->payload + 2, pi->plen - 2);
+                status = ldns_wire2pkt(&dns_pkt,pi->payload + 2, pi->plen - 2);
                 break;
             case IP_PROTO_UDP:
-                status = ldns_wire2pkt(&decoded_dns,pi->payload, pi->plen);
+                status = ldns_wire2pkt(&dns_pkt,pi->payload, pi->plen);
                 break;
             default:
                 break;
@@ -74,32 +62,32 @@ void dns_parser (packetinfo *pi) {
     }
 
     if (status != LDNS_STATUS_OK) {
-        dlog("[D] ldns_wire2pkt status = %d\n", status);
+        dlog("[D] ldns_wire2pkt status: %d\n", status);
         return;
     }
 
     /* We dont want to process Truncated packets */
-    if (ldns_pkt_tc(decoded_dns)) {
+    if (ldns_pkt_tc(dns_pkt)) {
        dlog("[D] DNS packet with Truncated (TC) bit set! Skipping!\n");
-       ldns_pkt_free(decoded_dns);
+       ldns_pkt_free(dns_pkt);
        return;
     }
 
     /* we only care about answers when we record data */
-    if (ldns_pkt_qr(decoded_dns)) {
+    if (ldns_pkt_qr(dns_pkt)) {
         /* Answer must come from the server, and the client has to have sent a packet! */
         if ( pi->sc != SC_SERVER || pi->cxt->s_total_pkts == 0 ) {
-            dlog("[D] DNS Answer without a Question?: Query TID = %d and Answer TID = %d\n",pi->cxt->plid,ldns_pkt_id(decoded_dns));
-            ldns_pkt_free(decoded_dns);
+            dlog("[D] DNS Answer without a Question?: Query TID = %d and Answer TID = %d\n",pi->cxt->plid,ldns_pkt_id(dns_pkt));
+            ldns_pkt_free(dns_pkt);
             return;
         }
         dlog("[D] DNS Answer\n");
         /* Check the DNS TID */
-        if ( (pi->cxt->plid == ldns_pkt_id(decoded_dns)) ) {
+        if ( (pi->cxt->plid == ldns_pkt_id(dns_pkt)) ) {
             dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
         } else {
-            dlog("[D] DNS Query TID did not match Answer TID: %d != %d - Skipping!\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
-            ldns_pkt_free(decoded_dns);
+            dlog("[D] DNS Query TID did not match Answer TID: %d != %d - Skipping!\n", pi->cxt->plid, ldns_pkt_id(dns_pkt));
+            ldns_pkt_free(dns_pkt);
             return;
         }
 
@@ -111,7 +99,7 @@ void dns_parser (packetinfo *pi) {
          * traffic generated in response to a cache miss (RD bit set to 0)
          * is strictly needed in order to build a passive DNS database.
          */
-        if (ldns_pkt_rd(decoded_dns)) {
+        if (ldns_pkt_rd(dns_pkt)) {
             dlog("[D] DNS packet with Recursion Desired (RD) bit set!\n");
             /* Between DNS-server to DNS-server, we should drop this kind
              * of traffic if we are thinking hardening and correctness!
@@ -124,16 +112,16 @@ void dns_parser (packetinfo *pi) {
             //return;
         }
 
-        if (!ldns_pkt_qdcount(decoded_dns)) {
+        if (!ldns_pkt_qdcount(dns_pkt)) {
             /* no questions or answers */
             dlog("[D] DNS packet did not contain a question. Skipping!\n");
-            ldns_pkt_free(decoded_dns);
+            ldns_pkt_free(dns_pkt);
             return;
         }
 
-        // send it off to the linked list
-        if (archive(pi, decoded_dns) < 0) {
-            dlog("[D] archive() returned -1\n");
+        // send it off for processing
+        if (process_dns_answer(pi, dns_pkt) < 0) {
+            dlog("[D] process_dns_answer() returned -1\n");
         }
     } else {
         /* We need to get the DNS TID from the Query to later match with the
@@ -143,7 +131,7 @@ void dns_parser (packetinfo *pi) {
         /* Question must come from the client (and the server should not have sent a packet). */
         if ( pi->sc != SC_CLIENT ) {
             dlog("[D] DNS Query not from a client? Skipping!\n");
-            ldns_pkt_free(decoded_dns);
+            ldns_pkt_free(dns_pkt);
             return;
         }
         
@@ -152,8 +140,8 @@ void dns_parser (packetinfo *pi) {
          * 60 Secs are default UDP timeout in cxt, and should
          * be enough for a TCP session of DNS too.
          */
-        if ( (pi->cxt->plid != 0 && pi->cxt->plid != ldns_pkt_id(decoded_dns)) && ((pi->cxt->last_pkt_time - pi->cxt->start_time) <= 60) ) {
-            dlog("[D] DNS Query on an established DNS session - TID: Old:%d New:%d\n", pi->cxt->plid, ldns_pkt_id(decoded_dns));
+        if ( (pi->cxt->plid != 0 && pi->cxt->plid != ldns_pkt_id(dns_pkt)) && ((pi->cxt->last_pkt_time - pi->cxt->start_time) <= 60) ) {
+            dlog("[D] DNS Query on an established DNS session - TID: Old:%d New:%d\n", pi->cxt->plid, ldns_pkt_id(dns_pkt));
             /* Some clients have bad or strange random src
              * port generator and will gladly reuse the same
              * src port several times in a short time period.
@@ -164,147 +152,94 @@ void dns_parser (packetinfo *pi) {
             dlog("[D] New DNS Query\n");
         }
 
-        if (!ldns_pkt_qdcount(decoded_dns)) {
+        if (!ldns_pkt_qdcount(dns_pkt)) {
             /* no questions or answers */
             dlog("[D] DNS Query packet did not contain a question? Skipping!\n");
-            ldns_pkt_free(decoded_dns);
+            ldns_pkt_free(dns_pkt);
             return;
         }
 
-        if ( (pi->cxt->plid = ldns_pkt_id(decoded_dns)) ) {
+        if ( (pi->cxt->plid = ldns_pkt_id(dns_pkt)) ) {
             dlog("[D] DNS Query with TID = %d\n", pi->cxt->plid);
         } else {
             dlog("[E] Error getting DNS TID from Query!\n");
-            ldns_pkt_free(decoded_dns);
+            ldns_pkt_free(dns_pkt);
             return;
         }
 
-        /* Dont make entry for this yet */
+        /* For hardening, we can extract the query and add it to the cxt
+         * and then check it later in the answer, that they match.
+         */
         /*
-        if (archive_query(pi, decoded_dns) < 0) {
-            dlog("[D] archiver_query() returned -1\n");
+        if (update_query_cxt(pi, dns_pkt) < 0) {
+            dlog("[D] update_query_cxt() returned -1\n");
         }
         */
     }
 
-    ldns_pkt_free(decoded_dns);
+    ldns_pkt_free(dns_pkt);
 }
 
-static int
-archive_query(packetinfo *pi, ldns_pkt *decoded_dns)
-{
-    ldns_buffer *dns_buffer;
-    int          qa_rrcount;
-    int          i;
-    uint8_t      rcode;
-    ldns_rr_list *questions;
+int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt) {
+    int            rrcount_query;
+    int            j;
+    ldns_rr_list  *dns_query_domains;
+    ldns_buffer   *dns_buff;
 
-    questions  = ldns_pkt_question(decoded_dns);
-    qa_rrcount = ldns_rr_list_rr_count(questions);
-    dns_buffer = ldns_buffer_new(LDNS_MIN_BUFLEN);
-    rcode = ldns_pkt_get_rcode(decoded_dns);
-    dlog("[*] %d qa_rrcount\n", qa_rrcount);
-
-    for (i = 0; i < qa_rrcount; i++) {
-        ldns_rr  *question_rr;
-        ldns_rdf *rdf_data;
-        int       ret;
-
-        question_rr = ldns_rr_list_rr(questions, i);
-        rdf_data    = ldns_rr_owner(question_rr);
-
-        dlog("[D] rdf_data = %p\n", rdf_data);
-        ret = archive_lname_list(pi, rdf_data, questions, dns_buffer, decoded_dns);
-
-        if (ret < 0) {
-            dlog("[D] archive_lname_list() returned error\n");
-        }
-    }
-    ldns_buffer_free(dns_buffer);
-    return(0);
-} 
-
-static int
-archive(packetinfo *pi, ldns_pkt *decoded_dns)
-{
-    ldns_buffer *dns_buffer;
-    int          qa_rrcount;
-    int          i;
-    ldns_rr_list *questions;
-    ldns_rr_list *answers;
-
-    questions   = ldns_pkt_question(decoded_dns);
-    answers     = ldns_pkt_answer(decoded_dns);    // Move -> archive_lname_list
-
-    qa_rrcount = ldns_rr_list_rr_count(questions);
-
-    dns_buffer = ldns_buffer_new(LDNS_MIN_BUFLEN);
-
-    dlog("[*] %d qa_rrcount\n", qa_rrcount);
+    dns_query_domains = ldns_pkt_question(dns_pkt);
+    rrcount_query     = ldns_rr_list_rr_count(dns_query_domains);
+    dns_buff = ldns_buffer_new(LDNS_MIN_BUFLEN);
+    dlog("[*] rrcount_query: %d\n", rrcount_query);
     
     // Do we ever have more than one Question?
     // If we do - are we handling it correct ?
-    for (i = 0; i < qa_rrcount; i++) {
-        ldns_rr  *question_rr;
+    for (j = 0; j < rrcount_query; j++) {
         ldns_rdf *rdf_data;
-        int       ret;
 
-        question_rr = ldns_rr_list_rr(questions, i);
-        rdf_data    = ldns_rr_owner(question_rr);
+        rdf_data = ldns_rr_owner(ldns_rr_list_rr(dns_query_domains, j));
+        dlog("[D] rdf_data: %p\n", rdf_data);
 
-        dlog("[D] rdf_data = %p\n", rdf_data);
-
-        /* plop all the answers into the correct archive_node_t's
-         * associated_nodes hash. */
-        ret = archive_lname_list(pi, rdf_data, answers, dns_buffer, decoded_dns);
-
-        if (ret < 0) {
-            dlog("[D] archive_lname_list() returned error\n");
+        if ( cache_dns_objects(pi, rdf_data, dns_buff, dns_pkt) != 0 ) {
+            dlog("[D] cache_dns_objects() returned error\n");
         }
     }
 
-    ldns_buffer_free(dns_buffer);
+    ldns_buffer_free(dns_buff);
     return(0);
 }
 
-static int
-archive_lname_list(packetinfo   *pi,
-                   ldns_rdf     *lname,
-                   ldns_rr_list *list,
-                   ldns_buffer  *buf,
-                   ldns_pkt     *decoded_dns)
-{
-    int             list_count;
-    unsigned char  *lname_str = 0;
-    ldns_status     status;
-    int             i;
-    pdns_record    *lname_node = NULL;
+int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
+                             ldns_buffer *buff, ldns_pkt *dns_pkt) {
+    int             j;
+    int             dns_answer_domain_cnt;
     uint64_t        dnshash;
-    uint8_t       rcode;
+    ldns_status     status;
+    pdns_record    *pr = NULL;
+    ldns_rr_list   *dns_answer_domains;
+    unsigned char  *domain_name = 0;
 
-    ldns_buffer_clear(buf);
-    status = ldns_rdf2buffer_str(buf, lname);
+    ldns_buffer_clear(buff);
+    status = ldns_rdf2buffer_str(buff, rdf_data);
 
     if (status != LDNS_STATUS_OK) {
-        dlog("[D] ldns_rdf2buffer_str() returned error %d\n", status);
+        dlog("[D] Error in ldns_rdf2buffer_str(): %d\n", status);
         return(-1);
     }
 
-    list_count = ldns_rr_list_rr_count(list);
-    lname_str  = (unsigned char *)ldns_buffer2str(buf);
+    dns_answer_domains    = ldns_pkt_answer(dns_pkt);
+    dns_answer_domain_cnt = ldns_rr_list_rr_count(dns_answer_domains);
+    domain_name           = (unsigned char *) ldns_buffer2str(buff);
 
-    if (lname_str == NULL) {
-        dlog("[D] ldns_buffer2str(%p) returned null\n", buf);
+    if (domain_name == NULL) {
+        dlog("[D] Error in ldns_buffer2str(%p)\n", buff);
         return(-1);
+    } else {
+        dlog("[D] domain_name: %s\n", domain_name);
+        dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
     }
 
-    dlog("[D] lname_str:%s\n", lname_str);
-    dlog("[D] list_count:%d\n",list_count);
-
-    rcode = ldns_pkt_get_rcode(decoded_dns);
-
-    if (list_count == 0 && rcode == 3) {
-        dlog("[D] NXDOMAIN: %s\n", lname_str);
+    if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) == 3) {
+        dlog("[D] NXDOMAIN: %s\n", domain_name);
         /* PROBLEM:
          * As there is no valid ldns_rr here and we cant fake one that will
          * be very unique, we cant push this to the normal
@@ -316,173 +251,153 @@ archive_lname_list(packetinfo   *pi,
          * such as: fistseen,lastseen,client_ip,server_ip,class,query,NXDOMAIN
          */
          if (config.dnsf & DNS_CHK_NXDOMAIN) {
-            ldns_rr_list *questions;
-            ldns_rr_class class;
-            ldns_rr_type  type;
-            ldns_rr *rr;
+            ldns_rr_list  *dns_query_domains;
+            ldns_rr_class  class;
+            ldns_rr_type   type;
+            ldns_rr       *rr;
 
-            // CHECK IF THE NODE EXISTS, IF NOT MAKE IT - RETURN POINTER TO NODE
-            if (lname_node == NULL) {
-                dnshash = hash(lname_str);
-                dlog("[D] Hash: %lu\n", dnshash);
-                lname_node = pdnsr_lookup_or_make_new(dnshash, pi, lname_str);
-            }
+            dnshash = hash(domain_name);
+            dlog("[D] Hash: %lu\n", dnshash);
+            /* Check if the node exists, if not, make it */
+            pr = get_pdns_record(dnshash, pi, domain_name);
+            
             /* Set the NXDOMAIN flag: */
             //lname_node->nxflag |= DNS_NXDOMAIN;
-            questions   = ldns_pkt_question(decoded_dns);
-            rr = ldns_rr_list_rr(questions, 0);
+            dns_query_domains = ldns_pkt_question(dns_pkt);
+            rr    = ldns_rr_list_rr(dns_query_domains, 0);
             class = ldns_rr_get_class(rr);
             type  = ldns_rr_get_type(rr);
-            /* Print the NXDOMAIN */
-            if ((lname_node->last_seen - lname_node->last_print) >= config.dnsprinttime) {
-                print_passet_nxd(lname_node, lname, rr);
-                lname_node->seen = 0;
+            if ((pr->last_seen - pr->last_print) >= config.dnsprinttime) {
+                /* Print the NXDOMAIN */
+                print_passet_nxd(pr, rdf_data, rr);
+                pr->seen = 0;
             }
         }
-        free(lname_str);
+        free(domain_name);
         return(0);
     }
    
-    for (i = 0; i < list_count; i++) {
-        ldns_rr       *rr;
-        ldns_rdf      *rname;
-        unsigned char *rname_str = 0;
-        int            data_offset = -1;
+    for (j = 0; j < dns_answer_domain_cnt; j++) {
+        int             offset = -1;
+        ldns_rr        *rr;
+        ldns_rdf       *rname;
+        unsigned char  *rdomain_name = 0;
 
-        ldns_buffer_clear(buf);
-
-        /* so dns lname's are not always associated with
-         *  the actual question. A question may be for blah.com
-         *  but a lname can be stupid.com.
-         *
-         *  The issue becomes is that a caching nameserver may
-         *  aggregate records together such is the case when a
-         *  resolver returns a CNAME, it will then lookup the
-         *  CNAME and plunk that into one response.
-         *
-         *  That's cool and all, but in the case of our sniffer
-         *  we will treat all lname's as the real question, and
-         *  all right names as answers for that question.
-         *
-         *  It servers a purpose within a sniffer like this,
-         *  someone could be doing something a bit shady in that
-         *  they give out an answer for one address, but then
-         *  actually answer a completely different lname. */
-        rr = ldns_rr_list_rr(list, i);
+        rr = ldns_rr_list_rr(dns_answer_domains, j);
 
         switch (ldns_rr_get_type(rr)) {
-            /* at the moment, we only really care about
-             * rr's that have an addr or cname for the rname. */
             case LDNS_RR_TYPE_AAAA:
                 if (config.dnsf & DNS_CHK_AAAA)
-                    data_offset = 0;
+                    offset = 0;
                 break; 
             case LDNS_RR_TYPE_A:
                 if (config.dnsf & DNS_CHK_A)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_PTR:
                 if (config.dnsf & DNS_CHK_PTR)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_CNAME:
                 if (config.dnsf & DNS_CHK_CNAME)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_DNAME:
                 if (config.dnsf & DNS_CHK_DNAME)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_NAPTR:
                 if (config.dnsf & DNS_CHK_NAPTR)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_RP:
                 if (config.dnsf & DNS_CHK_RP)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_SRV:
                 if (config.dnsf & DNS_CHK_SRV)
-                    data_offset = 3;
+                    offset = 3;
                 break;
             case LDNS_RR_TYPE_TXT:
                 if (config.dnsf & DNS_CHK_TXT)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_SOA:
                 if (config.dnsf & DNS_CHK_SOA)
-                    data_offset = 0;
+                    offset = 0;
                 break;
             case LDNS_RR_TYPE_MX:
                 if (config.dnsf & DNS_CHK_MX)
-                    data_offset = 1;
+                    offset = 1;
                 break;
             case LDNS_RR_TYPE_NS:
                 if (config.dnsf & DNS_CHK_NS)
-                    data_offset = 0;
+                    offset = 0;
                 break;
 
             default:
-                data_offset = -1;
+                offset = -1;
                 dlog("[D] ldns_rr_get_type: %d\n",ldns_rr_get_type(rr));
                 break;
         }
 
-        if (data_offset == -1) {
+        if (offset == -1) {
             dlog("[D] LDNS_RR_TYPE not enabled/supported: %d\n",ldns_rr_get_type(rr));
             //data_offset = 0;
             continue;
         }
 
-        // CHECK IF THE NODE EXISTS, IF NOT MAKE IT - RETURN POINTER TO NODE ?
-        if (lname_node == NULL) {
-            dnshash = hash(lname_str);
+        if (pr == NULL) {
+            dnshash = hash(domain_name);
             dlog("[D] Hash: %lu\n", dnshash);
-            lname_node = pdnsr_lookup_or_make_new(dnshash, pi, lname_str);
+            /* Check if the node exists, if not, make it */
+            pr = get_pdns_record(dnshash, pi, domain_name);
         }
 
-        /* now add this answer to the association hash */
-        rname = ldns_rr_rdf(rr, data_offset);
+        /* Get the rdf data from the rr */
+        rname = ldns_rr_rdf(rr, offset);
 
         if (rname == NULL) {
-            dlog("[D] ldns_rr_rdf for rname returned NULL\n");
+            dlog("[D] ldns_rr_rdf returned: NULL\n");
             continue;
         }
 
-        ldns_rdf2buffer_str(buf, rname);
-        rname_str = (unsigned char *)ldns_buffer2str(buf);
+        ldns_buffer_clear(buff);
+        ldns_rdf2buffer_str(buff, rname);
+        rdomain_name = (unsigned char *)ldns_buffer2str(buff);
 
-        if (rname_str == NULL) {
-            dlog("[D] ldns_buffer2str on rname returned NULL\n");
+        if (rdomain_name == NULL) {
+            dlog("[D] ldns_buffer2str returned: NULL\n");
             continue;
         }
-        dlog("[D] rname_str:%s\n", rname_str);
+        dlog("[D] rdomain_name: %s\n", rdomain_name);
 
-        // CHECK IF THE NODE HAS THE ASSOCIATED ENTRY, IF NOT ADD IT.
-        associated_lookup_or_make_insert(lname_node, pi, rname_str, rr);
-        free(rname_str);
+        // Update the pdns record with the pdns asset
+        update_pdns_record_asset(pi, pr, rr, rdomain_name);
+        free(rdomain_name);
     }
-    free(lname_str);
+    free(domain_name);
     return(0);
 }
 
-void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, unsigned char *rname_str, ldns_rr *rr) {
+void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
+                               ldns_rr *rr, unsigned char *rdomain_name) {
 
-    pdns_asset *passet = lname_node->passet;
+    pdns_asset *passet = pr->passet;
     pdns_asset *head   = passet;
     ldns_rr    *prr    = NULL;
     uint32_t    len    = 0;
 
-    dlog("Searching: %u, %s, %s\n",rr->_rr_type, lname_node->qname, rname_str);
+    dlog("Searching: %u, %s, %s\n",rr->_rr_type, pr->qname, rdomain_name);
 
     while (passet != NULL) {
         // if found, update
-        dlog("Matching: %u, %s, %s\n",passet->rr->_rr_type, lname_node->qname, passet->answer);
+        dlog("Matching: %u, %s, %s\n",passet->rr->_rr_type, pr->qname, passet->answer);
         dlog("[*] RR:%u, %u\n",passet->rr->_rr_type, rr->_rr_type);
         if (passet->rr->_rr_type == rr->_rr_type) {
           dlog("[*] rr match\n");
-          dlog("r:%s == a:%s\n",rname_str,passet->answer);
-          if (strcmp((const char *)rname_str,(const char *)passet->answer) == 0 ) {
+          dlog("r:%s == a:%s\n",rdomain_name,passet->answer);
+          if (strcmp((const char *)rdomain_name,(const char *)passet->answer) == 0 ) {
             dlog("[*] rname/answer match\n");
             // We have this, update & if its over 24h since last print - print it, then return
             passet->seen++;
@@ -494,7 +409,7 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
             }
             dlog("[*] DNS asset updated...\n");
             if ((passet->last_seen - passet->last_print) >= config.dnsprinttime) {
-                print_passet(passet, lname_node);
+                print_passet(passet, pr);
                 passet->seen = 0;
             }
             return;
@@ -536,15 +451,15 @@ void associated_lookup_or_make_insert(pdns_record *lname_node, packetinfo *pi, u
     passet->cip        = pi->cxt->s_ip; // This should always be the client IP
     passet->sip        = pi->cxt->d_ip; // This should always be the server IP
     passet->prev       = NULL;
-    len                = strlen((char *)rname_str);
+    len                = strlen((char *)rdomain_name);
     passet->answer     = calloc(1, (len + 1));
-    strncpy((char *)passet->answer, (char *)rname_str, len);
+    strncpy((char *)passet->answer, (char *)rdomain_name, len);
 
-    dlog("[D] Adding: %u, %s, %s\n",passet->rr->_rr_type, lname_node->qname, rname_str);
+    dlog("[D] Adding: %u, %s, %s\n",passet->rr->_rr_type, pr->qname, rdomain_name);
 
-    lname_node->passet = passet;
+    pr->passet = passet;
 
-    print_passet(passet, lname_node);
+    print_passet(passet, pr);
     passet->seen = 0;
 
     return;
@@ -569,7 +484,7 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
     return dest;
 }
 
-void print_passet_nxd(pdns_record *l, ldns_rdf *lname, ldns_rr *rr){
+void print_passet_nxd (pdns_record *l, ldns_rdf *lname, ldns_rr *rr) {
     FILE *fd;
     uint8_t screen;
     static char ip_addr_s[INET6_ADDRSTRLEN];
@@ -670,7 +585,7 @@ void print_passet_nxd(pdns_record *l, ldns_rdf *lname, ldns_rr *rr){
     l->last_print = l->last_seen;
 }
 
-void print_passet(pdns_asset *p, pdns_record *l) {
+void print_passet (pdns_asset *p, pdns_record *l) {
 
     FILE *fd;
     uint8_t screen;
@@ -769,7 +684,7 @@ void print_passet(pdns_asset *p, pdns_record *l) {
     p->last_print = p->last_seen;
 }
 
-pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned char *lname_str) {
+pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *domain_name) {
 
     pdns_record *pdnsr = dbucket[dnshash];
     pdns_record *head  = pdnsr;
@@ -778,7 +693,7 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     // search through the bucket
     while (pdnsr != NULL) {
         // if found, update & return dnsr
-        if (strcmp((const char *)lname_str,(const char *)pdnsr->qname) == 0) { // match :)
+        if (strcmp((const char *)domain_name,(const char *)pdnsr->qname) == 0) { // match :)
             pdnsr->last_seen = pi->pheader->ts.tv_sec;
             pdnsr->cip       = pi->cxt->s_ip; // This should always be the client IP
             pdnsr->sip       = pi->cxt->d_ip; // This should always be the server IP
@@ -807,9 +722,9 @@ pdns_record *pdnsr_lookup_or_make_new(uint64_t dnshash, packetinfo *pi, unsigned
     pdnsr->next       = head;
     pdnsr->prev       = NULL;
     pdnsr->passet     = NULL;
-    len               = strlen((char *)lname_str);
+    len               = strlen((char *)domain_name);
     pdnsr->qname      = calloc(1, (len + 1));
-    strncpy((char *)pdnsr->qname, (char *)lname_str, len);
+    strncpy((char *)pdnsr->qname, (char *)domain_name, len);
 
     dbucket[dnshash] = pdnsr;
     return pdnsr;

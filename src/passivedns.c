@@ -167,6 +167,11 @@ void prepare_ip4 (packetinfo *pi)
 
 void parse_ip4 (packetinfo *pi)
 {
+    /* Paranoia */
+    if (((pi->packet + pi->eth_hlen) + (IP_HL(pi->ip4) * 4)) > pi->end_ptr) {
+        dlog("[D] Refusing to parse IPv4 packet: IPv4-hdr passed end_ptr\n");
+        return;
+    }
     switch (pi->ip4->ip_p) {
       case IP_PROTO_TCP:
             prepare_tcp(pi);
@@ -335,10 +340,10 @@ void parse_tcp (packetinfo *pi)
     /* Reliable traffic comes from the servers (normally on port 53 or 5353)
      * and the client has sent at least one package on that
      * connecton (Maybe asking for an aswer :) */
-    if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
+//    if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
         dlog("[D] Parsing TCP packet...\n");
         dns_parser(pi);
-    }   
+//    }   
     return;
 }
 
