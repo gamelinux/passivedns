@@ -1142,6 +1142,11 @@ int main(int argc, char *argv[])
 
     }
 
+    if (config.handle == NULL) {
+       game_over();
+       return (1);
+    }
+
     /** segfaults on empty pcap! */
     if ((pcap_compile(config.handle, &config.cfilter, config.bpff, 1, config.net_mask)) == -1) {
             olog("[*] Error pcap_compile user_filter: %s\n", pcap_geterr(config.handle));
