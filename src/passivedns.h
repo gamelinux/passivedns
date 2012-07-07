@@ -24,7 +24,7 @@
 /*  D E F I N E S  ************************************************************/
 #define VERSION                       "0.5.0"
 #define TIMEOUT                       60
-#define BUCKET_SIZE                   1211
+#define BUCKET_SIZE                   65536
 #define SNAPLENGTH                    1600
 #define PKT_MAXPAY                    255
 #define MAX_BYTE_CHECK                500000
@@ -338,25 +338,25 @@ typedef struct _connection {
 }
 #endif
 
-#define CXT_HASH4(src,dst) \
-   ((src + dst) % BUCKET_SIZE)
+#define CXT_HASH4(src,dst,sp,dp,pr) \
+   ((src + dst + sp + dp + pr) % BUCKET_SIZE)
 
 #ifndef OSX
-#define CXT_HASH6(src,dst) \
+#define CXT_HASH6(src,dst,sp,dp,pr) \
  (( \
   (src)->s6_addr32[0] + (src)->s6_addr32[1] + \
   (src)->s6_addr32[2] + (src)->s6_addr32[3] + \
   (dst)->s6_addr32[0] + (dst)->s6_addr32[1] + \
-  (dst)->s6_addr32[2] + (dst)->s6_addr32[3] \
- ) % BUCKET_SIZE)
+  (dst)->s6_addr32[2] + (dst)->s6_addr32[3] + \
+  sp + dp + pr ) % BUCKET_SIZE)
 #else
-#define CXT_HASH6(src,dest) \
+#define CXT_HASH6(src,dest,sp,dp,pr) \
  (( \
   (src)->__u6_addr.__u6_addr32[0] + (src)->__u6_addr.__u6_addr32[1] + \
   (src)->__u6_addr.__u6_addr32[2] + (src)->__u6_addr.__u6_addr32[3] + \
   (dst)->__u6_addr.__u6_addr32[0] + (dst)->__u6_addr.__u6_addr32[1] + \
-  (dst)->__u6_addr.__u6_addr32[2] + (dst)->__u6_addr.__u6_addr32[3] \
- ) % BUCKET_SIZE)
+  (dst)->__u6_addr.__u6_addr32[2] + (dst)->__u6_addr.__u6_addr32[3] + \
+  sp + dp + pr ) % BUCKET_SIZE)
 #endif
 
 typedef struct _packetinfo {

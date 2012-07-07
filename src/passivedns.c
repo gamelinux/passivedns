@@ -385,9 +385,9 @@ int connection_tracking(packetinfo *pi) {
 
     // find the right connection bucket
     if (af == AF_INET) {
-        hash = CXT_HASH4(IP4ADDR(ip_src),IP4ADDR(ip_dst));
+        hash = CXT_HASH4(IP4ADDR(ip_src),IP4ADDR(ip_dst),src_port,dst_port,pi->proto);
     } else if (af == AF_INET6) {
-        hash = CXT_HASH6(ip_src,ip_dst);
+        hash = CXT_HASH6(ip_src,ip_dst,src_port,dst_port,pi->proto);
     }
     cxt = bucket[hash];
     head = cxt;
