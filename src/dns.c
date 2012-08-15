@@ -33,9 +33,10 @@ void dns_parser (packetinfo *pi) {
 
     status = LDNS_STATUS_ERR; 
 
-/* In DNS tcp messages the first 2 bytes signal the
- * amount of data to expect. So we need to skip them in the read.
- */
+    /* In DNS tcp messages, the first 2 bytes signal the
+     * amount of data to expect. So we need to skip them in the read.
+     */
+    if (pi->plen <= 2) return; /* The minimum bytes in a packet - else return */
 
     if ( pi->af == AF_INET ) {
         switch (pi->ip4->ip_p) {
