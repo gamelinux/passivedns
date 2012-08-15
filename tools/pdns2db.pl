@@ -163,7 +163,7 @@ if ( $DAEMON ) {
 
 if ($NODB == 0) {
     warn "[*] Connecting to database...\n";
-    $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1}) or die "$DBI::errstr";
+    $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1, mysql_auto_reconnect=>1}) or die "$DBI::errstr";
     # Setup the pdns table, if not exist
     setup_db();
 } else {
