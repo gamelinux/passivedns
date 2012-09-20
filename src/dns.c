@@ -760,11 +760,12 @@ void expire_dns_records()
                     if (pdnsr->next)
                         pdnsr->next->prev = pdnsr->prev;
                     pdns_record *tmp = pdnsr;
+                    pdns_record *tmp_prev = pdnsr->prev;
     
                     pdnsr = pdnsr->next;
     
                     delete_dns_record(tmp, &dbucket[iter]);
-                    if (pdnsr == NULL) {
+                    if (pdnsr == NULL && tmp_prev == NULL ) {
                         dbucket[iter] = NULL;
                     }
                 } else {
