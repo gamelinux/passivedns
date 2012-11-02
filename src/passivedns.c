@@ -112,7 +112,7 @@ void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
         parse_ip6(pi);
     } else {
         config.p_s.otherl_recv++;
-        //vlog(0x3, "[*] ETHERNET TYPE : %x\n",pi->eth_hdr->eth_ip_type);
+        olog("[*] ETHERNET TYPE : %d\n", pi->eth_type);
     }
     config.inpacket = 0;
     return;
@@ -125,6 +125,30 @@ void prepare_eth (packetinfo *pi)
     pi->eth_hdr  = (ether_header *) (pi->packet);
     pi->eth_type = ntohs(pi->eth_hdr->eth_ip_type);
     pi->eth_hlen = ETHERNET_HEADER_LEN;
+
+    if (pi->eth_type == 0 ) {
+    /* Might be linux C00ked?*/
+        struct sll_header *sllh;
+        sllh = (struct sll_header*) pi->packet;
+        switch(ntohs(sllh->sll_protocol)) {
+            /* IP */
+            case ETHERNET_TYPE_IP:
+                pi->eth_type = ETHERNET_TYPE_IP;
+                pi->eth_hlen = SLL_HDR_LEN;
+                break;
+
+            /* ARP */
+            case ETHERNET_TYPE_IPV6:
+                pi->eth_type = ETHERNET_TYPE_IPV6;
+                pi->eth_hlen = SLL_HDR_LEN;
+                break;
+
+            /* Unknown Protocol */
+            default:
+            return;
+        }  
+    }
+
     return;
 }
 

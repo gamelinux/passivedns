@@ -22,3 +22,18 @@ current.cvd.clamav.net
 antivirus
 \.3322\.org$
 
+## Stuff that you might wan to skip:
+\.ping\.clamav\.net$
+\.current\.cvd\.clamav\.net$
+-adfe2ko9\.senderbase\.org$
+\.hashserver\.cs\.trendmicro\.com$
+\.sbl-xbl\.spamhaus\.org$
+\.mail-abuse\.com$
+\.zen\.spamhaus\.org$
+\.r\.mail-abuse\.com$
+\.avqs\.mcafee\.com$
+\.channel\.facebook\.com$
+.channel\.facebook\.com$
+.channel\d{2}\.facebook\.com$
+
+

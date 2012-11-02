@@ -525,3 +525,19 @@ typedef struct _globalconfig {
 int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
 
+/*
+ * SLL data structure taken from tcpdump.
+ */
+#ifdef DLT_LINUX_SLL
+#define SLL_HDR_LEN     16              /* total header length */
+#define SLL_ADDRLEN     8               /* length of address field */
+
+struct sll_header {
+    u_int16_t   sll_pkttype;            /* packet type */
+    u_int16_t   sll_hatype;             /* link-layer address type */
+    u_int16_t   sll_halen;              /* link-layer address length */
+    u_int8_t    sll_addr[SLL_ADDRLEN];  /* link-layer address */
+    u_int16_t   sll_protocol;           /* protocol */
+};
+#endif /* DLT_LINUX_SLL */
+
