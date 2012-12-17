@@ -95,7 +95,7 @@ void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
     pi->packet = packet;
     pi->pheader = pheader;
     set_pkt_end_ptr (pi);
-    config.tstamp = pi->pheader->ts.tv_sec; // Global
+    config.tstamp = pi->pheader->ts; // Global
     if (config.intr_flag != 0) {
         check_interrupt();
     }
@@ -528,7 +528,7 @@ void end_sessions()
 {
     connection *cxt;
     time_t check_time;
-    check_time = config.tstamp;
+    check_time = config.tstamp.tv_sec;
     //time(&check_time);
     int ended, expired = 0;
     config.llcxt = 0;
@@ -662,7 +662,7 @@ void sig_alarm_handler()
 {
     time_t now_t;
     //config.tstamp = time(); // config.tstamp will stand still if there is no packets
-    now_t = config.tstamp;
+    now_t = config.tstamp.tv_sec;
 
     dlog("[D] Got SIG ALRM: %lu\n", now_t);
     /* Each time check for timed out sessions */
@@ -681,7 +681,7 @@ void set_end_dns_records()
 
     if (config.inpacket == 0) {
         expire_dns_records();
-        config.dnslastchk = config.tstamp;
+        config.dnslastchk = config.tstamp.tv_sec;
         config.intr_flag &= ~INTERRUPT_DNS;
     }
 }
@@ -922,10 +922,10 @@ void a_dump_payload(const uint8_t* data,uint16_t dlen) {
 void game_over()
 {
     if (config.inpacket == 0) {
+        expire_all_dns_records();
         print_pdns_stats();
         if (config.handle != NULL) pcap_close(config.handle);
         config.handle = NULL;
-        expire_all_dns_records();
         end_all_sessions();
         free_config();
         olog("\n[*] passivedns ended.\n");
@@ -954,6 +954,14 @@ void print_pdns_stats()
     olog("\n");
     olog("-- Total DNS records allocated            :%12u\n",config.p_s.dns_records);
     olog("-- Total DNS assets allocated             :%12u\n",config.p_s.dns_assets);
+    olog("-- Total DNS packets over IPv4/TCP        :%12u\n",config.p_s.ip4_dns_tcp);
+    olog("-- Total DNS packets over IPv6/TCP        :%12u\n",config.p_s.ip6_dns_tcp);
+    olog("-- Total DNS packets over TCP decoded     :%12u\n",config.p_s.ip4_dec_tcp_ok + config.p_s.ip6_dec_tcp_ok);
+    olog("-- Total DNS packets over TCP failed      :%12u\n",config.p_s.ip4_dec_tcp_er + config.p_s.ip6_dec_tcp_er);
+    olog("-- Total DNS packets over IPv4/UDP        :%12u\n",config.p_s.ip4_dns_udp);
+    olog("-- Total DNS packets over IPv6/UDP        :%12u\n",config.p_s.ip6_dns_udp);
+    olog("-- Total DNS packets over UDP decoded     :%12u\n",config.p_s.ip4_dec_udp_ok + config.p_s.ip6_dec_udp_ok);
+    olog("-- Total DNS packets over UDP failed      :%12u\n",config.p_s.ip4_dec_udp_er + config.p_s.ip6_dec_udp_er);
     olog("-- Total packets received from libpcap    :%12u\n",config.p_s.got_packets);
     olog("-- Total Ethernet packets received        :%12u\n",config.p_s.eth_recv);
     olog("-- Total VLAN packets received            :%12u\n",config.p_s.vlan_recv);

@@ -22,9 +22,9 @@
 /*  I N C L U D E S  **********************************************************/
 
 /*  D E F I N E S  ************************************************************/
-#define VERSION                       "0.5.1"
+#define VERSION                       "1.0.0-RC1"
 #define TIMEOUT                       60
-#define BUCKET_SIZE                   65536
+#define BUCKET_SIZE                   65537
 #define SNAPLENGTH                    1600
 #define PKT_MAXPAY                    255
 #define MAX_BYTE_CHECK                500000
@@ -425,6 +425,23 @@ typedef struct _pdns_stat {
     uint32_t vlan_recv;     /* number of VLAN packets received */
     uint32_t ip4_recv;      /* number of IPv4 packets received */
     uint32_t ip6_recv;      /* number of IPv6 packets received */
+
+    uint32_t ip4_dns_udp;   /* number of IPv4 packets received */
+    uint32_t ip4_dec_udp_ok;/* number of IPv4 packets received */
+    uint32_t ip4_dec_udp_er;/* number of IPv4 packets received */
+    uint32_t ip4_dns_tcp;   /* number of IPv4 packets received */
+    uint32_t ip4_dec_tcp_ok;/* number of IPv4 packets received */
+    uint32_t ip4_dec_tcp_er;/* number of IPv4 packets received */
+    uint32_t ip4_recv_tcp;  /* number of IPv4 packets received */
+
+    uint32_t ip6_dns_udp;   /* number of IPv4 packets received */
+    uint32_t ip6_dec_udp_ok;/* number of IPv4 packets received */
+    uint32_t ip6_dec_udp_er;/* number of IPv4 packets received */
+    uint32_t ip6_dns_tcp;   /* number of IPv4 packets received */
+    uint32_t ip6_dec_tcp_ok;/* number of IPv4 packets received */
+    uint32_t ip6_dec_tcp_er;/* number of IPv4 packets received */
+    uint32_t ip6_recv_tcp;  /* number of IPv4 packets received */
+
     uint32_t ip4ip_recv;    /* number of IP4/6 packets in IPv4 packets */
     uint32_t ip6ip_recv;    /* number of IP4/6 packets in IPv6 packets */
     uint32_t gre_recv;      /* number of GRE packets received */
@@ -465,7 +482,7 @@ typedef struct _globalconfig {
     uint8_t     inpacket;
     
     time_t       dnslastchk;             /* Timestamp for last dns cache expiration check */
-    time_t       tstamp;                 /* Current timestamp from packet-header */
+    struct timeval tstamp;               /* Current timestamp from packet-header */
     uint8_t      cflags;                 /* config flags */
     uint8_t      verbose;                /* Verbose or not */
     uint8_t      print_updates;          /* Prints updates */

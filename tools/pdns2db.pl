@@ -250,13 +250,13 @@ sub parseLogfile {
        my $bret = 0;
        my $sret = 0;
 
-       my @elements = split/\|\|/,$line;
-       unless(@elements == 8) {
+       my @elements = split(/\|\|/,$line);
+       unless(@elements == 9) {
             warn "[W] Not valid Nr. of args in format: '$fname'";
             next LINE;
        }
 
-       my ($ts, $cip, $sip, $rr, $query, $type, $answer, $ttl) = @elements;
+       my ($tst, $cip, $sip, $rr, $query, $type, $answer, $ttl, $count) = @elements;
        $query  =~ s/^(.*)\.$/$1/;
        $answer =~ s/^(.*)\.$/$1/;
 
@@ -288,9 +288,10 @@ sub parseLogfile {
 }
 
 sub put_dns_to_db {
-    # 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.||3600
-    # 1322849924||192.168.1.1||81.167.36.3||IN||www.adobe.com.||A||193.104.215.61||600
-    my ($ts, $cip, $sip, $rr, $query, $type, $answer, $ttl) = @_;
+    # 1322849924.123456||192.168.1.1||8.8.8.8||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.||3600||22
+    # 1322849924.123456||192.168.1.1||8.8.8.8||IN||www.adobe.com.||A||193.104.215.61||600||11
+    my ($tst, $cip, $sip, $rr, $query, $type, $answer, $ttl, $count) = @_;
+    my ($ts, $tsu) = split(/\./,$tst);
     my $tsl = $ts;
 
     $query  =~ s/^(.*)\.$/$1/; # Strip trailing dot
@@ -303,10 +304,14 @@ sub put_dns_to_db {
     eval{
       $sql = qq[
              INSERT INTO $TABLE_NAME (
-               QUERY,RR,MAPTYPE,ANSWER,TTL,LAST_SEEN,FIRST_SEEN
+               QUERY,RR,MAPTYPE,ANSWER,TTL,COUNT,LAST_SEEN,FIRST_SEEN
              ) VALUES (
-               '$query','$rr','$type','$answer','$ttl',FROM_UNIXTIME($ts),FROM_UNIXTIME($tsl)
-             ) ON DUPLICATE KEY UPDATE LAST_SEEN=FROM_UNIXTIME($ts), TTL = '$ttl'
+               '$query','$rr','$type','$answer','$ttl','$count',FROM_UNIXTIME($ts),FROM_UNIXTIME($tsl)
+             ) ON DUPLICATE KEY UPDATE
+               TTL = if (TTL < $ttl, $ttl, TTL),
+               COUNT = COUNT + '$count',
+               LAST_SEEN = if (LAST_SEEN < FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), LAST_SEEN),
+               FIRST_SEEN = if (FIRST_SEEN > FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), FIRST_SEEN)
              ];
       warn "[D] $sql\n" if $DEBUG > 1;
       $sth = $dbh->prepare($sql);
@@ -341,6 +346,7 @@ sub new_pdns_table {
         RR            varchar(10)          NOT NULL DEFAULT   '',   \
         ANSWER        varchar(255)         NOT NULL DEFAULT   '',   \
         TTL           int(10)              NOT NULL DEFAULT  '0',   \
+        COUNT         BIGINT(20) UNSIGNED  NOT NULL DEFAULT  '1',   \
         FIRST_SEEN    DATETIME             NOT NULL,                \
         LAST_SEEN     DATETIME             NOT NULL,                \
         PRIMARY KEY (ID),                                           \

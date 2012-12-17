@@ -51,9 +51,9 @@
  */
 
 typedef struct _pdns_asset {
-    time_t                 first_seen; /* First seen (unix timestamp) */
-    time_t                 last_seen;  /* Last seen (unix timestamp) */
-    time_t                 last_print; /* Last time asset was printet */
+    struct timeval         first_seen; /* First seen (unix timestamp) */
+    struct timeval         last_seen;  /* Last seen (unix timestamp) */
+    struct timeval         last_print; /* Last time asset was printet */
     struct ldns_struct_rr *rr;         /* PTR,MX,TXT,A,AAAA...  */
     uint64_t               seen;       /* Number of times seen */
     unsigned char         *answer;     /* Answer, like 8.8.8.8 or 2001:67c:21e0::16 */
@@ -65,9 +65,9 @@ typedef struct _pdns_asset {
 } pdns_asset;
 
 typedef struct _pdns_record {
-    time_t                 first_seen; /* First seen (unix timestamp) */
-    time_t                 last_seen;  /* Last seen (unix timestamp) */
-    time_t                 last_print; /* Last time record(NXD) was printet */
+    struct timeval         first_seen; /* First seen (unix timestamp) */
+    struct timeval         last_seen;  /* Last seen (unix timestamp) */
+    struct timeval         last_print; /* Last time record(NXD) was printet */
     uint64_t               seen;       /* Number of times seen */
     unsigned char         *qname;      /* Query name (gamelinux.org) */
     uint8_t                nxflag;     /* Flag to indicate if this is a NXDOMAIN */
@@ -95,5 +95,5 @@ void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr);
 void delete_dns_asset (pdns_asset **passet_head, pdns_asset *passet);
 void update_config_mem_counters();
 void parse_dns_flags (char *args);
-
+void update_dns_stats(packetinfo *pi, uint8_t code);
 #endif //DNS_H
