@@ -23,8 +23,8 @@ Ubuntu
 RedHat (RHEL 6u2 x86_64)
   $ yum groupinstall "Development tools"
   # EPEL : http://fedora.uib.no/epel/6/x86_64/
-  $ rpm -Uvh http://download.fedora.redhat.com/pub/epel/6/x86_64/ldns-devel-1.6.11-2.el6.x86_64.rpm
-  $ rpm -Uvh http://download.fedora.redhat.com/pub/epel/6/x86_64/ldns-1.6.11-2.el6.x86_64.rpm
+  $ rpm -Uvh http://download.fedoraproject.org/pub/epel/6/x86_64/ldns-devel-1.6.11-2.el6.x86_64.rpm
+  $ rpm -Uvh http://download.fedoraproject.org/pub/epel/6/x86_64/ldns-1.6.11-2.el6.x86_64.rpm
   $ wget http://www.tcpdump.org/release/libpcap-1.2.1.tar.gz
   $ tar zxf libpcap-1.2.1.tar.gz; cd libpcap-1.2.1; ./configure; make && make install
   $ git clone git://github.com/gamelinux/passivedns.git
