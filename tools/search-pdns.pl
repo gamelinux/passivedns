@@ -93,7 +93,7 @@ my $dbh = DBI->connect($dsn, $db_user_name, $db_password);
 
 our ($QUERY, $QUERY1, $QUERY2) = q();
 
-$QUERY = qq[SELECT query, answer, first_seen, last_seen, ttl, maptype FROM pdns WHERE ];
+$QUERY = qq[SELECT query, answer, first_seen, last_seen, ttl, count, maptype FROM pdns WHERE ];
 
 if (defined $FROM_DATE ) {
     if ($FROM_DATE=~ /^\d\d\d\d\-\d\d\-\d\d$/) {
@@ -151,14 +151,14 @@ $pri->execute();
 
 my $cnt = 0;
 print "                                            === PassiveDNS ===\n\n";
-print "       FirstSeen     |       LastSeen       |  TYPE |  TTL   |               Query                |  Answer\n";
-print "---------------------------------------------------------------------------------------------------------------------\n";
-while (my ($query, $answer, $firstseen, $lastseen, $ttl, $maptype) = $pri->fetchrow_array()) {
+print "       FirstSeen     |       LastSeen      |  TYPE |  TTL   |               Query                |  Answer |  Count\n";
+print "------------------------------------------------------------------------------------------------------------------------------\n";
+while (my ($query, $answer, $firstseen, $lastseen, $ttl, $count, $maptype) = $pri->fetchrow_array()) {
     next if not defined $query or not defined $answer;
     $cnt++;
-    #my $FS = strftime "%Y-%m-%d %H:%M:%S", localtime($firstseen);
-    #my $LS = strftime "%Y-%m-%d %H:%M:%S", localtime($lastseen);
-    printf("%20s | %20s | %5s | %6s | %-34s | %12s\n", $firstseen, $lastseen, $maptype, $ttl, $query, $answer);
+    #printf("%20s | %20s | %5s | %6s | %-34s | %12s\n", $firstseen, $lastseen, $maptype, $ttl, $query, $answer);
+    printf("%20s | %19s | %5s | %6s | %-34s | %14s | %8s\n", $firstseen, $lastseen, $maptype, $ttl, $query, $answer, $count);
+
 }
 print "Displayed $cnt (sql limit: $DLIMIT)\n";
 
