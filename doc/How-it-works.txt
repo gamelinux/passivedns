@@ -3,7 +3,8 @@
 ## Packet capture
 * Uses libpcap
 * Decodes packets as they come in.
-* Handles vlan
+* Handles vlan (looks inside vlan packets, but does not
+  currently print out the vlan tag seen)
 * Handles IPv4 and IPv6 packets
 * We look at DNS on UDP and TCP
 
