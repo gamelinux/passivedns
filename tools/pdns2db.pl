@@ -21,7 +21,7 @@
 
 use strict;
 use warnings;
-use POSIX qw(setsid);
+use POSIX qw(setsid strftime);
 use DateTime;
 use Getopt::Long qw/:config auto_version auto_help/;
 use DBI;
@@ -123,7 +123,7 @@ $HASH_DBONLYLIST->{'pcre'}   = [load_domain_list_pcre($DOMAIN_DBONLYLIST_FILE_PC
 $HASH_DBONLYLIST->{'static'} = load_domain_list_static($DOMAIN_DBONLYLIST_FILE)      if $DOMAIN_DBONLYLIST_FILE;
 
 if (($HASH_WHITELIST) && (not $HASH_BLACKLIST)){
-    warn "[W] Whitelist without Blacklist does not make sens!\n";
+    logger("[W] Whitelist without Blacklist does not make sense!");
     $HASH_WHITELIST = undef; 
 }
 
@@ -141,11 +141,11 @@ $SIG{"QUIT"}  = sub { game_over() };
 $SIG{"KILL"}  = sub { game_over() };
 #$SIG{"ALRM"}  = sub { file_watch(); alarm $TIMEOUT; };
 
-warn "[*] Starting pdns2db.pl\n";
+logger("[*] Starting pdns2db.pl");
 
 # Prepare to meet the world of Daemons
 if ( $DAEMON ) {
-   print "[*] Daemonizing...\n";
+   logger("[*] Daemonizing...");
    chdir ("/") or die "chdir /: $!\n";
    open (STDIN, "/dev/null") or die "open /dev/null: $!\n";
    open (STDOUT, "> $LOGFILE") or die "open > $LOGFILE: $!\n";
@@ -162,16 +162,16 @@ if ( $DAEMON ) {
 }
 
 if ($NODB == 0) {
-    warn "[*] Connecting to database...\n";
+    logger("[*] Connecting to database...");
     $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1, mysql_auto_reconnect=>1}) or die "$DBI::errstr";
     # Setup the pdns table, if not exist
     setup_db();
 } else {
-    warn "[*] Skipping database operations...\n";
+    logger("[*] Skipping database operations...");
 }
 
 # Start file_watch() which looks for new dns data and puts them into db
-warn "[*] Looking for passive DNS data in file: $PDNSFILE\n";
+logger("[*] Looking for passive DNS data in file: $PDNSFILE");
 file_watch($PDNSFILE);
 exit;
 
@@ -230,7 +230,7 @@ sub file_watch {
       $pos = $startsize;
 
       if ($BATCH == 1) {
-         print "[*] Processing of $logfile is done, exiting!\n";
+         logger("[*] Processing of $logfile is done, exiting!");
          exit 0;
       }
       sleep $TIMEOUT;
@@ -252,7 +252,7 @@ sub parseLogfile {
 
        my @elements = split(/\|\|/,$line);
        unless(@elements == 9) {
-            warn "[W] Not valid Nr. of args in format: '$fname'";
+            logger("[W] Not valid Nr. of args in format: '$fname'");
             next LINE;
        }
 
@@ -261,24 +261,24 @@ sub parseLogfile {
        $answer =~ s/^(.*)\.$/$1/;
 
        if (($HASH_DBSKIPLIST) && ($sret = match_domain($query, $answer, $HASH_DBSKIPLIST))) {
-           print "[*] Domain marked to skip DB insertion: $query or $answer\n" if $VERBOSE;
+           logger("[*] Domain marked to skip DB insertion: $query or $answer") if $VERBOSE;
            next LINE;
        }
 
        if (($HASH_WHITELIST) && ($HASH_BLACKLIST) &&($wret = match_domain($query, $answer, $HASH_WHITELIST))) {
-           print "[*] Whitelisted domain: $query or $answer\n" if $VERBOSE;
+           logger("[*] Whitelisted domain: $query or $answer") if $VERBOSE;
        } elsif (($HASH_BLACKLIST) && ($bret = match_domain($query, $answer, $HASH_BLACKLIST))) {
-           print "[*] Blacklisted domain: $query or $answer\n" if $VERBOSE;
+           logger("[*] Blacklisted domain: $query or $answer") if $VERBOSE;
            if (open (ALOG, ">> $ALERTLOG") ) {
                print ALOG $line, "\n";
                close (ALOG);
            } else {
-               warn "[W] Problems with open($ALERTLOG): $!\n";
+               logger("[W] Problems with open($ALERTLOG): $!");
            }
        }
 
        if (($HASH_DBONLYLIST) && ($sret = match_domain($query, $answer, $HASH_DBONLYLIST))) {
-           print "[*] Onlylisted domain: $query or $answer\n" if $VERBOSE;
+           logger("[*] Onlylisted domain: $query or $answer") if $VERBOSE;
            put_dns_to_db(@elements) if $NODB == 0;
        } elsif (not defined $HASH_DBONLYLIST) {
            put_dns_to_db(@elements) if $NODB == 0;
@@ -313,7 +313,7 @@ sub put_dns_to_db {
                LAST_SEEN = if (LAST_SEEN < FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), LAST_SEEN),
                FIRST_SEEN = if (FIRST_SEEN > FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), FIRST_SEEN)
              ];
-      warn "[D] $sql\n" if $DEBUG > 1;
+      logger("[D] $sql") if $DEBUG > 1;
       $sth = $dbh->prepare($sql);
       $sth->execute;
       $sth->finish;
@@ -335,7 +335,7 @@ sub put_dns_to_db {
 sub new_pdns_table {
    my ($tablename) = shift;
    my ($sql, $sth);
-   warn "[*] Creating $TABLE_NAME...\n";
+   logger("[*] Creating $TABLE_NAME...");
    eval{
       $sql = "                                                      \
         CREATE TABLE IF NOT EXISTS $tablename                       \
@@ -382,7 +382,7 @@ sub checkif_table_exist {
        $dbh->do($sql);
     };
     if ($dbh->err) {
-       warn "[D] Table $tablename does not exist.\n" if $DEBUG;
+       logger("[D] Table $tablename does not exist.") if $DEBUG;
        return 0;
     }
     else{
@@ -418,11 +418,11 @@ sub load_domain_list_pcre {
         next LINE unless($line); # empty line
         # One should check for a more or less sane signature file.
 
-        print "[D] $line\n" if $DEBUG;
+        logger("[D] $line") if $DEBUG;
         $signatures{$line} = [qr{$line}];
         $cnt++;
     }
-    print "[D] Loaded $cnt domains\n" if $DEBUG;
+    logger("[D] Loaded $cnt domains") if $DEBUG;
 
     return map { $signatures{$_} }
             sort { length $b <=> length $a }
@@ -445,11 +445,11 @@ sub load_domain_list_static {
         next LINE unless($line); # empty line
         # One should check for a more or less sane signature file.
 
-        print "[D] $line\n" if $DEBUG;
+        logger("[D] $line") if $DEBUG;
         $signatures->{"$line"} = 1;
         $cnt++;
     }
-    print "[D] Loaded $cnt static domains\n" if $DEBUG;
+    logger("[D] Loaded $cnt static domains") if $DEBUG;
 
     return $signatures;
 }
@@ -466,13 +466,13 @@ sub match_domain {
 
     # First we should match agains "static" domain list.
     if ($MHASH->{'static'}->{"$query"}) {
-        print "[D] Domain $query match on static query domain: $query\n" if $DEBUG;
+        logger("[D] Domain $query match on static query domain: $query") if $DEBUG;
         return 1;
     } elsif ($MHASH->{'static'}->{"$answer"}) {
-        print "[D] Domain $answer match on static answer domain: $answer\n" if $DEBUG;
+        logger("[D] Domain $answer match on static answer domain: $answer") if $DEBUG;
         return 1;
     } else {
-        print "[D] No static match on domain: $query or $answer\n" if $DEBUG;
+        logger("[D] No static match on domain: $query or $answer") if $DEBUG;
     }
 
     # Check domain against domains in expensive pcre list
@@ -480,18 +480,28 @@ sub match_domain {
     for my $s (@$CRAP) {
         my $re = $s->[0];
         if ($query =~ /$re/) {
-            print "[D] Domain $query match on pcre: $re\n" if $DEBUG;
+            logger("[D] Domain $query match on pcre: $re") if $DEBUG;
             return 1;
         } elsif ($answer =~ /$re/) {
-            print "[D] Domain $answer match on pcre: $re\n" if $DEBUG;
+            logger("[D] Domain $answer match on pcre: $re") if $DEBUG;
             return 1;
         }
     }
 
-    print "[D] No pcre match on domain: $query or $answer\n" if $DEBUG;
+    logger("[D] No pcre match on domain: $query or $answer") if $DEBUG;
     return 0;
 }
 
+=head2 logger
+
+ Adds time prefix to logg output. Takes $msg as input.
+
+=cut
+
+sub logger {
+    my $msg = shift;
+    print strftime('%F %H:%M:%S', localtime), " $msg\n";
+}
 =head2 game_over
 
  Terminates the program in a sainfull way.
@@ -499,8 +509,10 @@ sub match_domain {
 =cut
 
 sub game_over {
-    warn "[*] Terminating...\n";
-    $dbh->disconnect;
+    logger("[*] Terminating...");
+    if (defined $dbh) {
+        $dbh->disconnect;
+    }
     unlink ($PIDFILE);
     exit 0;
 }
