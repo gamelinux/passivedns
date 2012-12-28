@@ -1,7 +1,7 @@
 /*
-** This file is a part of passivedns.
+** This file is a part of PassiveDNS.
 **
-** Copyright (C) 2010-2011, Edward Fjellskål <edwardfjellskaal@gmail.com>
+** Copyright (C) 2010-2013, Edward Fjellskål <edwardfjellskaal@gmail.com>
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -55,6 +55,7 @@ connection *bucket[BUCKET_SIZE];
 
 /*  I N T E R N A L   P R O T O T Y P E S  ***********************************/
 static void usage();
+static void show_version();
 void check_vlan (packetinfo *pi);
 void prepare_eth (packetinfo *pi);
 void prepare_ip4 (packetinfo *pi);
@@ -972,11 +973,7 @@ void usage()
     olog("\n");
     olog("USAGE:\n");
     olog(" $ passivedns [options]\n\n");
-    olog(" passivedns version %s\n",VERSION);
-    olog(" %s\n", pcap_lib_version());
-    olog("\n");
-    olog(" OPTIONS:\n");
-    olog("\n");
+    olog(" OPTIONS:\n\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
     olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
@@ -991,6 +988,7 @@ void usage()
     olog(" -g <gid>        Group ID to drop privileges to.\n");
     olog(" -T <dir>        Directory to chroot into.\n");
     olog(" -D              Run as daemon.\n");
+    olog(" -V              Show version and exit.\n");
     olog(" -h              This help message.\n\n");
     olog(" FLAGS:\n");
     olog("\n");
@@ -998,6 +996,15 @@ void usage()
     olog("  P:PTR  R:RP    S:SRV    T:TXT    M:MX     n:NS\n");
     olog("  x:NXD\n");
     olog("\n");
+}
+
+void show_version()
+{
+    olog("\n");
+    olog("[*] PassiveDNS %s\n", VERSION);
+    olog("[*] By Edward Bjarte Fjellskål <edward.fjellskaal@gmail.com>\n");
+    olog("[*] Using %s\n", pcap_lib_version());
+    olog("[*] Using ldns version %s\n",ldns_version());
 }
 
 extern int optind, opterr, optopt; // getopt()
@@ -1040,7 +1047,7 @@ int main(int argc, char *argv[])
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
 
-#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:"
+#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1093,6 +1100,11 @@ int main(int argc, char *argv[])
             usage();
             exit(0);
             break;
+        case 'V':
+            show_version();
+            olog("\n");
+            exit(0);
+            break;
         case '?':
             elog("unrecognized argument: '%c'\n", optopt);
             break;
@@ -1100,12 +1112,11 @@ int main(int argc, char *argv[])
             elog("Did not recognize argument '%c'\n", ch);
         }
 
-    olog("\n[*] Running passivedns %s\n", VERSION);
-    olog("    Using %s\n", pcap_lib_version());
+    show_version();
 
     if (config.pcap_file) {
         /* Read from PCAP file specified by '-r' switch. */
-        olog("[*] Reading from file %s\n", config.pcap_file);
+        olog("[*] Reading from file %s\n\n", config.pcap_file);
         if (!(config.handle = pcap_open_offline(config.pcap_file, config.errbuf))) {
             olog("[*] Unable to open %s.  (%s)", config.pcap_file, config.errbuf);
         }
@@ -1167,7 +1178,8 @@ int main(int argc, char *argv[])
 
     alarm(TIMEOUT);
 
-    olog("[*] Sniffing...\n\n");
+    if (!config.pcap_file) olog("[*] Sniffing...\n\n");
+
     pcap_loop(config.handle, -1, got_packet, NULL);
 
     game_over();

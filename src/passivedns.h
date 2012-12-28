@@ -1,7 +1,7 @@
 /*
-** This file is a part of passivedns.
+** This file is a part of PassiveDNS.
 **
-** Copyright (C) 2010-2011, Edward Fjellskål <edwardfjellskaal@gmail.com>
+** Copyright (C) 2010-2013, Edward Fjellskål <edwardfjellskaal@gmail.com>
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
