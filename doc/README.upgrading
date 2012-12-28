@@ -1,0 +1,18 @@
+Upgrade from PassiveDNS < 1.0 to 1.0:
+
+- If you are using custom tools to process the passivedns.log files,
+  you need to be aware of the new output filed added (count). Also
+  be aware of the unix timestamp now has microseconds! 
+
+- If you are using pdns2db.pl you need to do the following:
+
+  1) Stop current passivedns.
+     Make sure that pdns2db.pl has processed passivedns.log
+     Move the old passivedns.log away to archive.
+
+  2) Then, in mysql:
+     mysql> ALTER TABLE pdns ADD COUNT BIGINT(20) UNSIGNED NOT NULL DEFAULT '1' AFTER TTL;
+
+  3) Install (build) the lastest passivedns and pdns2db.pl
+     Start passivedns && pdns2db.pl
+

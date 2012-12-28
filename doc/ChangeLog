@@ -1,0 +1,19 @@
+Changes with PassiveDNS 1.0.0
+
+- Added microseconds to unix timestamps in log output
+- Added "count" field in log output.
+- Added more stat fields when exiting
+
+Changes with PassiveDNS 0.5.1
+
+- Fixed an issue of lost dns_records (memleak and finally a cpu spinn)
+- Fixed segfault when unable to read pcap
+- Fixed segfault when packet payload was only one byte
+
+Changes with PassiveDNS 0.5.0
+
+- Cleaned up unused code
+
+Changes with PassiveDNS 0.3.4
+
+- Added NXDOMAIN support
