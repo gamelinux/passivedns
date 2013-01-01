@@ -15,6 +15,7 @@ root@localhost: ./passivedns -i eth1 -l /var/log/passivedns.log
 
 # pdns2db.pl
 root@localhost: apt-get install libdatetime-perl
+(Redhat/CentOS: yum install perl-DateTime)
 
 First you need to add a user to the mysql db:
 
