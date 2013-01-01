@@ -26,12 +26,13 @@ fi
 case "$1" in
   start)
         echo -n "Starting $NAME ..."
-        $DAEMON $ARGS 2>&1 &
+        $DAEMON $ARGS > /dev/null 2>&1
         echo " done."
         ;;
   stop)
         echo -n "Stopping $NAME ..."
         start-stop-daemon --oknodo --stop --quiet --pidfile=$PIDFILE --exec $DAEMON
+        rm -f $PIDFILE > /dev/null 2>&1
         echo " done."
         ;;
   restart)
