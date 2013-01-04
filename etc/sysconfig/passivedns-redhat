@@ -1,0 +1,53 @@
+# /etc/sysconfig/passivedns
+# $Id$
+# Quick and Dirty Script by Eric Kollmann xnih13@gmail.com
+
+# What interface should passivedns listen on?  
+INTERFACE=
+
+# What user and group should passivedns drop to after starting? 
+# leave blank if you do not want to change privs
+# if you do change privs you will need to provide that user with writes
+# on the $PIDFILE directory below
+USER=
+GROUP=
+
+# Name of passivedns log?
+LOGFILE=
+
+# Name of NXDOMAIN log?
+NXDOMAINLOGFILE=
+
+# To add a BPF filter to the command line uncomment the following variable
+# syntax corresponds to tcpdump(8)
+# default is "port 53"
+BPF=
+
+# Name of PID file
+# If you are dropping from root create the /var/run/passivedns folder
+# and give rights to the $USER $GROUP defined above example:
+# chown pdns:pdns /var/run/passivedns
+# otherwise if staying as root just let it be written to /var/run/
+#PIDFILE=/var/run/passivedns/passivedns.pid
+#PIDFILE=/var/run/passivedns.pid
+PIDFILE=
+
+#Soft Memory Limit in MB
+SOFTMEM=
+
+#Seconds to cache DNS objects in memory
+DNSCACHE=
+
+#Seconds between printing duplicate DNS info
+DNSDUPE=
+
+#Manually set DNS RR Types to care about
+# FLAGS:
+#  4:A    6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA
+#  P:PTR  R:RP    S:SRV    T:TXT    M:MX     n:NS
+#  x:NXD
+DNSRRTYPES=
+
+#Directory to chroot into
+DIRCHROOT=
+

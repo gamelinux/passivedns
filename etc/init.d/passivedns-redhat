@@ -1,0 +1,99 @@
+#!/bin/sh
+# $Id$
+#
+# passivednsd         Start/Stop the passivedns daemon.
+#
+# chkconfig: 2345 40 60
+# description:  passivedns rocks
+#
+
+# Quick and Dirty script by Eric Kollmann xnih13@gmail.com
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source the local configuration file
+. /etc/sysconfig/passivedns
+
+# if there are any non blank values coming from the sysconfig file we'll change them to commands now
+
+if [ "$INTERFACE" != "" ] ; then
+        INTERFACE="-i $INTERFACE"
+fi
+
+if [ "$PIDFILE" != "" ] ; then
+        PIDFILE="-p $PIDFILE"
+fi
+
+if [ "$LOGFILE" != "" ] ; then
+        LOGFILE="-l $LOGFILE"
+fi
+
+if [ "$NXDOMAINLOGFILE" != "" ] ; then
+        NXDOMAINLOGFILE="-L $NXDOMAINLOGFILE"
+fi
+
+if [ "$BPF" != "" ] ; then
+        BPF="-b \"$BPF\""
+fi
+
+if [ "$SOFTMEM" != "" ] ; then
+        SOFTMEM="-S $SOFTMEM"
+fi
+
+if [ "$DNSCACHE" != "" ] ; then
+        DNSCACHE="-C $DNSCACHE"
+fi
+
+if [ "$DNSDUPE" != "" ] ; then
+        DNSDUPE="-P $DNSDUPE"
+fi
+
+if [ "$DNSRRTYPES" != "" ] ; then
+        DNSRRTYPES="-X $DNSRRTYPES"
+fi
+
+if [ "$USER" != "" ] ; then
+        USER="-u $USER"
+fi
+
+if [ "$GROUP" != "" ] ; then
+        GROUP="-g $GROUP"
+fi
+
+if [ "$DIRCHROOT" != "" ] ; then
+        DIRCHROOT="-T $DIRCHROOT"
+fi
+
+######################################
+
+case "$1" in
+  start)
+        echo -n "Starting passivedns: "
+                daemon passivedns -D $INTERFACE $PIDFILE $LOGFILE $NXDOMAINLOGFILE $BPF $SOFTMEM $DNSCACHE $DNSDUPE $DNSRRTYPES $USER $GROUP $DIRCHROOT
+        touch /var/lock/subsys/passivedns
+        echo
+        ;;
+  stop)
+        echo -n "Stopping passivedns: "
+        killproc passivedns
+        rm -f /var/lock/subsys/passivedns
+        echo 
+        ;;
+  restart)
+        $0 stop
+        $0 start
+        ;;
+  condrestart)
+        [ -e /var/lock/subsys/passivedns ] && $0 restart
+        ;;
+  status)
+        status passivedns
+        ;;
+
+  *)
+        echo "Usage: $0 {start|stop|restart|condrestart|status}"
+        exit 2
+esac
+
+exit 0
