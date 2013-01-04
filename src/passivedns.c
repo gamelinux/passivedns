@@ -1046,6 +1046,7 @@ int main(int argc, char *argv[])
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
+    signal(SIGUSR1, print_pdns_stats);
 
 #define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:V"
 
