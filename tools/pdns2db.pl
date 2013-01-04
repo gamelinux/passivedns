@@ -63,6 +63,7 @@ use DBI;
 =cut
 
 our $VERSION       = 0.3;
+our $FULL          = 1;
 our $DEBUG         = 0;
 our $VERBOSE       = 0;
 our $DAEMON        = 0;
@@ -303,28 +304,43 @@ sub put_dns_to_db {
 
     my ($sql, $sth);
 
-    eval{
+    if ( $FULL == 1 ) {
       $sql = qq[
-             INSERT INTO $TABLE_NAME (
-               QUERY,RR,MAPTYPE,ANSWER,TTL,COUNT,LAST_SEEN,FIRST_SEEN
-             ) VALUES (
-               '$query','$rr','$type','$answer','$ttl','$count',FROM_UNIXTIME($ts),FROM_UNIXTIME($tsl)
-             ) ON DUPLICATE KEY UPDATE
-               TTL = if (TTL < $ttl, $ttl, TTL),
-               COUNT = COUNT + '$count',
-               LAST_SEEN = if (LAST_SEEN < FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), LAST_SEEN),
-               FIRST_SEEN = if (FIRST_SEEN > FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), FIRST_SEEN)
-             ];
+               INSERT INTO $TABLE_NAME (
+                 CLIENT,SERVER,QUERY,RR,MAPTYPE,ANSWER,TTL,COUNT,LAST_SEEN,FIRST_SEEN
+               ) VALUES (
+                 '$cip','$sip','$query','$rr','$type','$answer','$ttl','$count',FROM_UNIXTIME($ts),FROM_UNIXTIME($tsl)
+               ) ON DUPLICATE KEY UPDATE
+                 TTL = if (TTL < $ttl, $ttl, TTL),
+                 COUNT = COUNT + '$count',
+                 LAST_SEEN = if (LAST_SEEN < FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), LAST_SEEN),
+                 FIRST_SEEN = if (FIRST_SEEN > FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), FIRST_SEEN)
+               ];
+    } else {
+      $sql = qq[
+               INSERT INTO $TABLE_NAME (
+                 QUERY,RR,MAPTYPE,ANSWER,TTL,COUNT,LAST_SEEN,FIRST_SEEN
+               ) VALUES (
+                 '$query','$rr','$type','$answer','$ttl','$count',FROM_UNIXTIME($ts),FROM_UNIXTIME($tsl)
+               ) ON DUPLICATE KEY UPDATE
+                 TTL = if (TTL < $ttl, $ttl, TTL),
+                 COUNT = COUNT + '$count',
+                 LAST_SEEN = if (LAST_SEEN < FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), LAST_SEEN),
+                 FIRST_SEEN = if (FIRST_SEEN > FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), FIRST_SEEN)
+               ];
+    }
+ 
+    eval{
       logger("[D] $sql") if $DEBUG > 1;
       $sth = $dbh->prepare($sql);
       $sth->execute;
       $sth->finish;
-   };
-   if ($@) {
+    };
+    if ($@) {
       # Failed
       return 1;
-   }
-   return 0;
+    }
+    return 0;
 }
 
 =head2 new_pdns_table
@@ -337,33 +353,59 @@ sub put_dns_to_db {
 sub new_pdns_table {
    my ($tablename) = shift;
    my ($sql, $sth);
+
    logger("[*] Creating $TABLE_NAME...");
+
+   if ( $FULL == 1 ) {
+       $sql = "                                                       \
+          CREATE TABLE IF NOT EXISTS $tablename                       \
+          (                                                           \
+          ID            BIGINT(20) UNSIGNED  NOT NULL AUTO_INCREMENT, \
+          CLIENT        varchar(39)          NOT NULL DEFAULT   '',   \
+          SERVER        varchar(39)          NOT NULL DEFAULT   '',   \
+          QUERY         varchar(255)         NOT NULL DEFAULT   '',   \
+          MAPTYPE       varchar(10)          NOT NULL DEFAULT   '',   \
+          RR            varchar(10)          NOT NULL DEFAULT   '',   \
+          ANSWER        varchar(255)         NOT NULL DEFAULT   '',   \
+          TTL           int(10)              NOT NULL DEFAULT  '0',   \
+          COUNT         BIGINT(20) UNSIGNED  NOT NULL DEFAULT  '1',   \
+          FIRST_SEEN    DATETIME             NOT NULL,                \
+          LAST_SEEN     DATETIME             NOT NULL,                \
+          PRIMARY KEY (ID),                                           \
+          UNIQUE KEY MARQ (CLIENT,MAPTYPE,ANSWER,RR,QUERY),           \
+          KEY query_idx (QUERY),                                      \
+          KEY answer_idx (ANSWER)                                     \
+          )                                                           \
+        ";
+   } else {
+       $sql = "                                                       \
+          CREATE TABLE IF NOT EXISTS $tablename                       \
+          (                                                           \
+          ID            BIGINT(20) UNSIGNED  NOT NULL AUTO_INCREMENT, \
+          QUERY         varchar(255)         NOT NULL DEFAULT   '',   \
+          MAPTYPE       varchar(10)          NOT NULL DEFAULT   '',   \
+          RR            varchar(10)          NOT NULL DEFAULT   '',   \
+          ANSWER        varchar(255)         NOT NULL DEFAULT   '',   \
+          TTL           int(10)              NOT NULL DEFAULT  '0',   \
+          COUNT         BIGINT(20) UNSIGNED  NOT NULL DEFAULT  '1',   \
+          FIRST_SEEN    DATETIME             NOT NULL,                \
+          LAST_SEEN     DATETIME             NOT NULL,                \
+          PRIMARY KEY (ID),                                           \
+          UNIQUE KEY MARQ (MAPTYPE,ANSWER,RR,QUERY),                  \
+          KEY query_idx (QUERY),                                      \
+          KEY answer_idx (ANSWER)                                     \
+          )                                                           \
+        ";
+   }
+
    eval{
-      $sql = "                                                      \
-        CREATE TABLE IF NOT EXISTS $tablename                       \
-        (                                                           \
-        ID            BIGINT(20) UNSIGNED  NOT NULL AUTO_INCREMENT, \
-        QUERY         varchar(255)         NOT NULL DEFAULT   '',   \
-        MAPTYPE       varchar(10)          NOT NULL DEFAULT   '',   \
-        RR            varchar(10)          NOT NULL DEFAULT   '',   \
-        ANSWER        varchar(255)         NOT NULL DEFAULT   '',   \
-        TTL           int(10)              NOT NULL DEFAULT  '0',   \
-        COUNT         BIGINT(20) UNSIGNED  NOT NULL DEFAULT  '1',   \
-        FIRST_SEEN    DATETIME             NOT NULL,                \
-        LAST_SEEN     DATETIME             NOT NULL,                \
-        PRIMARY KEY (ID),                                           \
-        UNIQUE KEY MARQ (MAPTYPE,ANSWER,RR,QUERY),                  \
-        KEY query_idx (QUERY),                                      \
-        KEY answer_idx (ANSWER)                                     \
-        )                                                           \
-      ";
-      $sth = $dbh->prepare($sql);
-      $sth->execute;
-      $sth->finish;
+       $sth = $dbh->prepare($sql);
+       $sth->execute;
+       $sth->finish;
    };
    if ($@) {
-      # Failed
-      return 1;
+       # Failed
+       return 1;
    }
    return 0;
 }
