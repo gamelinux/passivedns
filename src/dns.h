@@ -37,8 +37,19 @@
 #define DNS_CHK_SOA        0x0200
 #define DNS_CHK_MX         0x0400
 #define DNS_CHK_NS         0x0800
-// Last one is nxdomain
-#define DNS_CHK_NXDOMAIN   0x8000
+#define DNS_CHK_ALL        0x8000
+/* Default flags for Server Errors to handle */
+#define DNS_SE_CHK_FORMERR  0x0001
+#define DNS_SE_CHK_SERVFAIL 0x0002
+#define DNS_SE_CHK_NXDOMAIN 0x0004
+#define DNS_SE_CHK_NOTIMPL  0x0008
+#define DNS_SE_CHK_REFUSED  0x0010
+#define DNS_SE_CHK_YXDOMAIN 0x0020
+#define DNS_SE_CHK_YXRRSET  0x0040
+#define DNS_SE_CHK_NXRRSET  0x0080
+#define DNS_SE_CHK_NOTAUTH  0x0100
+#define DNS_SE_CHK_NOTZONE  0x0200
+#define DNS_SE_CHK_ALL      0x8000
 
 // Flag for indicating an NXDOMAIN
 #define DNS_NXDOMAIN       0x01
@@ -108,7 +119,7 @@ const char *u_ntop (const struct in6_addr ip_addr, int af, char *dest);
 void dns_parser (packetinfo *pi);
 void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr, unsigned char *rdomain_name);
 void print_passet (pdns_asset *p, pdns_record *l);
-void print_passet_nxd (pdns_record *l, ldns_rdf *lname, ldns_rr *rr);
+void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode);
 void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
 void expire_dns_records();
 void expire_all_dns_records();
@@ -117,4 +128,6 @@ void delete_dns_asset (pdns_asset **passet_head, pdns_asset *passet);
 void update_config_mem_counters();
 void parse_dns_flags (char *args);
 void update_dns_stats(packetinfo *pi, uint8_t code);
+uint16_t pdns_chk_dnsfe(uint16_t rcode);
+
 #endif //DNS_H

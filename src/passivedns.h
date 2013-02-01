@@ -491,7 +491,8 @@ typedef struct _globalconfig {
     uint8_t      drop_privs_flag;        /* Flag marking to drop privs */
     uint8_t      chroot_flag;            /* Flag for going chroot */
     uint8_t      daemon_flag;            /* Flag for going daemon */
-    uint64_t     dnsf;                   /* Flags for DNS RR Type checks to do */
+    uint32_t     dnsf;                   /* Flags for DNS RR Type checks to do */
+    uint32_t     dnsfe;                  /* Flags for DNS Server Error Types to check */
     uint32_t     payload;                /* dump how much of the payload ?  */
     uint32_t     curcxt;
     uint32_t     llcxt;

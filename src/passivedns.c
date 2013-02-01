@@ -976,8 +976,8 @@ void usage()
     olog(" OPTIONS:\n\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
-    olog(" -l <file>       Name of the logfile (default: /var/log/passivedns.log).\n");
-    olog(" -L <file>       Name of NXDOMAIN logfile (default: /var/log/passivedns.log).\n");
+    olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
+    olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -992,9 +992,13 @@ void usage()
     olog(" -h              This help message.\n\n");
     olog(" FLAGS:\n");
     olog("\n");
-    olog("  4:A    6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA\n");
-    olog("  P:PTR  R:RP    S:SRV    T:TXT    M:MX     n:NS\n");
-    olog("  x:NXD\n");
+    olog(" * For Record Types:\n");
+    olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA\n");
+    olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS\n");
+    olog("\n");
+    olog(" * For Server Return Code (SRC) Errors:\n");
+    olog("   f:FORMERR   s:SERVFAIL  x:NXDOMAIN  o:NOTIMPL  r:REFUSED\n");
+    olog("   y:YXDOMAIN  e:YXRRSET   t:NXRRSET   a:NOTAUTH  z:NOTZONE\n");
     olog("\n");
 }
 

@@ -269,8 +269,9 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
     }
 
-    if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) == 3) {
-        dlog("[D] NXDOMAIN: %s\n", domain_name);
+    if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) != 0) {
+        uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
+        dlog("[D] Error return code: %d\n", rcode);
         /* PROBLEM:
          * As there is no valid ldns_rr here and we cant fake one that will
          * be very unique, we cant push this to the normal
@@ -281,7 +282,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
          * if the bucket is to big or non efficient. We would still store data
          * such as: fistseen,lastseen,client_ip,server_ip,class,query,NXDOMAIN
          */
-         if (config.dnsf & DNS_CHK_NXDOMAIN) {
+         if (config.dnsfe & (pdns_chk_dnsfe(rcode))) {
             ldns_rr_list  *dns_query_domains;
             ldns_rr_class  class;
             ldns_rr_type   type;
@@ -292,16 +293,18 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             /* Check if the node exists, if not, make it */
             pr = get_pdns_record(dnshash, pi, domain_name);
             
-            /* Set the NXDOMAIN flag: */
-            //lname_node->nxflag |= DNS_NXDOMAIN;
+            /* Set the SRC flag: */
+            //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
             dns_query_domains = ldns_pkt_question(dns_pkt);
             rr    = ldns_rr_list_rr(dns_query_domains, 0);
             class = ldns_rr_get_class(rr);
             type  = ldns_rr_get_type(rr);
             if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
-                /* Print the NXDOMAIN */
-                print_passet_nxd(pr, rdf_data, rr);
+                /* Print the SRC Error record */
+                print_passet_err(pr, rdf_data, rr, rcode);
             }
+        } else {
+            dlog("[D] Error return code %d was not processed:%d\n", pdns_chk_dnsfe(rcode),config.dnsfe);
         }
         free(domain_name);
         return(0);
@@ -512,7 +515,7 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
     return dest;
 }
 
-void print_passet_nxd (pdns_record *l, ldns_rdf *lname, ldns_rr *rr) {
+void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode) {
     FILE *fd;
     uint8_t screen;
     static char ip_addr_s[INET6_ADDRSTRLEN];
@@ -605,7 +608,42 @@ void print_passet_nxd (pdns_record *l, ldns_rdf *lname, ldns_rr *rr) {
             break;
     }
 
-    fprintf(fd,"||NXDOMAIN||0||1\n");
+    switch (rcode) {
+        case 1:
+            fprintf(fd,"||FORMERR");
+            break;
+        case 2:
+            fprintf(fd,"||SERVFAIL");
+            break;
+        case 3:
+            fprintf(fd,"||NXDOMAIN");
+            break;
+        case 4:
+            fprintf(fd,"||NOTIMPL");
+            break;
+        case 5:
+            fprintf(fd,"||REFUSED");
+            break;
+        case 6:
+            fprintf(fd,"||YXDOMAIN");
+            break;
+        case 7:
+            fprintf(fd,"||YXRRSET");
+            break;
+        case 8:
+            fprintf(fd,"||NXRRSET");
+            break;
+        case 9:
+            fprintf(fd,"||NOTAUTH");
+            break;
+        case 10:
+            fprintf(fd,"||NOTZONE");
+            break;
+        default:
+            fprintf(fd,"||UNKNOWN-ERROR-%d",rcode);
+            break;
+    }
+    fprintf(fd,"||0||1\n");
 
     if (screen == 0)
         fclose(fd);
@@ -1043,7 +1081,8 @@ void parse_dns_flags (char *args)
         return;
     }
 
-    config.dnsf = 0;
+    config.dnsf  = 0;
+    config.dnsfe = 0;
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
@@ -1107,9 +1146,55 @@ void parse_dns_flags (char *args)
                dlog("[D] Enabling flag: DNS_CHK_NS\n");
                ok++;
                break;
+            case 'f': // FORMERR
+               config.dnsfe |= DNS_SE_CHK_FORMERR;
+               dlog("[D] Enabling flag: DNS_SE_CHK_FORMERR\n");
+               ok++;
+               break;
+            case 's': // SERVFAIL
+               config.dnsfe |= DNS_SE_CHK_SERVFAIL;
+               dlog("[D] Enabling flag: DNS_SE_CHK_SERVFAIL\n");
+               ok++;
+               break;
             case 'x': // NXDOMAIN
-               config.dnsf |= DNS_CHK_NXDOMAIN;
-               dlog("[D] Enabling flag: DNS_CHK_NXDOMAIN\n");
+               config.dnsfe |= DNS_SE_CHK_NXDOMAIN;
+               dlog("[D] Enabling flag: DNS_SE_CHK_NXDOMAIN\n");
+               ok++;
+               break;
+
+            case 'o': // 
+               config.dnsfe |= DNS_SE_CHK_NOTIMPL;
+               dlog("[D] Enabling flag: DNS_SE_CHK_NOTIMPL\n");
+               ok++;
+               break;
+            case 'r': // 
+               config.dnsfe |= DNS_SE_CHK_REFUSED;
+               dlog("[D] Enabling flag: DNS_SE_CHK_REFUSED\n");
+               ok++;
+               break;
+            case 'y': // 
+               config.dnsfe |= DNS_SE_CHK_YXDOMAIN;
+               dlog("[D] Enabling flag: DNS_SE_CHK_YXDOMAIN\n");
+               ok++;
+               break;
+            case 'e': // 
+               config.dnsfe |= DNS_SE_CHK_YXRRSET;
+               dlog("[D] Enabling flag: DNS_SE_CHK_YXRRSET\n");
+               ok++;
+               break;
+            case 't': // 
+               config.dnsfe |= DNS_SE_CHK_NXRRSET;
+               dlog("[D] Enabling flag: DNS_SE_CHK_NXRRSET\n");
+               ok++;
+               break;
+            case 'a': // 
+               config.dnsfe |= DNS_SE_CHK_NOTAUTH;
+               dlog("[D] Enabling flag: DNS_SE_CHK_NOTAUTH\n");
+               ok++;
+               break;
+            case 'z': // 
+               config.dnsfe |= DNS_SE_CHK_NOTZONE;
+               dlog("[D] Enabling flag: DNS_SE_CHK_NOTZONE\n");
                ok++;
                break;
             case '\0':
@@ -1126,3 +1211,46 @@ void parse_dns_flags (char *args)
         config.dnsf = tmpf;
     }
 }
+
+uint16_t pdns_chk_dnsfe(uint16_t rcode)
+{
+    uint16_t retcode = 0x0000;
+
+    switch (rcode) {
+        case 1:
+            retcode = DNS_SE_CHK_FORMERR;
+            break;
+        case 2:
+            retcode = DNS_SE_CHK_SERVFAIL;
+            break;
+        case 3:
+            retcode = DNS_SE_CHK_NXDOMAIN;
+            break;
+        case 4:
+            retcode = DNS_SE_CHK_NOTIMPL;
+            break;
+        case 5:
+            retcode = DNS_SE_CHK_REFUSED;
+            break;
+        case 6:
+            retcode = DNS_SE_CHK_YXDOMAIN;
+            break;
+        case 7:
+            retcode = DNS_SE_CHK_YXRRSET;
+            break;
+        case 8:
+            retcode = DNS_SE_CHK_NXRRSET;
+            break;
+        case 9:
+            retcode = DNS_SE_CHK_NOTAUTH;
+            break;
+        case 10:
+            retcode = DNS_SE_CHK_NOTZONE;
+            break;
+        default:
+            retcode = 0x0000; // UNKNOWN-ERROR
+            break;
+    }
+    return retcode;
+}
+
