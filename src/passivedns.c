@@ -43,6 +43,7 @@
 #include <ctype.h>
 #include "passivedns.h"
 #include "dns.h"
+#include "defrag.h"
 
 #ifndef CONFDIR
 #define CONFDIR "/etc/passivedns/"
@@ -157,12 +158,46 @@ void check_vlan (packetinfo *pi)
 
 void prepare_ip4 (packetinfo *pi)
 {
+    uint16_t offset;
+    uint16_t  flags;
     config.p_s.ip4_recv++;
-    pi->af = AF_INET;
-    pi->ip4 = (ip4_header *) (pi->packet + pi->eth_hlen);
-    pi->packet_bytes = (pi->ip4->ip_len - (IP_HL(pi->ip4) * 4));
 
     //vlog(0x3, "Got IPv4 Packet...\n");
+    pi->af = AF_INET;
+    pi->ip4 = (ip4_header *) (pi->packet + pi->eth_hlen);
+    pi->packet_bytes = (ntohs(pi->ip4->ip_len) - (IP_HL(pi->ip4) * 4));
+
+    offset  = ntohs(pi->ip4->ip_off);
+    flags   = offset & ~IP_OFFMASK;
+    offset &= IP_OFFMASK;
+
+    /* Check if this packet is a part of an IPv4 fragment stream:
+     * If so, mark it for later processing after connection_tracking(); 
+     */
+    olog("FRAG:%d - MF:%d, OS:%d\n",pi->frag,flags,offset);
+    if ( !((flags & IP_MF) == 0 && offset == 0) ) {
+        /* This IP packet is a part of a fragment stream */
+        if ( (flags & IP_MF) == 0  && (offset & IP_OFFMASK) != 0 ) {
+            pi->frag = FRAG_LAST;
+            flags = 0;
+        } else
+        if ( (flags & IP_MF) != 0 && offset == 0 ) {
+            pi->frag = FRAG_FIRST;
+            flags = 1;
+        } else {
+            pi->frag = FRAG_STRAY;
+            flags = 1;
+        }
+        //olog("FRAG:%d - MF:%d, OS:%d\n",pi->frag,flags,offset);
+        //if (pi->frag != FRAG_NO )  // Should now always be true
+        process_frag(pi);
+
+    } else {
+        //olog("FRAG:%d - MF:%d, OS:%d\n",pi->frag,flags,offset);
+        //olog("Not a FRAG....\n");
+        return;
+    }
+
     return;
 }
 
@@ -238,7 +273,7 @@ void prepare_ip6 (packetinfo *pi)
     config.p_s.ip6_recv++;
     pi->af = AF_INET6;
     pi->ip6 = (ip6_header *) (pi->packet + pi->eth_hlen);
-    pi->packet_bytes = pi->ip6->len;
+    pi->packet_bytes = ntohs(pi->ip6->len);
     //vlog(0x3, "Got IPv6 Packet...\n");
     return;
 }
@@ -292,9 +327,12 @@ void prepare_tcp (packetinfo *pi)
     config.p_s.tcp_recv++;
     if (pi->af==AF_INET) {
         vlog(0x3, "[*] IPv4 PROTOCOL TYPE TCP:\n");
-        pi->tcph = (tcp_header *) (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4));
-        pi->plen = (pi->pheader->caplen - (TCP_OFFSET(pi->tcph)) * 4 - (IP_HL(pi->ip4) * 4) - pi->eth_hlen);
-        pi->payload = (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4) + (TCP_OFFSET(pi->tcph) * 4));
+        if (pi->tcph == NULL)
+            pi->tcph = (tcp_header *) (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4));
+        if (pi->plen == 0)
+            pi->plen = (pi->pheader->caplen - (TCP_OFFSET(pi->tcph)) * 4 - (IP_HL(pi->ip4) * 4) - pi->eth_hlen);
+        if (pi->payload == NULL)
+            pi->payload = (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4) + (TCP_OFFSET(pi->tcph) * 4));
     } else if (pi->af==AF_INET6) {
         vlog(0x3, "[*] IPv6 PROTOCOL TYPE TCP:\n");
         pi->tcph = (tcp_header *) (pi->packet + pi->eth_hlen + IP6_HEADER_LEN);
@@ -302,8 +340,13 @@ void prepare_tcp (packetinfo *pi)
         pi->payload = (pi->packet + pi->eth_hlen + IP6_HEADER_LEN + (TCP_OFFSET(pi->tcph)*4));
     }
     pi->proto  = IP_PROTO_TCP;
-    pi->s_port = pi->tcph->src_port;
-    pi->d_port = pi->tcph->dst_port;
+    /* If this is not a frag, get src/dst port from tcph. */
+    /* If this is a frag, but we have not seen the first frag, phantom session it is :( */
+    if (pi->frag == FRAG_NO) {
+        pi->s_port = pi->tcph->src_port;
+        pi->d_port = pi->tcph->dst_port;
+    } /* src/dst ports should now be 0, but if we have seen the first fragment */
+      /* This should have been set to the correct ports by the defragger */
     connection_tracking(pi);
     return;
 }
@@ -313,10 +356,13 @@ void prepare_udp (packetinfo *pi)
     config.p_s.udp_recv++;
     if (pi->af==AF_INET) {
         vlog(0x3, "[*] IPv4 PROTOCOL TYPE UDP:\n");
-        pi->udph = (udp_header *) (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4));
-        pi->plen = pi->pheader->caplen - UDP_HEADER_LEN -
+        if (pi->udph == NULL)
+            pi->udph = (udp_header *) (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4));
+        if (pi->plen == 0)
+            pi->plen = pi->pheader->caplen - UDP_HEADER_LEN -
                     (IP_HL(pi->ip4) * 4) - pi->eth_hlen;
-        pi->payload = (pi->packet + pi->eth_hlen +
+        if (pi->payload == NULL)
+            pi->payload = (pi->packet + pi->eth_hlen +
                         (IP_HL(pi->ip4) * 4) + UDP_HEADER_LEN);
 
     } else if (pi->af==AF_INET6) {
@@ -336,7 +382,10 @@ void prepare_udp (packetinfo *pi)
 
 void parse_tcp (packetinfo *pi)
 {
+    /* Dont waste cycles on packets with no payload */
     if (pi->plen <= 0) return;
+    /* If this is an IP fragment, wait for the defragged IP packet */
+    if (pi->frag != FRAG_NO) return;
 
     /* Reliable traffic comes from the servers (normally on port 53 or 5353)
      * and the client has sent at least one package on that
@@ -350,7 +399,10 @@ void parse_tcp (packetinfo *pi)
 
 void parse_udp (packetinfo *pi)
 {
+    /* Dont waste cycles on packets with no payload */
     if (pi->plen <= 0) return;
+    /* If this is an IP fragment, wait for the defragged IP packet */
+    if (pi->frag != FRAG_NO) return;
 
     /* Reliable traffic comes from the servers (normally on port 53 or 5353)
      * and the client has sent at least one package on that

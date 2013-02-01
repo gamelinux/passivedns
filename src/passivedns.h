@@ -26,7 +26,7 @@
 #define TIMEOUT                       60
 #define BUCKET_SIZE                   65537
 #define SNAPLENGTH                    1600
-#define PKT_MAXPAY                    255
+#define PKT_MAXPAY                    65000
 #define MAX_BYTE_CHECK                500000
 #define MAX_PKT_CHECK                 10
 #define TCP_TIMEOUT                   300       /* When idle IP connections should be timed out */
@@ -68,6 +68,12 @@
 #define TF_URG                        0x20
 #define TF_ECE                        0x40
 #define TF_CWR                        0x80
+
+#define FRAG_NO         0x00 /* This packet is not part of a fragment stream  */
+#define FRAG_FIRST      0x01 /* This packet is the first in a fragment stream */
+#define FRAG_STRAY      0x02 /* This packet is a part of a fragment stream    */
+#define FRAG_LAST       0x04 /* This packet is the last in a fragment stream  */
+
 
 #define SUCCESS     0
 #define ERROR       1
@@ -220,6 +226,7 @@ typedef struct _udp_header {
         uint16_t len;                     /* length of the payload */
         uint16_t csum;                    /* checksum */
 } udp_header;
+
 
 /*
  * Structure for connections
@@ -393,6 +400,7 @@ typedef struct _packetinfo {
     uint32_t        plen;           /* transport payload length */
     uint32_t        our;            /* Is the asset in our defined network */
     uint8_t         up;             /* Set if the asset has been updated */
+    uint8_t         frag;           /* Flag to keep fragment state */
     connection      *cxt;           /* pointer to the cxt for this packet */
     //struct _asset    *asset;         /* pointer to the asset for this (src) packet */
     //enum { SIGNATURE, FINGERPRINT } type;
