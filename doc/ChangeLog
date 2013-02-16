@@ -1,3 +1,8 @@
+Changes with PassiveDNS 1.1.1
+
+- Added stats output to stdout with USR1 signal
+- Added support for more Server Return Codes
+
 Changes with PassiveDNS 1.0.0
 
 - Added microseconds to unix timestamps in log output

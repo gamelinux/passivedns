@@ -1,6 +1,6 @@
 # General:
-  # PassiveDNS was developed on a Ubuntu 10.04 platform, so all main testing was done there.
-  # Ubuntu 10.04 ships with libldns 1.6.1 and libpcap 1.0.0. I have compiled it static and dynamic
+  # PassiveDNS was initially developed on a Ubuntu 10.04 platform, and later on Ubuntu 12.04, so all
+  # main testing was done on Ubuntu. I have compiled passivedns static and dynamic
   # and tried it out on different linux OSes with great luck.
   # I try to keep the git tags "stable" and the master branch might be under development.
   # If you have issues with the current master, please read doc/ISSUES

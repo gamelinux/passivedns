@@ -22,6 +22,7 @@ $DATABASE = "127.0.0.1";
 $DBUSER   = "pdns";
 $DBTABLE  = "pdns";
 $DBPASSWD = "pdns";
+$DBLIMIT  = 500;
 # Configure End
 
 $query = sanitize("query"); if (empty($query)) $query = "";
@@ -35,11 +36,11 @@ if ($query) {
   mysql_select_db($DBTABLE) or die(mysql_error());
   if ( filter_var($query, FILTER_VALIDATE_IP) ) {
     echo "<b>PassiveDNS Records for IP: ". $query ."</b><br><br>";
-    $domains = mysql_query("SELECT * FROM pdns WHERE answer='$query'");
+    $domains = mysql_query("SELECT * FROM pdns WHERE answer='$query' LIMIT $DBLIMIT");
     if(mysql_num_rows($domains)==0){
       echo "<b>No records found...</b><br><br>";
     } else {
-      echo "<table cellpadding='2'><tr><td>First Seen</td><td>Last Seen</td><td>Type</td><td>TTL</td><td>Query</td><td>Answer</td><td>Count</td></tr>";
+      echo "<table cellpadding='2'><tr><td><b>First Seen</b></td><td><b>Last Seen</b></td><td><b>Type</b></td><td><b>TTL</b></td><td><b>Query</b></td><td><b>Answer</b></td><td><b>Count</b></td></tr>";
       echo '
            ';
       while ( $r = mysql_fetch_array($domains) ) {
@@ -56,11 +57,11 @@ if ($query) {
     }
   } else {
     echo "<b>PassiveDNS Records for Domain: ". $query ."</b> <br><br>";
-    $domains = mysql_query("SELECT * FROM pdns WHERE query='$query' OR query LIKE '%.$query'");
+    $domains = mysql_query("SELECT * FROM pdns WHERE query='$query' OR query LIKE '%.$query' LIMIT $DBLIMIT");
     if(mysql_num_rows($domains)==0){
       echo "<b>No records found...</b><br><br>";
     } else {
-      echo "<table cellpadding='2'><tr><td>First Seen</td><td>Last Seen</td><td>Type</td><td>TTL</td><td>Query</td><td>Answer</td><td>Count</td></tr>";
+      echo "<table cellpadding='2'><tr><td><b>First Seen</b></td><td><b>Last Seen</b></td><td><b>Type</b></td><td><b>TTL</b></td><td><b>Query</b></td><td><b>Answer</b></td><td><b>Count</b></td></tr>";
       echo '
            ';
       while ( $r = mysql_fetch_array($domains) ) {
@@ -150,12 +151,12 @@ function print_header() {
   </style>
   </head>
   <body><center>
-  <div style="width: 780px; margin:auto;">
+  <div style="width: 860px; margin:auto;">
   <p>
    This data has been collected using <a href="http://github.com/gamelinux/passivedns">PassiveDNS</a>.
   </p>
   </div>
-  <table width="780" cellpadding="2" cellspacing="0">
+  <table width="860" cellpadding="2" cellspacing="0">
 ';
 }
 
