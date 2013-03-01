@@ -541,7 +541,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     /* example output:
      * 1329575805.123456||100.240.60.160||80.160.30.30||IN||sadf.googles.com.||A||NXDOMAIN||0||1
      */
-    fprintf(fd,"%lu.%06lu||%s||%s||",l->last_seen.tv_sec, l->last_seen.tv_usec, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu.%06lu%s%s%s%s%s",l->last_seen.tv_sec, l->last_seen.tv_usec, config.delimiter, ip_addr_c, config.delimiter, ip_addr_s, config.delimiter);
 
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
@@ -564,7 +564,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
              break;
     }    
     
-    fprintf(fd,"||%s||",l->qname);
+    fprintf(fd,"%s%s%s",config.delimiter, l->qname, config.delimiter);
 
     switch (ldns_rr_get_type(rr)) {
         case LDNS_RR_TYPE_PTR:
@@ -610,40 +610,40 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
 
     switch (rcode) {
         case 1:
-            fprintf(fd,"||FORMERR");
+            fprintf(fd,"%sFORMERR",config.delimiter);
             break;
         case 2:
-            fprintf(fd,"||SERVFAIL");
+            fprintf(fd,"%sSERVFAIL",config.delimiter);
             break;
         case 3:
-            fprintf(fd,"||NXDOMAIN");
+            fprintf(fd,"%sNXDOMAIN",config.delimiter);
             break;
         case 4:
-            fprintf(fd,"||NOTIMPL");
+            fprintf(fd,"%sNOTIMPL",config.delimiter);
             break;
         case 5:
-            fprintf(fd,"||REFUSED");
+            fprintf(fd,"%sREFUSED",config.delimiter);
             break;
         case 6:
-            fprintf(fd,"||YXDOMAIN");
+            fprintf(fd,"%sYXDOMAIN",config.delimiter);
             break;
         case 7:
-            fprintf(fd,"||YXRRSET");
+            fprintf(fd,"%sYXRRSET",config.delimiter);
             break;
         case 8:
-            fprintf(fd,"||NXRRSET");
+            fprintf(fd,"%sNXRRSET",config.delimiter);
             break;
         case 9:
-            fprintf(fd,"||NOTAUTH");
+            fprintf(fd,"%sNOTAUTH",config.delimiter);
             break;
         case 10:
-            fprintf(fd,"||NOTZONE");
+            fprintf(fd,"%sNOTZONE",config.delimiter);
             break;
         default:
-            fprintf(fd,"||UNKNOWN-ERROR-%d",rcode);
+            fprintf(fd,"%sUNKNOWN-ERROR-%d",rcode, config.delimiter);
             break;
     }
-    fprintf(fd,"||0||1\n");
+    fprintf(fd,"%s0%s1\n",config.delimiter, config.delimiter);
 
     if (screen == 0)
         fclose(fd);
@@ -675,7 +675,7 @@ void print_passet (pdns_asset *p, pdns_record *l) {
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
-    fprintf(fd,"%lu.%06lu||%s||%s||",p->last_seen.tv_sec, p->last_seen.tv_usec, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu.%06lu%s%s%s%s%s",p->last_seen.tv_sec, p->last_seen.tv_usec, config.delimiter, ip_addr_c, config.delimiter, ip_addr_s, config.delimiter);
 
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:
@@ -698,7 +698,7 @@ void print_passet (pdns_asset *p, pdns_record *l) {
              break;
     }
 
-    fprintf(fd,"||%s||",l->qname);
+    fprintf(fd,"%s%s%s",config.delimiter, l->qname, config.delimiter);
 
     switch (ldns_rr_get_type(p->rr)) {
         case LDNS_RR_TYPE_PTR:
@@ -742,7 +742,7 @@ void print_passet (pdns_asset *p, pdns_record *l) {
             break;
     }
 
-    fprintf(fd,"||%s||%u||%lu\n", p->answer,p->rr->_ttl,p->seen);
+    fprintf(fd,"%s%s%s%u%s%lu\n",config.delimiter, p->answer, config.delimiter, p->rr->_ttl, config.delimiter, p->seen);
     
     if (screen == 0)
         fclose(fd);

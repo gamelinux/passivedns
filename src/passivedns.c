@@ -987,6 +987,7 @@ void usage()
     olog(" -u <uid>        User ID to drop privileges to.\n");
     olog(" -g <gid>        Group ID to drop privileges to.\n");
     olog(" -T <dir>        Directory to chroot into.\n");
+    olog(" -d <delimiter>  Logfile delimiter (default: '||').\n");
     olog(" -D              Run as daemon.\n");
     olog(" -V              Show version and exit.\n");
     olog(" -h              This help message.\n\n");
@@ -1029,6 +1030,7 @@ int main(int argc, char *argv[])
     config.logfile_nxd = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
+    config.delimiter = "||";
     config.dnsprinttime = DNSPRINTTIME;
     config.dnscachetimeout =  DNSCACHETIMEOUT;
     config.dnsf = 0;
@@ -1052,7 +1054,7 @@ int main(int argc, char *argv[])
     signal(SIGALRM, sig_alarm_handler);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:l:L:hb:Dp:C:d:P:S:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1076,6 +1078,9 @@ int main(int argc, char *argv[])
             break;
         case 'C':
             config.dnscachetimeout = strtol(optarg, NULL, 0);
+            break;
+        case 'd':
+            config.delimiter = strdup(optarg);
             break;
         case 'P':
             config.dnsprinttime = strtol(optarg, NULL, 0);
