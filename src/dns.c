@@ -541,7 +541,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     /* example output:
      * 1329575805.123456||100.240.60.160||80.160.30.30||IN||sadf.googles.com.||A||NXDOMAIN||0||1
      */
-    fprintf(fd,"%lu.%lu||%s||%s||",l->last_seen.tv_sec, l->last_seen.tv_usec, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu.%06lu||%s||%s||",l->last_seen.tv_sec, l->last_seen.tv_usec, ip_addr_c, ip_addr_s);
 
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
@@ -675,7 +675,7 @@ void print_passet (pdns_asset *p, pdns_record *l) {
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
-    fprintf(fd,"%lu.%lu||%s||%s||",p->last_seen.tv_sec, p->last_seen.tv_usec, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu.%06lu||%s||%s||",p->last_seen.tv_sec, p->last_seen.tv_usec, ip_addr_c, ip_addr_s);
 
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:
