@@ -640,7 +640,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
             fprintf(fd,"%sNOTZONE",config.delimiter);
             break;
         default:
-            fprintf(fd,"%sUNKNOWN-ERROR-%d",rcode, config.delimiter);
+            fprintf(fd,"%sUNKNOWN-ERROR-%d",config.delimiter, rcode);
             break;
     }
     fprintf(fd,"%s0%s1\n",config.delimiter, config.delimiter);
