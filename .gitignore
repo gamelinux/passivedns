@@ -1,0 +1,5 @@
+# Binaries
+src/passivedns
+
+# Object files
+*.o
