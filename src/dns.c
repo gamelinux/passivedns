@@ -380,13 +380,6 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             continue;
         }
 
-        if (pr == NULL) {
-            dnshash = hash(domain_name);
-            dlog("[D] Hash: %lu\n", dnshash);
-            /* Check if the node exists, if not, make it */
-            pr = get_pdns_record(dnshash, pi, domain_name);
-        }
-
         /* Get the rdf data from the rr */
         rname = ldns_rr_rdf(rr, offset);
 
@@ -405,8 +398,31 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         }
         dlog("[D] rdomain_name: %s\n", rdomain_name);
 
+        if (pr == NULL) {
+            dnshash = hash(domain_name);
+            dlog("[D] Hash: %lu\n", dnshash);
+            /* Check if the node exists, if not, make it */
+            pr = get_pdns_record(dnshash, pi, domain_name);
+        }
+
         // Update the pdns record with the pdns asset
         update_pdns_record_asset(pi, pr, rr, rdomain_name);
+
+        // if CNAME, free domain_name, cp rdomain_name to domain_name
+        if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_CNAME) {
+            if (config.dnsf & DNS_CHK_CNAME) {
+                int len;
+                free(domain_name);
+                len = strlen((char *)rdomain_name);
+                domain_name = calloc(1, (len + 1));
+                strncpy((char *)domain_name, (char *)rdomain_name, len);
+                dnshash = hash(domain_name);
+                dlog("[D] Hash: %lu\n", dnshash);
+                pr = get_pdns_record(dnshash, pi, domain_name);
+            }
+        }
+
+        // Free the rdomain_name
         free(rdomain_name);
     }
     free(domain_name);
