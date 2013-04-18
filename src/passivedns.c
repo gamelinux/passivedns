@@ -441,6 +441,7 @@ connection *cxt_new(packetinfo *pi)
     cxt->af = pi->af;
     if(pi->tcph) cxt->s_tcpFlags |= pi->tcph->t_flags;
     cxt->start_time = pi->pheader->ts.tv_sec;
+    cxt->start_utime = pi->pheader->ts.tv_usec;
     cxt->last_pkt_time = pi->pheader->ts.tv_sec;
 
     if(pi-> af== AF_INET6){
@@ -508,6 +509,14 @@ void end_all_sessions()
         cxt = bucket[cxkey];
         while (cxt != NULL) {
             config.llcxt++;
+
+            /* Check if we have a DNS Query without an Answer */
+            if (cxt->pquery != NULL) {
+                // print out pdns log line, then free pquery
+                dns_print_cxt_query(cxt);
+                free(cxt->pquery);
+            }
+
             if (cxt->prev)
                 cxt->prev->next = cxt->next;
             if (cxt->next)
@@ -575,6 +584,13 @@ void end_sessions()
             }
 
             if (ended == 1 || expired == 1) {
+                /* Check if we have a DNS Query without an Answer */
+                if (cxt->pquery != NULL) {
+                    // print out pdns log line, then free pquery
+                    dns_print_cxt_query(cxt);
+                    free(cxt->pquery);
+                }
+
                 /* remove from the hash */
                 if (cxt->prev)
                     cxt->prev->next = cxt->next;
@@ -1027,6 +1043,7 @@ int main(int argc, char *argv[])
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
     config.logfile_nxd = "/var/log/passivedns.log";
+    config.logfile_query = "/var/log/passivedns.log"; 
     config.pidfile = "/var/run/passivedns.pid";
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
     config.dnsprinttime = DNSPRINTTIME;
@@ -1052,7 +1069,7 @@ int main(int argc, char *argv[])
     signal(SIGALRM, sig_alarm_handler);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:Vq:"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1067,6 +1084,9 @@ int main(int argc, char *argv[])
             break;
         case 'l':
             config.logfile = strdup(optarg);
+            break;
+        case 'q':
+            config.logfile_query = strdup(optarg);
             break;
         case 'b':
             config.bpff = strdup(optarg);

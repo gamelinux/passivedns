@@ -129,5 +129,6 @@ void update_config_mem_counters();
 void parse_dns_flags (char *args);
 void update_dns_stats(packetinfo *pi, uint8_t code);
 uint16_t pdns_chk_dnsfe(uint16_t rcode);
-
+int update_query_cxt(packetinfo *pi, ldns_pkt *dns_pkt);
+void dns_print_cxt_query (connection *cxt);
 #endif //DNS_H

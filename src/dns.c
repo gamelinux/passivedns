@@ -200,14 +200,65 @@ void dns_parser (packetinfo *pi) {
         /* For hardening, we can extract the query and add it to the cxt
          * and then check it later in the answer, that they match.
          */
-        /*
-        if (update_query_cxt(pi, dns_pkt) < 0) {
-            dlog("[D] update_query_cxt() returned -1\n");
+        if (update_query_cxt(pi, dns_pkt) == 0) {
+            dlog("[D] DNS Query for domain: %s\n",pi->cxt->pquery);
+        } else {
+            dlog("[E] Error getting domain from client query!\n");
+            ldns_pkt_free(dns_pkt);
+            update_dns_stats(pi,ERROR);
+            return;
         }
-        */
     }
 
     ldns_pkt_free(dns_pkt);
+}
+
+int update_query_cxt(packetinfo *pi, ldns_pkt *dns_pkt) {
+    int            rrcount_query;
+    int            j;
+    ldns_rr_list  *dns_query_domains;
+    ldns_buffer   *dns_buff;
+    ldns_status    status;
+    unsigned char *domain_name = 0;
+    uint32_t       len = 0;
+
+    dns_query_domains = ldns_pkt_question(dns_pkt);
+    rrcount_query     = ldns_rr_list_rr_count(dns_query_domains);
+    dns_buff = ldns_buffer_new(LDNS_MIN_BUFLEN);
+    plog("[*] rrcount_query: %d\n", rrcount_query);
+
+    // Do we ever have more than one Question?
+    // If we do - are we handling it correct ?
+    for (j = 0; j < rrcount_query; j++) {
+        ldns_rdf *rdf_data;
+
+        rdf_data = ldns_rr_owner(ldns_rr_list_rr(dns_query_domains, j));
+        dlog("[D] rdf_data: %p\n", rdf_data);
+
+        ldns_buffer_clear(dns_buff);
+        status = ldns_rdf2buffer_str(dns_buff, rdf_data);
+
+        if (status != LDNS_STATUS_OK) {
+            dlog("[D] Error in ldns_rdf2buffer_str(): %d\n", status);
+            return(-1);
+        }
+
+        //ldns_rr *rr;
+        ldns_rr *rr = ldns_rr_list_rr(ldns_pkt_question(dns_pkt),0);
+        pi->cxt->ptype  = ldns_rr_get_type(rr);
+        pi->cxt->pclass = ldns_rr_get_class(rr);
+
+        domain_name = (unsigned char *) ldns_buffer2str(dns_buff);
+        plog("QUERY DOMAIN: %s\n",domain_name);
+
+        len                = strlen((char *)domain_name);
+        pi->cxt->pquery    = calloc(1, (len + 1));
+        strncpy((char *)pi->cxt->pquery, (char *)domain_name, len);
+    }
+
+    ldns_buffer_free(dns_buff);
+    update_dns_stats(pi,SUCCESS);
+    return(0);
 }
 
 int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt) {
@@ -460,6 +511,14 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
             if ((passet->last_seen.tv_sec - passet->last_print.tv_sec) >= config.dnsprinttime) {
                 print_passet(passet, pr);
             }
+            /* Free and NULL the pi->cxt->pquery */
+            if (pi->cxt->pquery != NULL) {
+                free(pi->cxt->pquery);
+                pi->cxt->pquery = NULL;
+                dlog("[D] DNS client query deleted from pi->cxt->pquery\n");
+            } else {
+                dlog("[E] We should never be here!\n");
+            }
             return;
           }
         }
@@ -509,6 +568,15 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
 
     print_passet(passet, pr);
 
+    /* Free and NULL the pi->cxt->pquery */
+    if (pi->cxt->pquery != NULL) {
+        free(pi->cxt->pquery);
+        pi->cxt->pquery = NULL;
+        dlog("[D] DNS client query deleted from pi->cxt->pquery\n");
+    } else {
+        dlog("[E] We should never be here!\n");
+    }
+
     return;
 }
 
@@ -529,6 +597,104 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
         }
     }
     return dest;
+}
+
+void dns_print_cxt_query (connection *cxt) {
+    FILE *fd;
+    uint8_t screen;
+    static char ip_addr_s[INET6_ADDRSTRLEN];
+    static char ip_addr_c[INET6_ADDRSTRLEN];
+
+    if (config.logfile_query[0] == '-' && config.logfile_query[1] == '\0' ) {
+        if (config.handle == NULL) return;
+        screen = 1;
+        fd = stdout;
+    } else {
+        screen = 0;
+        fd = fopen(config.logfile_query, "a");
+        if (fd == NULL) {
+            plog("[E] ERROR: Cant open file %s\n",config.logfile_query);
+            return;
+        }
+    }
+
+    u_ntop(cxt->d_ip, cxt->af, ip_addr_s);
+    u_ntop(cxt->s_ip, cxt->af, ip_addr_c);
+
+    /* example output:
+     * 1329575805.123456||100.240.60.160||80.160.30.30||IN||sadf.googles.com.||A||NOSRVREPLY||0||1
+     */
+    fprintf(fd,"%lu.%lu||%s||%s||",cxt->start_time, cxt->start_utime, ip_addr_c, ip_addr_s);
+
+    switch (cxt->pclass) {
+        case LDNS_RR_CLASS_IN:
+             fprintf(fd,"IN");
+             break;
+        case LDNS_RR_CLASS_CH:
+             fprintf(fd,"CH");
+             break;
+        case LDNS_RR_CLASS_HS:
+             fprintf(fd,"HS");
+             break;
+        case LDNS_RR_CLASS_NONE:
+             fprintf(fd,"NONE");
+             break;
+        case LDNS_RR_CLASS_ANY:
+             fprintf(fd,"ANY");
+             break;
+        default:
+             fprintf(fd,"%d",cxt->pclass);
+             break;
+    }
+
+    fprintf(fd,"||%s||",cxt->pquery);
+
+    switch (cxt->ptype) {
+        case LDNS_RR_TYPE_PTR:
+             fprintf(fd,"PTR");
+             break;
+        case LDNS_RR_TYPE_A:
+             fprintf(fd,"A");
+             break;
+        case LDNS_RR_TYPE_AAAA:
+             fprintf(fd,"AAAA");
+             break;
+        case LDNS_RR_TYPE_CNAME:
+             fprintf(fd,"CNAME");
+             break;
+        case LDNS_RR_TYPE_DNAME:
+             fprintf(fd,"DNAME");
+             break;
+        case LDNS_RR_TYPE_NAPTR:
+             fprintf(fd,"NAPTR");
+             break;
+        case LDNS_RR_TYPE_RP:
+             fprintf(fd,"RP");
+             break;
+        case LDNS_RR_TYPE_SRV:
+             fprintf(fd,"SRV");
+             break;
+        case LDNS_RR_TYPE_TXT:
+             fprintf(fd,"TXT");
+             break;
+        case LDNS_RR_TYPE_SOA:
+             fprintf(fd,"SOA");
+             break;
+        case LDNS_RR_TYPE_NS:
+             fprintf(fd,"NS");
+             break;
+        case LDNS_RR_TYPE_MX:
+             fprintf(fd,"MX");
+             break;
+        default:
+            fprintf(fd,"%d",cxt->ptype);
+            break;
+    }
+
+    fprintf(fd,"||NOSRVREPLY||0||1\n");
+
+    if (screen == 0)
+        fclose(fd);
 }
 
 void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode) {

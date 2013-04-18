@@ -232,6 +232,7 @@ typedef struct _connection {
     struct   _connection *prev;
     struct   _connection *next;
     time_t   start_time;          /* connection start time */
+    time_t   start_utime;         /* connection start utime */
     time_t   last_pkt_time;       /* last seen packet time */
     uint64_t cxid;                /* connection id */
     uint8_t  reversed;            /* 1 if the connection is reversed */
@@ -249,6 +250,9 @@ typedef struct _connection {
     uint8_t  d_tcpFlags;          /* tcpflags sent by destination */
     uint8_t  check;               /* Flags spesifying checking */
     uint16_t plid;                /* Protocol layer ID (DNS TID) */
+    unsigned char *pquery;        /* The DNS Client queried domain */
+    uint32_t ptype;               /* The type of the RR. A, MX etc. */
+    uint32_t pclass;              /* The Class of the resource record */
 } connection;
 #define CXT_DONT_CHECK_SERVER     0x01  /* Dont check server packets */
 #define CXT_DONT_CHECK_CLIENT     0x02  /* Dont check client packets */
@@ -510,6 +514,7 @@ typedef struct _globalconfig {
     char        *net_ip_string;          /**/
     char        *logfile;                /* Filename of /var/log/passivedns.log */
     char        *logfile_nxd;            /* Filename for NXDOMAIN logging /var/log/passivedns-nxd.log */
+    char        *logfile_query;          /* Filename for NOSRVREPLY logging /var/log/passivedns-client.log */
     char        *pcap_file;              /* Filename to pcap too read */
     char        *dev;                    /* Device name to use for sniffing */
     char        *dpath;                  /* ... ??? seriously ???... */
