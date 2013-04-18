@@ -618,7 +618,7 @@ void dns_print_cxt_query (connection *cxt) {
     /* example output:
      * 1329575805.123456||100.240.60.160||80.160.30.30||IN||sadf.googles.com.||A||NOSRVREPLY||0||1
      */
-    fprintf(fd,"%lu.%lu||%s||%s||",cxt->start_time, cxt->start_utime, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu.%06lu||%s||%s||",cxt->start_time, cxt->start_utime, ip_addr_c, ip_addr_s);
 
     switch (cxt->pclass) {
         case LDNS_RR_CLASS_IN:
