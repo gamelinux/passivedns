@@ -30,6 +30,9 @@
 #define MAX_BYTE_CHECK                500000
 #define MAX_PKT_CHECK                 10
 #define TCP_TIMEOUT                   300       /* When idle IP connections should be timed out */
+#define UDP_TIMEOUT                   60
+#define ICMP_TIMEOUT                  60
+#define OTHER_TIMEOUT                 300
 
 #define ETHERNET_TYPE_IP              0x0800
 #define ETHERNET_TYPE_IPV6            0x86dd

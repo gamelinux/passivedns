@@ -559,18 +559,18 @@ void end_sessions()
             }
             /* UDP */
             else if (cxt->proto == IP_PROTO_UDP
-                     && (check_time - cxt->last_pkt_time) > 60) {
+                     && (check_time - cxt->last_pkt_time) > UDP_TIMEOUT) {
                 expired = 1;
             }
             /* ICMP */
             else if (cxt->proto == IP_PROTO_ICMP
                      || cxt->proto == IP6_PROTO_ICMP) {
-                if ((check_time - cxt->last_pkt_time) > 60) {
+                if ((check_time - cxt->last_pkt_time) > ICMP_TIMEOUT) {
                      expired = 1;
                 }
             }
             /* All Other protocols */
-            else if ((check_time - cxt->last_pkt_time) > TCP_TIMEOUT) {
+            else if ((check_time - cxt->last_pkt_time) > OTHER_TIMEOUT) {
                 expired = 1;
             }
 
