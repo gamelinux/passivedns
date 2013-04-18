@@ -940,10 +940,10 @@ void game_over()
 {
     if (config.inpacket == 0) {
         expire_all_dns_records();
-        print_pdns_stats();
         if (config.handle != NULL) pcap_close(config.handle);
         config.handle = NULL;
         end_all_sessions();
+        print_pdns_stats();
         free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
@@ -994,6 +994,7 @@ void usage()
     olog(" -r <file>       Read pcap <file>.\n");
     olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
     olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
+    olog(" -q <file>       Logfile for queries without answers (default: /var/log/passivedns-query.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1043,7 +1044,7 @@ int main(int argc, char *argv[])
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
     config.logfile_nxd = "/var/log/passivedns.log";
-    config.logfile_query = "/var/log/passivedns.log"; 
+    config.logfile_query = "/var/log/passivedns-query.log"; 
     config.pidfile = "/var/run/passivedns.pid";
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
     config.dnsprinttime = DNSPRINTTIME;

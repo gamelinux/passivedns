@@ -225,7 +225,7 @@ int update_query_cxt(packetinfo *pi, ldns_pkt *dns_pkt) {
     dns_query_domains = ldns_pkt_question(dns_pkt);
     rrcount_query     = ldns_rr_list_rr_count(dns_query_domains);
     dns_buff = ldns_buffer_new(LDNS_MIN_BUFLEN);
-    plog("[*] rrcount_query: %d\n", rrcount_query);
+    dlog("[*] rrcount_query: %d\n", rrcount_query);
 
     // Do we ever have more than one Question?
     // If we do - are we handling it correct ?
@@ -249,7 +249,7 @@ int update_query_cxt(packetinfo *pi, ldns_pkt *dns_pkt) {
         pi->cxt->pclass = ldns_rr_get_class(rr);
 
         domain_name = (unsigned char *) ldns_buffer2str(dns_buff);
-        plog("QUERY DOMAIN: %s\n",domain_name);
+        dlog("QUERY DOMAIN: %s\n",domain_name);
 
         len                = strlen((char *)domain_name);
         pi->cxt->pquery    = calloc(1, (len + 1));
@@ -320,6 +320,16 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
     }
 
+    /* Asuming we got an valid answer from the server */
+    /* Free and NULL the pi->cxt->pquery */
+    if (pi->cxt->pquery != NULL) {
+        free(pi->cxt->pquery);
+        pi->cxt->pquery = NULL;
+        dlog("[D] DNS client query deleted from pi->cxt->pquery\n");
+    } else {
+        dlog("[E] We should never be here!\n");
+    }
+
     if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) != 0) {
         uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
         dlog("[D] Error return code: %d\n", rcode);
@@ -354,6 +364,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 /* Print the SRC Error record */
                 print_passet_err(pr, rdf_data, rr, rcode);
             }
+
         } else {
             dlog("[D] Error return code %d was not processed:%d\n", pdns_chk_dnsfe(rcode),config.dnsfe);
         }
@@ -511,14 +522,6 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
             if ((passet->last_seen.tv_sec - passet->last_print.tv_sec) >= config.dnsprinttime) {
                 print_passet(passet, pr);
             }
-            /* Free and NULL the pi->cxt->pquery */
-            if (pi->cxt->pquery != NULL) {
-                free(pi->cxt->pquery);
-                pi->cxt->pquery = NULL;
-                dlog("[D] DNS client query deleted from pi->cxt->pquery\n");
-            } else {
-                dlog("[E] We should never be here!\n");
-            }
             return;
           }
         }
@@ -568,15 +571,6 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
 
     print_passet(passet, pr);
 
-    /* Free and NULL the pi->cxt->pquery */
-    if (pi->cxt->pquery != NULL) {
-        free(pi->cxt->pquery);
-        pi->cxt->pquery = NULL;
-        dlog("[D] DNS client query deleted from pi->cxt->pquery\n");
-    } else {
-        dlog("[E] We should never be here!\n");
-    }
-
     return;
 }
 
@@ -606,7 +600,7 @@ void dns_print_cxt_query (connection *cxt) {
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
     if (config.logfile_query[0] == '-' && config.logfile_query[1] == '\0' ) {
-        if (config.handle == NULL) return;
+        //if (config.handle == NULL) return;
         screen = 1;
         fd = stdout;
     } else {
@@ -704,7 +698,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
     if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0' ) {
-        if (config.handle == NULL) return;
+        //if (config.handle == NULL) return;
         screen = 1;
         fd = stdout;
     } else {
@@ -842,7 +836,7 @@ void print_passet (pdns_asset *p, pdns_record *l) {
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
     if (config.logfile[0] == '-' && config.logfile[1] == '\0' ) {
-        if (config.handle == NULL) return;
+        //if (config.handle == NULL) return;
         screen = 1;
         fd = stdout;
     } else {
