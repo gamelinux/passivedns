@@ -1017,6 +1017,9 @@ void usage()
     olog("   f:FORMERR   s:SERVFAIL  x:NXDOMAIN  o:NOTIMPL  r:REFUSED\n");
     olog("   y:YXDOMAIN  e:YXRRSET   t:NXRRSET   a:NOTAUTH  z:NOTZONE\n");
     olog("\n");
+    olog(" * For Client Query logging:\n");
+    olog("   c:NOSRVREPLY\n");
+    olog("\n");
 }
 
 void show_version()
