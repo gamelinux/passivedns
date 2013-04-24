@@ -26,6 +26,7 @@ $DBLIMIT  = 500;
 # Configure End
 
 $query = sanitize("query"); if (empty($query)) $query = "";
+$field = sanitize("field"); if (empty($field)) $field = "";
 
 print_header();
 print_search_body();
@@ -173,3 +174,4 @@ function print_tail() {
 </body>
 </html>';
 }
+?>
