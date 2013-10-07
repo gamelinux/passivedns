@@ -20,33 +20,61 @@
 */
 
 /*  I N C L U D E S  **********************************************************/
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <libgen.h>
 #include <string.h>
-#include <arpa/inet.h>
-#include <netinet/in.h> 
 #include <signal.h>
-#include <pcap.h>
-//#include <resolv.h>
-#include <getopt.h>
 #include <time.h>
 #include <sys/types.h>
-#include <grp.h>
-#include <pwd.h>
-#include <unistd.h>
 #include <sys/stat.h>
-#include <sys/types.h>
-#include <syslog.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
+#include <pcap.h>
+
+#ifdef WIN32
+#include <direct.h>
+#include <process.h>	//_getpid()
+#include <io.h>
+#include <sys/locking.h>
+#include <share.h>
+#include <mbstring.h>
+//#include <strsafe.h>	//ErrorExit()
+#include <conio.h>
+#include <userenv.h>
+#include <lm.h>
+#include <Shlobj.h>
+#include <shellapi.h>
+
+//for CreateThread
+#if defined(NTDDI_WS08) && (NTDDI_VERSION >= NTDDI_WS08)
+#include <Processthreadsapi.h>	//Windows 8 and Windows Server 2012
+#else
+#include <windows.h>	//Windows XP, Vista, 7, Server 2003/2008/R2
+#endif
+
+#include "wingetopt.h"
+#include "inet_ntop.h"
+
+HANDLE  hAlrmThread = NULL;			//alarm thread  handle
+HANDLE  hPdnsStatsThread = NULL;	//thred for printing pdns stats
+
+#else
+#include <libgen.h>
+#include <arpa/inet.h>	//not avail. in Win
+#include <netinet/in.h>	//not avail. in Win
+#include <resolv.h>
+#include <grp.h>	//part of Glibc
+#include <pwd.h>	//part of Glibc
+#include <unistd.h>
+#include <syslog.h>
+#endif
+
 #include "passivedns.h"
 #include "dns.h"
 
-#ifndef CONFDIR
-#define CONFDIR "/etc/passivedns/"
-#endif
+#define BPFF "port 53"
 
 /*  G L O B A L S  *** (or candidates for refactoring, as we say)***********/
 globalconfig config;
@@ -79,20 +107,21 @@ void cxt_init();
 int connection_tracking(packetinfo *pi);
 connection *cxt_new(packetinfo *pi);
 void del_connection(connection *, connection **);
+DWORD WINAPI pdns_stats_hanlder(LPVOID lpParam);
 void print_pdns_stats();
 void free_config();
 
 //void dump_payload(const uint8_t* data,uint16_t dlen);
-void game_over ();
+void game_over (int sig);
 
 /* F U N C T I O N S  ********************************************************/
 
 void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
                 const u_char * packet)
 {
+	packetinfo pstruct = {0};
+	packetinfo *pi = &pstruct;
     config.p_s.got_packets++;
-    packetinfo pstruct = {0};
-    packetinfo *pi = &pstruct;
     pi->packet = packet;
     pi->pheader = pheader;
     set_pkt_end_ptr (pi);
@@ -115,7 +144,7 @@ void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
         config.p_s.otherl_recv++;
         //vlog(0x3, "[*] ETHERNET TYPE : %x\n",pi->eth_hdr->eth_ip_type);
     }
-    config.inpacket = 0;
+    config.inpacket = 0;	
     return;
 }
 
@@ -378,8 +407,11 @@ int connection_tracking(packetinfo *pi) {
         ip_src = &PI_IP6SRC(pi);
         ip_dst = &PI_IP6DST(pi);
     }else {
-        ips.s6_addr32[0] = pi->ip4->ip_src;
-        ipd.s6_addr32[0] = pi->ip4->ip_dst;
+		//copy IPv4 address(4bytes) to IPv6 address
+        ips.u.Word[0] = pi->ip4->ip_src & 0xFFFF;
+		ips.u.Word[1] = (pi->ip4->ip_src >> 16) & 0xFFFF;
+		ipd.u.Word[0] = pi->ip4->ip_dst & 0xFFFF;
+		ipd.u.Word[1] = (pi->ip4->ip_dst >> 16) & 0xFFFF;
         ip_src = &ips;
         ip_dst = &ipd;
     }
@@ -397,7 +429,9 @@ int connection_tracking(packetinfo *pi) {
     while (cxt != NULL) {
         // Two-way compare of given connection against connection table
         if (af == AF_INET) {
-            if (CMP_CXT4(cxt,IP4ADDR(ip_src),src_port,IP4ADDR(ip_dst),dst_port)){
+            if (CMP_CXT4(cxt,
+						IP4ADDR(ip_src), src_port,
+						IP4ADDR(ip_dst), dst_port)){
                 // Client sends first packet (TCP/SYN - UDP?) hence this is a client
                 return cxt_update_client(cxt, pi);
             } else if (CMP_CXT4(cxt,IP4ADDR(ip_dst),dst_port,IP4ADDR(ip_src),src_port)) {
@@ -447,8 +481,10 @@ connection *cxt_new(packetinfo *pi)
         cxt->s_ip = PI_IP6SRC(pi);
         cxt->d_ip = PI_IP6DST(pi);
     }else {
-        ips.s6_addr32[0] = pi->ip4->ip_src;
-        ipd.s6_addr32[0] = pi->ip4->ip_dst;
+		ips.u.Word[0] = pi->ip4->ip_src & 0xFFFF;
+		ips.u.Word[1] = (pi->ip4->ip_src >> 16) & 0xFFFF;
+		ipd.u.Word[0] = pi->ip4->ip_dst & 0xFFFF;
+		ipd.u.Word[1] = (pi->ip4->ip_dst >> 16) & 0xFFFF;
         cxt->s_ip = ips;
         cxt->d_ip = ipd;
     }
@@ -500,7 +536,7 @@ int cxt_update_server(connection *cxt, packetinfo *pi)
 
 void end_all_sessions()
 {
-    connection *cxt;
+    connection *cxt, *tmp;
     int cxkey;
     config.llcxt = 0;
 
@@ -512,7 +548,7 @@ void end_all_sessions()
                 cxt->prev->next = cxt->next;
             if (cxt->next)
                 cxt->next->prev = cxt->prev;
-            connection *tmp = cxt;
+            tmp = cxt;
 
             cxt = cxt->next;
             del_connection(tmp, &bucket[cxkey]);
@@ -527,14 +563,12 @@ void end_all_sessions()
 
 void end_sessions()
 {
-    connection *cxt;
+    connection *cxt, *tmp, *tmp_pre;
     time_t check_time;
+	int ended, expired = 0, iter;
     check_time = config.tstamp.tv_sec;
     //time(&check_time);
-    int ended, expired = 0;
     config.llcxt = 0;
-
-    int iter;
 
     for (iter = 0; iter < BUCKET_SIZE; iter++) {
         cxt = bucket[iter];
@@ -580,8 +614,8 @@ void end_sessions()
                     cxt->prev->next = cxt->next;
                 if (cxt->next)
                     cxt->next->prev = cxt->prev;
-                connection *tmp = cxt;
-                connection *tmp_pre = cxt->prev;
+                tmp = cxt;
+                tmp_pre = cxt->prev;
 
                 ended = expired = 0;
 
@@ -629,7 +663,7 @@ void del_connection(connection * cxt, connection ** bucket_ptr)
 const char *u_ntop_src(packetinfo *pi, char *dest)
 {
     if (pi->af == AF_INET) {
-        if (!inet_ntop
+        if (!INET_NTOP
             (AF_INET,
              &pi->ip4->ip_src,
                  dest, INET_ADDRSTRLEN + 1)) {
@@ -637,19 +671,20 @@ const char *u_ntop_src(packetinfo *pi, char *dest)
             return NULL;
         }
     } else if (pi->af == AF_INET6) {
-        if (!inet_ntop(AF_INET6, &pi->ip6->ip_src, dest, INET6_ADDRSTRLEN + 1)) {
+        if (!INET_NTOP(AF_INET6, &pi->ip6->ip_src, dest, INET6_ADDRSTRLEN + 1)) {
             perror("Something died in inet_ntop");
             return NULL;
         }
     }
-    return dest;
+	
+	return dest;
 }
 
 void check_interrupt()
 {
     dlog("[D] In interrupt. Flag: %d\n",config.intr_flag);
     if (ISSET_INTERRUPT_END(config)) {
-        game_over();
+        game_over(0);
     } else if (ISSET_INTERRUPT_SESSION(config)) {
         set_end_sessions();
     } else if (ISSET_INTERRUPT_DNS(config)) {
@@ -659,21 +694,52 @@ void check_interrupt()
     }
 }
 
-void sig_alarm_handler()
+int is_valid_path(const TCHAR *path)
 {
-    time_t now_t;
-    //config.tstamp = time(); // config.tstamp will stand still if there is no packets
-    now_t = config.tstamp.tv_sec;
+    struct _stat st;
 
-    dlog("[D] Got SIG ALRM: %lu\n", now_t);
-    /* Each time check for timed out sessions */
-    set_end_sessions();
-    
-    /* Only check for timed-out dns records each 10 minutes */
-    if ( (now_t - config.dnslastchk) >= 600 ) {
-        set_end_dns_records();
+    if (path == NULL) {
+        return 0;
+	}
+
+	if (_wstat(path, &st) != 0) {
+        return 0;
     }
-    alarm(TIMEOUT);
+    
+	//if ( ((st.st_mode & _S_IFDIR) != _S_IFDIR) ||
+	//	 (_access_s(dir, 2) == -1)	) {
+    //    return 0;
+    //}
+    return 1;	//path is valid
+}
+
+DWORD WINAPI sig_alarm_handler(LPVOID lpParam)
+{
+	time_t now_t;
+	while(true){
+		Sleep(TIMEOUT*1000);	//sleep takes time in milliseconds
+
+		now_t = config.tstamp.tv_sec;
+	    //config.tstamp = time(); // config.tstamp will stand still if there is no packets
+	
+	    dlog("[D] Got SIG ALRM: %lu\n", now_t);
+	    /* Each time check for timed out sessions */
+		(config).intr_flag |= INTERRUPT_SESSION;	//set flag to alert master thread to clean sessions
+	    
+	    /* Only check for timed-out dns records each 10 minutes */
+	    if ( (now_t - config.dnslastchk) >= 600 ) {
+			(config).intr_flag |= INTERRUPT_DNS;	//set flag, to alert master thread to clean dns records
+	    }
+
+		if ((config.daemon_flag == 1) && //if we are a daemon and
+			(is_valid_path(config.pidfile) == 0)){	//pidfile is missing
+			config.intr_flag |= INTERRUPT_END;	//interrupt main thread to stop daemon
+			if (config.handle != NULL){
+				pcap_breakloop(config.handle);	//close pcap to interrupt main thread
+			}
+		}
+	}
+	return 0;
 }
 
 void set_end_dns_records()
@@ -697,204 +763,234 @@ void set_end_sessions()
     }
 }
 
-static int set_chroot(void) {
-   char *absdir;
-
-   /* logdir = get_abs_path(logpath); */
-
-   /* change to the directory */
-   if ( chdir(config.chroot_dir) != 0 ) {
-      printf("set_chroot: Can not chdir to \"%s\": %s\n",config.chroot_dir,strerror(errno));
-   }
-
-   /* always returns an absolute pathname */
-   absdir = getcwd(NULL, 0);
-
-   /* make the chroot call */
-   if ( chroot(absdir) < 0 ) {
-      printf("Can not chroot to \"%s\": absolute: %s: %s\n",config.chroot_dir,absdir,strerror(errno));
-   }
-
-   if ( chdir("/") < 0 ) {
-        printf("Can not chdir to \"/\" after chroot: %s\n",strerror(errno));
-   }
-
-   return 0;
-}
-
-int drop_privs(void)
+int create_pid_file(const TCHAR *path)
 {
-    struct group *gr;
-    struct passwd *pw;
-    char *endptr;
-    int i;
-    int do_setuid = 0;
-    int do_setgid = 0;
-    unsigned long groupid = 0;
-    unsigned long userid = 0;
-
-    if (config.group_name != NULL) {
-        do_setgid = 1;
-        if (!isdigit(config.group_name[0])) {
-            gr = getgrnam(config.group_name);
-            if(!gr){
-                if(config.chroot_dir){
-                    elog("ERROR: you have chrooted and must set numeric group ID.\n");
-                    exit(1);
-                }else{
-                    elog("ERROR: couldn't get ID for group %s, group does not exist.", config.group_name)
-                    exit(1);
-                }
-            }
-            groupid = gr->gr_gid;
-        } else {
-            groupid = strtoul(config.group_name, &endptr, 10);
-        }
-    }
-
-    if (config.user_name != NULL) {
-        do_setuid = 1;
-        do_setgid = 1;
-        if (isdigit(config.user_name[0]) == 0) {
-            pw = getpwnam(config.user_name);
-            if (pw != NULL) {
-                userid = pw->pw_uid;
-            } else {
-                printf("[E] User %s not found!\n", config.user_name);
-            }
-        } else {
-            userid = strtoul(config.user_name, &endptr, 10);
-            pw = getpwuid(userid);
-        }
-
-        if (config.group_name == NULL && pw != NULL) {
-            groupid = pw->pw_gid;
-        }
-    }
-
-    if (do_setgid) {
-        if ((i = setgid(groupid)) < 0) {
-            printf("Unable to set group ID: %s", strerror(i));
-        }
-   }
-
-    endgrent();
-    endpwent();
-
-    if (do_setuid) {
-        if (getuid() == 0 && initgroups(config.user_name, groupid) < 0) {
-            printf("Unable to init group names (%s/%lu)", config.user_name,
-                   groupid);
-        }
-        if ((i = setuid(userid)) < 0) {
-            printf("Unable to set user ID: %s\n", strerror(i));
-        }
-    }
-    return 0;
-}
-
-int is_valid_path(const char *path)
-{
-    char dir[STDBUF];
-    struct stat st;
-
-    if (path == NULL) {
-        return 0;
-    }
-
-    memcpy(dir, path, strnlen(path, STDBUF));
-    dirname(dir);
-
-    if (stat(dir, &st) != 0) {
-        return 0;
-    }
-    if (!S_ISDIR(st.st_mode) || access(dir, W_OK) == -1) {
-        return 0;
-    }
-    return 1;
-}
-
-int create_pid_file(const char *path)
-{
-    char pid_buffer[12];
-    struct flock lock;
-    int rval;
-    int fd;
+	TCHAR pid_buffer[12]={0};
+    int fd = 0, pid_buf_len = 0;
 
     if (!path) {
         path = config.pidfile;
     }
-    if (!is_valid_path(path)) {
-        printf("PID path \"%s\" aint writable", path);
+    
+	if (is_valid_path(path) == 1) {	//if pid file exists, dont start!
+        _wolog(L"PID path \"%s\" exists. Another daemon running ?\n", path);
+		return 1;	//pid file exists, another daemon is running
     }
 
-    if ((fd = open(path, O_CREAT | O_WRONLY,
-                   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
-        return ERROR;
+    if (_wsopen_s(&fd, path, _O_CREAT | _O_TRUNC | O_WRONLY, _SH_DENYWR ,
+						_S_IREAD | _S_IWRITE) != 0) {
+        return 1;
     }
 
-    /*
-     * pid file locking 
-     */
-    lock.l_type = F_WRLCK;
-    lock.l_start = 0;
-    lock.l_whence = SEEK_SET;
-    lock.l_len = 0;
-
-    if (fcntl(fd, F_SETLK, &lock) == -1) {
-        if (errno == EACCES || errno == EAGAIN) {
-            rval = ERROR;
-        } else {
-            rval = ERROR;
-        }
-        close(fd);
-        return rval;
+    //pid file locking
+	swprintf_s(pid_buffer, 12, L"%d", _getpid());
+	pid_buf_len = wcslen(pid_buffer);
+	
+	if( _locking( fd, _LK_LOCK, pid_buf_len) == -1 ){
+		perror("_locking");
+		_close(fd);
+		return 1;
+	}
+   
+    if (_write(fd, pid_buffer, pid_buf_len) != pid_buf_len) {
+        _close(fd);
+        return 1;
     }
-    snprintf(pid_buffer, sizeof(pid_buffer), "%d\n", (int)getpid());
-    if (ftruncate(fd, 0) != 0) {
-        close(fd);
-        return ERROR;
-    }
-    if (write(fd, pid_buffer, strlen(pid_buffer)) != 0) {
-        close(fd);
-        return ERROR;
-    }
-    close(fd);
-    return SUCCESS;
+    _close(fd);
+    return 0;
 }
 
-int daemonize()
+void LastError(LPTSTR lpszFunction){ 
+    LPVOID lpMsgBuf;
+    DWORD dw = GetLastError();	//Retrieve the system error message for the last-error code
+
+    FormatMessage(	FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+					FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, dw,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPTSTR) &lpMsgBuf, 0, NULL );
+	wprintf(L"%s: Error %d - %s\n", lpszFunction, dw, (LPCTSTR)lpMsgBuf);
+    LocalFree(lpMsgBuf);
+}
+
+int daemonize(){
+	int fd;
+	size_t configpath_len = wcslen(config.configpath);
+	size_t daemon_log_len = configpath_len + wcslen(L"\\passivednsd.log");
+	TCHAR * daemon_log_path = (TCHAR*) calloc(daemon_log_len, sizeof(TCHAR)); 
+	
+	wcsncpy_s(daemon_log_path, daemon_log_len, config.configpath, configpath_len);
+	wcsncpy_s(&daemon_log_path[configpath_len], daemon_log_len, L"\\passivednsd.log", wcslen(L"\\passivednsd.log"));
+
+	_fcloseall();	//close all fd, without 0,1,2
+	fclose(stdin);
+	fclose(stdout);
+	fclose(stderr);
+		
+	if (_wsopen_s(&fd, daemon_log_path,
+			_O_CREAT | _O_WRONLY | _O_APPEND,
+			_SH_DENYWR, _S_IREAD | _S_IWRITE ) == 0) {
+		//_dup2(fd, _fileno(stdin));
+		_dup2(fd, _fileno(stdout));
+		_dup2(fd, _fileno(stderr));
+		if (fd > _fileno(stderr)) {
+			_close(fd);
+		}
+	}else{
+		return 1;
+	}
+	free(daemon_log_path);
+
+	if(create_pid_file(config.pidfile) == 1){
+		game_over(1);
+	}
+	return 0;
+};
+
+int start_daemon(const int argc, const TCHAR * argv[])
 {
-    pid_t pid;
-    int fd;
+	int i;
+	PROCESS_INFORMATION pi; 
+	STARTUPINFO si;
+	DWORD creationFlags = CREATE_UNICODE_ENVIRONMENT;
+	BOOL bSuccess = TRUE, bDaemon = FALSE;
+	size_t params_len = 0, params_max_len=0, arg_max_len = 0, arg_len = 0, j=0;
+	LPVOID env;
+	const TCHAR * prog_path = argv[0], *usrName = NULL, *usrDomain = NULL;
+	TCHAR * params = NULL, *usrPass = NULL;
 
-    pid = fork();
+	HANDLE hToken;
+	PROFILEINFO pinfo;
+	USER_INFO_4* user_info;
 
-    if (pid > 0) {
-        exit(0);                /* parent */
-    }
+	memset(&pinfo, 0, sizeof(PROFILEINFO));
+	pinfo.dwSize = sizeof(PROFILEINFO);
+	
+	for(i=0; i < argc; i++){
+		arg_len = wcslen(argv[i]);
+		if(arg_len >= arg_max_len)
+			arg_max_len = arg_len;
+		params_max_len += arg_len + 1;
+	}
 
-    config.use_syslog = 1;
-    if (pid < 0) {
-        return ERROR;
-    }
+	params		= (TCHAR*) calloc(params_max_len, sizeof(TCHAR));
 
-    setsid();
+	memset(&si, 0, sizeof(STARTUPINFO));
+	si.cb = sizeof(STARTUPINFO);
 
-    if ((fd = open("/dev/null", O_RDWR)) >= 0) {
-        dup2(fd, 0);
-        dup2(fd, 1);
-        dup2(fd, 2);
-        if (fd > 2) {
-            close(fd);
-        }
-    }
+	//build daemon command line
+	for(i=0; i < argc; i++){
+		if(wcsncmp(argv[i], L"-u", 2) == 0){
+			usrName = argv[++i];
+			
+		}else if(wcsncmp(argv[i], L"-g", 2) == 0){
+			usrDomain = argv[++i];
+			
+		}else if(wcsncmp(argv[i], L"-D", 2) == 0){
+			continue;	//we have added '-d' above
+		}else{
+			arg_len = wcslen(argv[i]);
+			if(argv[i][0] != '-')	//if its a value option
+				params[params_len++] = '"';
+			
+			if(  wcsncpy_s(&params[params_len], params_max_len, argv[i], arg_len) != 0){
+				bSuccess = false; break;
+			}
+			params_len += arg_len;
+			if(argv[i][0] != '-')
+				params[params_len++] = '"';
+			params[params_len++] = ' ';
+		}
+	}
+	if(wcsncpy_s(&params[params_len], params_max_len, L"-d", wcslen(L"-d")) != 0){
+		bSuccess = false;
+	}
+	params_len += wcslen(L"-d");
+	creationFlags |= CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW;
+	
+	if(!bSuccess){
+		free(params);
+		return 1;
+	}
 
-    if (config.pidfile) {
-        return create_pid_file(config.pidfile);
-    }
+	if(usrName){	//run as another user
+		usrPass = (TCHAR*) calloc(100, sizeof(TCHAR));
+		wprintf_s(L"Enter user(%s) password:", usrName);
+		wscanf_s(L"%s", usrPass, 100);
+		if(usrDomain == NULL) usrDomain = _wcsdup(L".");
+		
+		if (!LogonUser(usrName, usrDomain, usrPass,
+						LOGON32_LOGON_INTERACTIVE,
+						LOGON32_PROVIDER_DEFAULT, &hToken)){
+			LastError(L"LogonUser");
+			return 1;
+		}
+		
+		// Load the user's profile.
+		pinfo.lpUserName = usrName;
+		if (NERR_Success == NetUserGetInfo(usrDomain, usrName, 4, (BYTE**)&user_info)){
+			pinfo.lpProfilePath = user_info->usri4_profile;
+			if (!LoadUserProfile(hToken, &pinfo)){
+				LastError(L"LoadUserProfile");
+				return 1;
+			}
+			NetApiBufferFree(user_info);
+		}else{
+			LastError(L"NetuserGetInfo");
+			return 1;
+		}
+		
+		if(!ImpersonateLoggedOnUser(hToken)){
+			LastError(L"ImpersonateLoggedOnUser");
+			return 1;
+		}
 
-    return SUCCESS;
+		if(!CreateEnvironmentBlock(&env, hToken, FALSE)){
+			LastError(L"CreateEnvironmentBlock");
+			return 1;
+		}
+		/* print process environment
+		usrPass = (TCHAR*) env;
+		while(usrPass != L"\0"){
+			wprintf(L"%s\n", usrPass);
+			usrPass += wcslen(usrPass)+1;
+		}*/
+
+		bSuccess = CreateProcessAsUser(hToken,
+			prog_path, params,	// command line
+			NULL, NULL,			//default security attributes
+			FALSE,				//don't inherit parent handles
+			CREATE_UNICODE_ENVIRONMENT | creationFlags,		//creation flags 
+			NULL, NULL,	// use parent's environment and current directory
+			&si,	// STARTUPINFO pointer 
+			&pi);	// receives PROCESS_INFORMATION
+		
+		free(usrPass);
+		DestroyEnvironmentBlock(env);
+	    CloseHandle(hToken);
+	}else{	//create a daemon
+		bSuccess = CreateProcess(prog_path, params,	// command line 
+			NULL, NULL,	// process and primary thread security attributes 
+			FALSE,	// handles are not inherited 
+			creationFlags,		// creation flags 
+			NULL, NULL,	// use parent's environment and current directory
+			&si,	// STARTUPINFO pointer 
+			&pi);	// receives PROCESS_INFORMATION 
+	}
+	//free(params);		//CreateProcessAsUser modifies this string!
+	
+	if (!bSuccess){	// If an error occurs, exit the application. 
+		LastError(TEXT("CreateProcess"));
+		return 1;
+	}else{
+		// Close handles to the child process and its primary thread.
+		// Some applications might keep these handles to monitor the status
+		// of the child process, for example. 
+		printf("Daemon started with PID %u\n", pi.dwProcessId);
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+	}
+    return 0;
 }
 
 void a_dump_payload(const uint8_t* data,uint16_t dlen) {
@@ -920,52 +1016,73 @@ void a_dump_payload(const uint8_t* data,uint16_t dlen) {
   plog( "  # Payload: \"%s\"%s",tbuf,dlen > PKT_MAXPAY ? "...\n" : "\n");
 }
 
-void game_over()
+void game_over(int sig)
 {
-    if (config.inpacket == 0) {
-        expire_all_dns_records();
-        print_pdns_stats();
-        if (config.handle != NULL) pcap_close(config.handle);
-        config.handle = NULL;
+	if (config.inpacket == 0) {
+		olog("Game Over for pid %i!\n", _getpid());
+		CloseHandle(hAlrmThread);
+		if(hPdnsStatsThread != NULL)
+			CloseHandle(hPdnsStatsThread);
+
+		if(config.daemon_flag == 1){			//process is a daemon
+			_wunlink(config.pidfile);	//remove pidfile
+		}else{
+			//print_pdns_stats(0);
+		}
+
+		expire_all_dns_records();
+		if (config.handle != NULL){
+			pcap_close(config.handle);
+			config.handle = NULL;
+		}
         end_all_sessions();
         free_config();
         olog("\n[*] passivedns ended.\n");
-        exit(0);
+        ExitProcess(sig);
     }
     config.intr_flag |= INTERRUPT_END;
 }
 
 void free_config()
 {
-    if (config.cfilter.bf_insns != NULL) free (config.cfilter.bf_insns);
-// Grr - no nice way to tell if the settings comes from configfile or not :/
-    //if (config.pidfile != NULL) free(config.pidfile);
+	//TODO: Check if it is freed by pcap ?
+	//if (config.cfilter.bf_insns != NULL) free (config.cfilter.bf_insns);
+	//if (config.dev != NULL) free(config.dev);
+	if (config.configpath != NULL)	free(config.configpath);
+	if (config.pidfile != NULL) free(config.pidfile);
     if (config.user_name != NULL) free(config.user_name);
-    if (config.group_name != NULL) free(config.group_name);
-    if (config.chroot_dir != NULL) free(config.chroot_dir);
-    //if (config.bpff != NULL) free(config.bpff);
-    //if (config.dev != NULL) free(config.dev);
+    if (config.domain_name != NULL) free(config.domain_name);
+    if (config.bpff != NULL) free(config.bpff);
     if (config.pcap_file != NULL) free(config.pcap_file);
-    //if (config.logfile != NULL) free(config.logfile);
+    if (config.logfile != NULL) free(config.logfile);
+	if (config.logfile_nxd != NULL) free(config.logfile_nxd);
 }
 
+void print_pdns_stats(){
+	olog("\n");
+	olog("-- Total DNS records allocated            :%12u\n",config.p_s.dns_records);
+	olog("-- Total DNS assets allocated             :%12u\n",config.p_s.dns_assets);
+	olog("-- Total DNS packets over IPv4/TCP        :%12u\n",config.p_s.ip4_dns_tcp);
+	olog("-- Total DNS packets over IPv6/TCP        :%12u\n",config.p_s.ip6_dns_tcp);
+	olog("-- Total DNS packets over TCP decoded     :%12u\n",config.p_s.ip4_dec_tcp_ok + config.p_s.ip6_dec_tcp_ok);
+	olog("-- Total DNS packets over TCP failed      :%12u\n",config.p_s.ip4_dec_tcp_er + config.p_s.ip6_dec_tcp_er);
+	olog("-- Total DNS packets over IPv4/UDP        :%12u\n",config.p_s.ip4_dns_udp);
+	olog("-- Total DNS packets over IPv6/UDP        :%12u\n",config.p_s.ip6_dns_udp);
+	olog("-- Total DNS packets over UDP decoded     :%12u\n",config.p_s.ip4_dec_udp_ok + config.p_s.ip6_dec_udp_ok);
+	olog("-- Total DNS packets over UDP failed      :%12u\n",config.p_s.ip4_dec_udp_er + config.p_s.ip6_dec_udp_er);
+	olog("-- Total packets received from libpcap    :%12u\n",config.p_s.got_packets);
+	olog("-- Total Ethernet packets received        :%12u\n",config.p_s.eth_recv);
+	olog("-- Total VLAN packets received            :%12u\n",config.p_s.vlan_recv);
+}
 
-void print_pdns_stats()
+DWORD WINAPI pdns_stats_handler(LPVOID lpParam)
 {
-    olog("\n");
-    olog("-- Total DNS records allocated            :%12u\n",config.p_s.dns_records);
-    olog("-- Total DNS assets allocated             :%12u\n",config.p_s.dns_assets);
-    olog("-- Total DNS packets over IPv4/TCP        :%12u\n",config.p_s.ip4_dns_tcp);
-    olog("-- Total DNS packets over IPv6/TCP        :%12u\n",config.p_s.ip6_dns_tcp);
-    olog("-- Total DNS packets over TCP decoded     :%12u\n",config.p_s.ip4_dec_tcp_ok + config.p_s.ip6_dec_tcp_ok);
-    olog("-- Total DNS packets over TCP failed      :%12u\n",config.p_s.ip4_dec_tcp_er + config.p_s.ip6_dec_tcp_er);
-    olog("-- Total DNS packets over IPv4/UDP        :%12u\n",config.p_s.ip4_dns_udp);
-    olog("-- Total DNS packets over IPv6/UDP        :%12u\n",config.p_s.ip6_dns_udp);
-    olog("-- Total DNS packets over UDP decoded     :%12u\n",config.p_s.ip4_dec_udp_ok + config.p_s.ip6_dec_udp_ok);
-    olog("-- Total DNS packets over UDP failed      :%12u\n",config.p_s.ip4_dec_udp_er + config.p_s.ip6_dec_udp_er);
-    olog("-- Total packets received from libpcap    :%12u\n",config.p_s.got_packets);
-    olog("-- Total Ethernet packets received        :%12u\n",config.p_s.eth_recv);
-    olog("-- Total VLAN packets received            :%12u\n",config.p_s.vlan_recv);
+	while(true){
+		Sleep(10*1000);	//sleep 10 seconds between prints
+
+		print_pdns_stats();
+	}
+	return 0;
 }
 
 void usage()
@@ -976,17 +1093,16 @@ void usage()
     olog(" OPTIONS:\n\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
-    olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
-    olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
-    olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
-    olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
+	_wolog(L" -l <file>       Logfile normal queries (default: %s).\n", config.logfile);
+    _wolog(L" -L <file>       Logfile for SRC Error queries (default: %s).\n", config.logfile_nxd);
+	olog(" -b 'BPF'        Berkley Packet Filter (default: '%s').\n", BPFF);
+	_wolog(L" -p <file>       Name of pid file (default: %s).\n", config.pidfile);
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default %u).\n",DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n",DNSPRINTTIME);
     olog(" -X <flags>      Manually set DNS RR Types to care about(Default -X 46CDNPRS).\n");
-    olog(" -u <uid>        User ID to drop privileges to.\n");
-    olog(" -g <gid>        Group ID to drop privileges to.\n");
-    olog(" -T <dir>        Directory to chroot into.\n");
+    //olog(" -u USER		   Username to drop privileges to.\n");
+    olog(" -g DOMAIN	   Group ID to drop privileges to.\n");
     olog(" -D              Run as daemon.\n");
     olog(" -V              Show version and exit.\n");
     olog(" -h              This help message.\n\n");
@@ -1011,23 +1127,98 @@ void show_version()
     olog("[*] Using ldns version %s\n",ldns_version());
 }
 
-extern int optind, opterr, optopt; // getopt()
+//extern int optind, opterr, optopt; // getopt()
+
+static BOOL WINAPI console_ctrl_handler(DWORD dwCtrlType)
+{
+	bool rc = false;
+  switch (dwCtrlType){
+	case CTRL_SHUTDOWN_EVENT:	// System is shutting down. Passed only to services!
+	case CTRL_LOGOFF_EVENT:		// User logs off. Passed only to services!	
+	case CTRL_CLOSE_EVENT:	// Closing the console window  
+	case CTRL_C_EVENT:		// Ctrl+C
+	case CTRL_BREAK_EVENT:	// Ctrl+Break
+		
+		config.intr_flag |= INTERRUPT_END;
+		if (config.handle != NULL){
+			pcap_breakloop(config.handle);	//close pcap to interrupt main thread
+		}
+
+		rc = true;
+		break;
+	}
+
+  // Return TRUE if handled this message, further handler functions won't be called.
+  // Return FALSE to pass this message to further handlers until default handler calls ExitProcess().
+  return rc;
+}
+int get_configpath(){
+	
+	size_t appdata_path_len = 0, configpath_len = 0, logfile_len = 0;
+	struct _stat st;
+	int rc;
+	TCHAR* appdata_path = (TCHAR*) calloc(MAX_PATH, sizeof(TCHAR));
+
+	//Get path to "Application Data" folder
+	if(SHGetFolderPath(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appdata_path) != S_OK){
+		perror("_dupenv_s");
+		return 1;
+	}
+	appdata_path_len = wcslen(appdata_path);
+	configpath_len = appdata_path_len + wcslen(L"\\passivedns") + 1;
+	config.configpath = (TCHAR*) calloc(configpath_len, sizeof(TCHAR));
+	wcsncpy_s(config.configpath, configpath_len, appdata_path, appdata_path_len);
+	wcsncpy_s(&config.configpath[appdata_path_len], configpath_len, L"\\passivedns", wcslen(L"\\passivedns"));
+	configpath_len = wcslen(config.configpath);
+
+	free(appdata_path);
+
+	rc = _wstat(config.configpath, &st);
+	if ( errno == ENOENT) {
+		if(_wmkdir(config.configpath) == -1){
+			_wolog(L"Error: Unable to create '%s'", config.configpath);
+			return 1;
+		}
+	}else if(errno == EINVAL){
+		_wolog(L"Unable to stat '%s'\n", config.configpath);
+		return 1;
+	}	
+	if(config.logfile == NULL){	//if log file is not set in options
+		logfile_len = configpath_len + wcslen(L"\\passivedns.log") + 1;
+		config.logfile = (TCHAR *) calloc(logfile_len, sizeof(TCHAR));
+		wcsncpy_s(config.logfile, logfile_len, config.configpath, configpath_len);
+		wcsncpy_s(&config.logfile[configpath_len], logfile_len, L"\\passivedns.log", wcslen(L"\\passivedns.log"));
+	}
+
+	if(config.logfile_nxd == NULL){
+		logfile_len = configpath_len + wcslen(L"\\passivedns.log") + 1;
+		config.logfile_nxd = (TCHAR *) calloc(logfile_len, sizeof(TCHAR));
+		wcsncpy_s(config.logfile_nxd,					logfile_len,	config.configpath, configpath_len);
+		wcsncpy_s(&config.logfile_nxd[configpath_len], logfile_len,	L"\\passivedns.log", wcslen(L"\\passivedns.log"));
+	}
+	if(config.pidfile == NULL){
+		logfile_len = configpath_len + wcslen(L"\\passivedns.pid") + 1;
+		config.pidfile = (TCHAR *) calloc(logfile_len, sizeof(TCHAR));
+		wcsncpy_s(config.pidfile,					 logfile_len,	config.configpath, configpath_len);
+		wcsncpy_s(&config.pidfile[configpath_len], logfile_len,	L"\\passivedns.pid", wcslen(L"\\passivedns.pid"));
+	}
+	return 0;
+};
 
 /* magic main */
-int main(int argc, char *argv[])
-{
-    int ch = 0; // verbose_already = 0;
-    int daemon = 0;
+int main(){
+	size_t len = 0, mblen=0;
+	int ch = 0;
+	DWORD   dwThreadId = 0;
+	int opt_daemonize = 0;	//flag. 1 if we will create a daemon process
+	int argc = 0;
+	TCHAR ** wargv = CommandLineToArgvW(GetCommandLine(), &argc);
+
     memset(&config, 0, sizeof(globalconfig));
-    //set_default_config_options();
+    
     config.inpacket = config.intr_flag = 0;
     config.dnslastchk = 0;
-    //char *pconfile;
-#define BPFF "port 53"
-    config.bpff = BPFF;
-    config.logfile = "/var/log/passivedns.log";
-    config.logfile_nxd = "/var/log/passivedns.log";
-    config.pidfile = "/var/run/passivedns.pid";
+    config.bpff = _strdup(BPFF);
     config.mem_limit_max = (256 * 1024 * 1024); // 256 MB - default try to limit dns caching to this
     config.dnsprinttime = DNSPRINTTIME;
     config.dnscachetimeout =  DNSCACHETIMEOUT;
@@ -1048,60 +1239,69 @@ int main(int argc, char *argv[])
 
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
-    signal(SIGQUIT, game_over);
-    signal(SIGALRM, sig_alarm_handler);
-    signal(SIGUSR1, print_pdns_stats);
-
-#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:V"
-
-    while ((ch = getopt(argc, argv, ARGS)) != -1)
+	SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
+	
+	while ((ch = getopt(argc, wargv, L"i:r:l:L:hb:dDp:u:g:C:P:S:X:V")) != -1)
         switch (ch) {
         case 'i':
-            config.dev = strdup(optarg);
+			len = wcslen(optarg);
+			config.dev = (char*) calloc(len, sizeof(char));
+			wcstombs_s(&mblen, config.dev,len, optarg, len);
+            
             break;
         case 'r':
-            config.pcap_file = strdup(optarg);
+			len = wcslen(optarg);
+			config.pcap_file = (char*) calloc(len, sizeof(char));
+			wcstombs_s(&mblen, config.pcap_file, len, optarg, len);
+            
             break;
         case 'L':
-            config.logfile_nxd = strdup(optarg);
+            config.logfile_nxd = _wcsdup(optarg);
             break;
         case 'l':
-            config.logfile = strdup(optarg);
+            config.logfile = _wcsdup(optarg);
             break;
         case 'b':
-            config.bpff = strdup(optarg);
+			len = wcslen(optarg);
+			config.bpff = (char*) calloc(len, sizeof(char));
+			wcstombs_s(&mblen, config.bpff, len, optarg, len);
             break;
         case 'p':
-            config.pidfile = strdup(optarg);
+            config.pidfile = _wcsdup(optarg);
             break;
         case 'C':
-            config.dnscachetimeout = strtol(optarg, NULL, 0);
+			config.dnscachetimeout = wcstoul(optarg, NULL, 0);
             break;
         case 'P':
-            config.dnsprinttime = strtol(optarg, NULL, 0);
+            config.dnsprinttime = wcstoul(optarg, NULL, 0);
             break;
         case 'S':
-            config.mem_limit_max = (strtol(optarg, NULL, 0) * 1024 * 1024);
+            config.mem_limit_max = (wcstoul(optarg, NULL, 0) * 1024 * 1024);
             break;
         case 'X':
             parse_dns_flags(optarg);
             break;
-        case 'D':
-            daemon = 1;
+        case 'd':	//we are the daemon
+            config.daemon_flag = 1;
             break;
-        case 'T':
-            config.chroot_dir = strdup(optarg);
-            config.chroot_flag = 1;
-            break;
-        case 'u':
-            config.user_name = strdup(optarg);
-            config.drop_privs_flag = 1;
+		case 'D':	//create a daemon
+			opt_daemonize = 1;
+			break;
+        case 'u':	//TODO: Working only in Windows XP, Server 2003, but not on Server 2008, 2012
+		#define PDNS_USER_OPT	0	//Default is to disaboe the user option
+		#if PDNS_USER_OPT	//(NTDDI_VERSION <= NTDDI_WS03)
+			opt_daemonize = 1;	//we need the daemon mode to run as another user!
+            config.user_name = _wcsdup(optarg);
+		#else
+			fprintf(stderr, "Error: -u option is tested and working only in Windows XP and Windows Server 2003\n");
+			game_over(1);
+		#endif
             break;
         case 'g':
-            config.group_name = strdup(optarg);
-            config.drop_privs_flag = 1;
+            config.domain_name = _wcsdup(optarg);
             break;
         case 'h':
+			get_configpath();
             usage();
             exit(0);
             break;
@@ -1111,83 +1311,117 @@ int main(int argc, char *argv[])
             exit(0);
             break;
         case '?':
-            elog("unrecognized argument: '%c'\n", optopt);
+            elog(L"unrecognized argument: '%c'\n", optopt);
             break;
         default:
-            elog("Did not recognize argument '%c'\n", ch);
-        }
+            elog(L"Did not recognize argument '%c'\n", ch);
+	}
 
-    show_version();
+	if(get_configpath() != 0){
+		game_over(1);
+	}
+
+	show_version();
+	
+	if (is_valid_path(config.pidfile) == 1){	//if pidfile exists
+		elog(L"[*] pidfile '%s' exists!\n", config.pidfile);
+		free(config.pidfile);	//don't delete existing pidfile
+		game_over(1);
+	}
+
+	if(opt_daemonize) {	//if we create a daemon
+		//openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
+		olog("[*] Daemonizing...\n\n");
+		ch = start_daemon(argc, wargv);
+		LocalFree(wargv);
+		game_over(ch);
+	}
+	
+	LocalFree(wargv);
+
+	if(config.daemon_flag == 1){	//if we are the daemon
+		daemonize();
+	}else{
+		hPdnsStatsThread = CreateThread( 
+		        NULL,                   // default security attributes
+		        0,                      // use default stack size  
+				pdns_stats_handler,     // thread function name
+		        NULL,					// argument to thread function 
+		        0,                      // use default creation flags 
+		        &dwThreadId);			// returns the thread identifier 
+		// Check the return value for success.
+		if (hPdnsStatsThread == NULL){
+			elog(L"Failed to create pdns stats thread!\n");
+			game_over(1);
+		}
+	}
+
+	//create alarm thread for timeout sessions
+	hAlrmThread = CreateThread( 
+            NULL,                   // default security attributes
+            0,                      // use default stack size  
+            sig_alarm_handler,      // thread function name
+            NULL,					// argument to thread function 
+            0,                      // use default creation flags 
+            &dwThreadId);			// returns the thread identifier 
+	// Check the return value for success.
+	if (hAlrmThread == NULL){
+		elog(L"Failed to create alarm thread!\n");
+		game_over(1);
+	}
 
     if (config.pcap_file) {
         /* Read from PCAP file specified by '-r' switch. */
-        olog("[*] Reading from file %s\n\n", config.pcap_file);
+        olog("L[*] Reading from file %s\n\n", config.pcap_file);
         if (!(config.handle = pcap_open_offline(config.pcap_file, config.errbuf))) {
-            olog("[*] Unable to open %s.  (%s)", config.pcap_file, config.errbuf);
+            olog("L[*] Unable to open %s.  (%s)", config.pcap_file, config.errbuf);
         }
 
     } else {
 
         /* * look up an available device if non specified */
-        if (config.dev == 0x0)
+		if (config.dev == 0x0){
             config.dev = pcap_lookupdev(config.errbuf);
+			if(config.dev == NULL){
+				olog("pcap_lookupdev: %s\n", config.errbuf);
+				game_over(1);
+			}
+		}
         olog("[*] Device: %s\n", config.dev);
 
         if ((config.handle = pcap_open_live(config.dev, SNAPLENGTH, 1, 500, config.errbuf)) == NULL) {
             olog("[*] Error pcap_open_live: %s \n", config.errbuf);
-            exit(1);
+            game_over(1);
         }
         /* * B0rk if we see an error... */
         if (strlen(config.errbuf) > 0) {
-            elog("[*] Error errbuf: %s \n", config.errbuf);
-            exit(1);
+            elog(L"[*] Error errbuf: %s \n", config.errbuf);
+            game_over(1);
         }
-
-        if(config.chroot_dir){
-            olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
-            if(set_chroot()){
-                elog("[!] failed to chroot\n");
-                exit(1);
-            }
-        }
-
-        if (config.drop_privs_flag) {
-            olog("[*] Dropping privs...\n");
-            drop_privs();
-        }
-
-        if (daemon) {
-            if (!is_valid_path(config.pidfile))
-                elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
-            openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
-            olog("[*] Daemonizing...\n\n");
-            daemonize();
-        }
-
     }
 
     if (config.handle == NULL) {
-       game_over();
-       return (1);
+       game_over(1);
+       return 1;
     }
 
     /** segfaults on empty pcap! */
     if ((pcap_compile(config.handle, &config.cfilter, config.bpff, 1, config.net_mask)) == -1) {
             olog("[*] Error pcap_compile user_filter: %s\n", pcap_geterr(config.handle));
-            exit(1);
+            game_over(1);
     }
 
     if (pcap_setfilter(config.handle, &config.cfilter)) {
-            olog("[*] Unable to set pcap filter!  %s", pcap_geterr(config.handle));
+		olog("[*] Unable to set pcap filter!  %s", pcap_geterr(config.handle));
+		game_over(1);
     }
 
-    alarm(TIMEOUT);
-
-    if (!config.pcap_file) olog("[*] Sniffing...\n\n");
+    if (!config.pcap_file)
+		olog("[*] Sniffing...\n\n");
 
     pcap_loop(config.handle, -1, got_packet, NULL);
 
-    game_over();
-    return (0);
+    game_over(0);
+    return 0;
 }
 

@@ -24,12 +24,13 @@
 #include <string.h>
 #include <time.h>
 #include <sys/types.h>
-//#include <ldns/ldns.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
+
+//#include <arpa/inet.h>	//not avail. in Win
+//#include <netinet/in.h>	//not avail. in Win
 #include <pcap.h>
 #include "passivedns.h"
 #include "dns.h"
+#include "inet_ntop.h"
 
 globalconfig config;
 
@@ -414,8 +415,8 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 int len;
                 free(domain_name);
                 len = strlen((char *)rdomain_name);
-                domain_name = calloc(1, (len + 1));
-                strncpy((char *)domain_name, (char *)rdomain_name, len);
+                domain_name = (unsigned char *)calloc(1, (len + 1));
+				strncpy_s((char *)domain_name, len+1, (char *)rdomain_name, len);
                 dnshash = hash(domain_name);
                 dlog("[D] Hash: %lu\n", dnshash);
                 pr = get_pdns_record(dnshash, pi, domain_name);
@@ -500,8 +501,8 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
     passet->sip        = pi->cxt->d_ip; // This should always be the server IP
     passet->prev       = NULL;
     len                = strlen((char *)rdomain_name);
-    passet->answer     = calloc(1, (len + 1));
-    strncpy((char *)passet->answer, (char *)rdomain_name, len);
+    passet->answer     = (unsigned char *)calloc(1, (len + 1));
+    strncpy_s((char *)passet->answer, len+1, (char *)rdomain_name, len);
 
     dlog("[D] Adding: %u, %s, %s\n",passet->rr->_rr_type, pr->qname, rdomain_name);
 
@@ -515,7 +516,7 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
 {
     if (af == AF_INET) {
-        if (!inet_ntop
+        if (!INET_NTOP
             (AF_INET,
          &IP4ADDR(&ip_addr),
          dest, INET_ADDRSTRLEN + 1)) {
@@ -523,12 +524,13 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
             return NULL;
         }
     } else if (af == AF_INET6) {
-        if (!inet_ntop(AF_INET6, &ip_addr, dest, INET6_ADDRSTRLEN + 1)) {
+        if (!INET_NTOP(AF_INET6, &ip_addr, dest, INET6_ADDRSTRLEN + 1)) {
             dlog("[E] Something died in inet_ntop\n");
             return NULL;
         }
     }
-    return dest;
+
+	return dest;
 }
 
 void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode) {
@@ -543,8 +545,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
         fd = stdout;
     } else {
         screen = 0;
-        fd = fopen(config.logfile_nxd, "a");
-        if (fd == NULL) {
+        if (_wfopen_s(&fd, config.logfile_nxd, L"a") != 0) {
             plog("[E] ERROR: Cant open file %s\n",config.logfile_nxd);
             l->last_print = l->last_seen;
             return;
@@ -681,8 +682,7 @@ void print_passet (pdns_asset *p, pdns_record *l) {
         fd = stdout;
     } else {
         screen = 0;
-        fd = fopen(config.logfile, "a");
-        if (fd == NULL) {
+        if (_wfopen_s(&fd, config.logfile, L"a") != 0) {
             plog("[E] ERROR: Cant open file %s\n",config.logfile);
             p->last_print = p->last_seen;
             return;
@@ -806,8 +806,8 @@ pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *d
     pdnsr->prev       = NULL;
     pdnsr->passet     = NULL;
     len               = strlen((char *)domain_name);
-    pdnsr->qname      = calloc(1, (len + 1));
-    strncpy((char *)pdnsr->qname, (char *)domain_name, len);
+    pdnsr->qname      = (unsigned char *)calloc(1, (len + 1));
+    strncpy_s((char *)pdnsr->qname, len+1, (char *)domain_name, len);
 
     dbucket[dnshash] = pdnsr;
     return pdnsr;
@@ -815,7 +815,7 @@ pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *d
 
 void expire_dns_records()
 {
-    pdns_record *pdnsr;
+    pdns_record *pdnsr, *tmp, *tmp_prev;
     uint8_t run = 0;
     time_t expire_t;
     time_t oldest;
@@ -837,11 +837,11 @@ void expire_dns_records()
                     // Expire the record and all its assets
                     /* remove from the hash */
                     if (pdnsr->prev)
-                        pdnsr->prev->next = pdnsr->next;
+                        (pdnsr->prev)->next = pdnsr->next;
                     if (pdnsr->next)
-                        pdnsr->next->prev = pdnsr->prev;
-                    pdns_record *tmp = pdnsr;
-                    pdns_record *tmp_prev = pdnsr->prev;
+                        (pdnsr->next)->prev = pdnsr->prev;
+                    tmp = pdnsr;
+                    tmp_prev = pdnsr->prev;
     
                     pdnsr = pdnsr->next;
     
@@ -883,12 +883,12 @@ void update_config_mem_counters()
 
 void expire_all_dns_records()
 {
-    pdns_record *pdnsr;
-
-    dlog("[D] Expiring all domain records\n");
-
+    pdns_record *pdnsr, *tmp;
     uint32_t iter;
-    for (iter = 0; iter < DBUCKET_SIZE; iter++) {
+
+	dlog("[D] Expiring all domain records\n");
+
+	for (iter = 0; iter < DBUCKET_SIZE; iter++) {
         pdnsr = dbucket[iter];
         while (pdnsr != NULL) {
             // Expire the record and all its assets
@@ -897,7 +897,7 @@ void expire_all_dns_records()
                 pdnsr->prev->next = pdnsr->next;
             if (pdnsr->next)
                 pdnsr->next->prev = pdnsr->prev;
-            pdns_record *tmp = pdnsr;
+            tmp = pdnsr;
 
             pdnsr = pdnsr->next;
 
@@ -958,9 +958,9 @@ void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr)
 
 void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
 {
-    dlog("[D] Checking for DNS assets to be expired\n");
-
-    pdns_asset *passet = pdnsr->passet;
+	pdns_asset *passet = pdnsr->passet, *tmp;
+    
+	dlog("[D] Checking for DNS assets to be expired\n");
 
     while ( passet != NULL ) {
         if (passet->last_seen.tv_sec <= expire_t) {
@@ -978,7 +978,7 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
                 passet->prev->next = passet->next;
             if (passet->next)
                 passet->next->prev = passet->prev;
-            pdns_asset *tmp = passet;
+            tmp = passet;
 
             passet = passet->next;
 
@@ -993,18 +993,13 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
 
 void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
 {
+	pdns_asset *tmp_pa = passet;
+    pdns_asset *next_pa = tmp_pa->next;
+    pdns_asset *prev_pa = tmp_pa->prev;
     dlog("[D] Deleting domain asset: %s\n", passet->answer);
 
     if (passet == NULL)
         return;
-
-    pdns_asset *tmp_pa = NULL;
-    pdns_asset *next_pa = NULL;
-    pdns_asset *prev_pa = NULL;
-
-    tmp_pa  = passet;
-    next_pa = tmp_pa->next;
-    prev_pa = tmp_pa->prev;
 
     if (prev_pa == NULL) {
         /*
@@ -1081,7 +1076,7 @@ void update_dns_stats(packetinfo *pi, uint8_t code)
     }
 }
 
-void parse_dns_flags (char *args)
+void parse_dns_flags (const TCHAR *args)
 {
     int i   = 0;
     int ok  = 0;
@@ -1089,7 +1084,7 @@ void parse_dns_flags (char *args)
     uint8_t tmpf;
 
     tmpf = config.dnsf; 
-    len = strlen(args);
+    len = wcslen(args);
 
     if (len == 0) {
         plog("[W] No flags are specified!\n");
