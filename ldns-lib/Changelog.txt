@@ -1,0 +1,418 @@
+1.x.x
+
+1.6.1   2009-09-14
+	* --enable-gost : use the GOST algorithm (experimental).
+	* Added some missing options to drill manpage
+	* Some fixes to --without-ssl option
+	* Fixed quote parsing withing strings
+	* Bitmask fix in EDNS handling
+	* Fixed non-fqdn domain name completion for rdata field domain
+	  names of length 1
+	* Fixed chain validation with SHA256 DS records
+
+1.6.0
+	Additions:
+	* Addition of an ldns-config script which gives cflags and libs
+	  values, for use in configure scripts for applications that use
+	  use ldns. Can be disabled with ./configure --disable-ldns-config
+	* Added direct sha1, sha256, and sha512 support in ldns.
+	  With these functions, all NSEC3 functionality can still be
+	  used, even if ldns is built without OpenSSL. Thanks to OpenBSD,
+	  Steve Reid, and Aaron D. Gifford for the code.
+	* Added reading/writing support for the SPF Resource Record
+	* Base32 functions are now exported
+	Bugfixes:
+	* ldns_is_rrset did not go through the complete rrset, but
+	  only compared the first two records. Thanks to Olafur
+	  Gudmundsson for report and patch
+	* Fixed a small memory bug in ldns_rr_list_subtype_by_rdf(),
+	  thanks to Marius Rieder for finding an patching this.
+	* --without-ssl should now work. Make sure that examples/ and
+	  drill also get the --without-ssl flag on their configure, if
+	  this is used.
+	* Some malloc() return value checks have been added
+	* NSEC3 creation has been improved wrt to empty nonterminals,
+	  and opt-out.
+	* Fixed a bug in the parser when reading large NSEC3 salt
+	  values.
+	* Made the allowed length for domain names on wire
+	  and presentation format the same.
+	Example tools:
+	* ldns-key2ds can now also generate DS records for keys without
+	  the SEP flag
+	* ldns-signzone now equalizes the TTL of the DNSKEY RRset (to
+	  the first non-default DNSKEY TTL value it sees)
+	
+1.5.1
+	Example tools:
+	* ldns-signzone was broken in 1.5.0 for multiple keys, this
+          has been repaired
+
+	Build system:
+        * Removed a small erroneous output warning in
+          examples/configure and drill/configure
+
+1.5.0
+	Bug fixes:
+	* fixed a possible memory overflow in the RR parser
+	* build flag fix for Sun Studio
+	* fixed a building race condition in the copying of header
+	  files
+	* EDNS0 extended rcode; the correct assembled code number
+	  is now printed (still in the EDNS0 field, though)
+	* ldns_pkt_rr no longer leaks memory (in fact, it no longer
+	  copies anything all)
+
+	API addition:
+	* ldns_key now has support for 'external' data, in which
+	  case the OpenSSL EVP structures are not used;
+	  ldns_key_set_external_key() and ldns_key_external_key()
+	* added ldns_key_get_file_base_name() which creates a 
+	  'default' filename base string for key storage, of the
+	  form "K<zone>+<algorithm>+<keytag>"
+	* the ldns_dnssec_* family of structures now have deep_free()
+	  functions, which also free the ldns_rr's contained in them
+	* there is now an ldns_match_wildcard() function, which checks
+	  whether a domain name matches a wildcard name
+	* ldns_sign_public has been split up; this resulted in the
+	  addition of ldns_create_empty_rrsig() and
+	  ldns_sign_public_buffer()
+
+	Examples:
+	* ldns-signzone can now automatically add DNSKEY records when
+	  using an OpenSSL engine, as it already did when using key
+	  files
+	* added new example tool: ldns-nsec3-hash
+	* ldns-dpa can now filter on specific query name and types
+	* ldnsd has fixes for the zone name, a fix for the return
+          value of recvfrom(), and an memory initialization fix
+          (Thanks to Colm MacCárthaigh for the patch)
+        * Fixed memory leaks in ldnsd
+
+
+
+1.4.1
+	Bug fixes:
+	* fixed a build issue where ldns lib existence was done too early
+	* removed unnecessary check for pcap.h
+	* NSEC3 optout flag now correctly printed in string output
+	* inttypes.h moved to configured inclusion
+	* fixed NSEC3 type bitmaps for empty nonterminals and unsigned
+	  delegations 
+
+	API addition:
+	* for that last fix, we added a new function
+	  ldns_dname_add_from() that can clone parts of a dname
+	
+1.4.0
+	Bug fixes:
+	* sig chase return code fix (patch from Rafael Justo, bug id 189)
+	* rdata.c memory leaks on error and allocation checks fixed (patch
+	  from Shane Kerr, bug id 188)
+	* zone.c memory leaks on error and allocation checks fixed (patch
+	from Shane Kerr, bug id 189)
+	* ldns-zplit output and error messages fixed (patch from Shane Kerr,
+	  bug id 190)
+	* Fixed potential buffer overflow in ldns_str2rdf_dname
+	* Signing code no longer signs delegation NS rrsets
+	* Some minor configure/makefile updates
+	* Fixed a bug in the randomness initialization
+	* Fixed a bug in the reading of resolv.conf
+	* Fixed a bug concerning whitespace in zone data (with patch from Ondrej
+	  Sury, bug 213)
+	* Fixed a small fallback problem in axfr client code
+	
+	API CHANGES:
+	* added 2str convenience functions:
+		- ldns_rr_type2str
+		- ldns_rr_class2str
+		- ldns_rr_type2buffer_str
+		- ldns_rr_class2buffer_str
+	* buffer2str() is now called ldns_buffer2str
+	* base32 and base64 function names are now also prepended with ldns_
+	* ldns_rr_new_frm_str() now returns an error on missing RDATA fields.
+	  Since you cannot read QUESTION section RRs with this anymore,
+	  there is now a function called ldns_rr_new_question_frm_str()
+
+	LIBRARY FEATURES:
+	* DS RRs string representation now add bubblebabble in a comment
+	  (patch from Jakob Schlyter)
+	* DLV RR type added
+	* TCP fallback system has been improved
+	* HMAC-SHA256 TSIG support has been added.
+	* TTLS are now correcly set in NSEC(3) records when signing zones
+	
+	EXAMPLE TOOLS:
+	* New example: ldns-revoke to revoke DNSKEYs according to RFC5011
+	* ldns-testpkts has been fixed and updated
+	* ldns-signzone now has the option to not add the DNSKEY
+	* ldns-signzone now has an (full zone only) opt-out option for
+	                NSEC3
+	* ldns-keygen can create HMAC-SHA1 and HMAC-SHA256 symmetric keys
+	* ldns-walk output has been fixed
+	* ldns-compare-zones has been fixed, and now has an option
+	  to show all differences (-a)
+	* ldns-read-zone now has an option to print DNSSEC records only
+
+1.3
+	Base library:
+
+	* Added a new family of functions based around ldns_dnssec_zone,
+	which is a new structure that keeps a zone sorted through an
+	rbtree and links signatures and NSEC(3) records directly to their
+	RRset. These functions all start with ldns_dnssec_
+
+	* ldns_zone_sign and ldns_zone_sign_nsec3 are now deprecated, but
+	have been changed to internally use the new
+	ldns_dnssec_zone_sign(_nsec3)
+
+	* Moved some ldns_buffer functions inline, so a clean rebuild of
+	applications relying on those is needed (otherwise you'll get
+	linker errors)
+	* ldns_dname_label now returns one extra (zero)
+	byte, so it can be seen as an fqdn.
+	* NSEC3 type code update for signing algorithms.
+	* DSA key generation of DNSKEY RRs fixed (one byte too small).
+
+	* Added support for RSA/SHA256 and RSA/SHA512, as specified in
+	draft-ietf-dnsext-dnssec-rsasha256-04. The typecodes are not
+	final, and this feature is not enabled by default. It can be
+	enabled at compilation time with the flag --with-sha2
+
+	* Added 2wire_canonical family of functions that lowercase dnames
+	in rdata fields in resource records of the types in the list in
+	rfc3597
+
+	* Added base32 conversion functions.
+
+	* Fixed DSA RRSIG conversion when calling OpenSSL
+
+	Drill:
+
+	* Chase output is completely different, it shows, in ascii, the
+	relations in the trust hierarchy.
+
+	Examples:
+	* Added ldns-verify-zone, that can verify the internal DNSSEC records
+	of a signed BIND-style zone file
+
+	* ldns-keygen now takes an -a argument specifying the algorithm,
+	instead of -R or -D. -a list show a list of supported algorithms
+
+	* ldns-keygen now defaults to the exponent RSA_F4 instead of RSA_3
+	for RSA key generation
+
+	* ldns-signzone now has support for HSMs
+	* ldns-signzone uses the new ldns_dnssec_ structures and functions
+	which improves its speed, and output; RRSIGS are now placed
+	directly after their RRset, NSEC(3) records directly after the
+	name they handle
+
+	Contrib:
+	* new contrib/ dir with user contributions
+	* added compilation script for solaris (thanks to Jakob Schlyter)
+	
+28 Nov 2007 1.2.2:
+	* Added support for HMAC-MD5 keys in generator
+	* Added a new example tool (written by Ondrej Sury): ldns-compare-zones
+	* ldns-keygen now checks key sizes for rfc conformancy
+	* ldns-signzone outputs SSL error if present
+	* Fixed manpages (thanks to Ondrej Sury)
+	* Fixed Makefile for -j <x>
+	* Fixed a $ORIGIN error when reading zones
+	* Fixed another off-by-one error
+
+03 Oct 2007 1.2.1:
+	* Fixed an offset error in rr comparison
+	* Fixed ldns-read-zone exit code
+	* Added check for availability of SHA256 hashing algorithm
+	* Fixed ldns-key2ds -2 argument
+	* Fixed $ORIGIN bug in .key files
+	* Output algorithms as an integer instead of their mnemonic
+	* Fixed a memory leak in dnssec code when SHA256 is not available
+	* Updated fedora .spec file
+
+11 Apr 2007 1.2.0:
+	* canonicalization of rdata in DNSSEC functions now adheres to the
+          rr type list in rfc3597, not rfc4035, which will be updated
+	  (see http://www.ops.ietf.org/lists/namedroppers/namedroppers.2007/msg00183.html)
+	* ldns-walk now support dnames with maximum label length
+	* ldnsd now takes an extra argument containing the address to listen on
+	* signing no longer signs every rrset with KSK's, but only the DNSKEY rrset
+	* ported to Solaris 10
+	* added ldns_send_buffer() function
+	* added ldns-testpkts fake packet server
+	* added ldns-notify to send NOTIFY packets
+	* ldns-dpa can now accurately calculate the number of matches per
+	  second
+	* libtool is now used for compilation too (still gcc, but not directly)
+	* Bugfixes:
+		- TSIG signing buffer size
+		- resolv.conf reading (comments)
+		- dname comparison off by one error
+		- typo in keyfetchers output file name fixed (a . too much)
+		- fixed zone file parser when comments contain ( or )
+		- fixed LOC RR type
+		- fixed CERT RR type
+
+	Drill:
+	* drill prints error on failed axfr.
+	* drill now accepts mangled packets with -f
+	* old -c option (use tcp) changed to -t
+	* -c option to specify alternative resolv.conf file added
+	* feedback of signature chase improved
+	* chaser now stops at root when no trusted keys are found
+	  instead of looping forever trying to find the DS for .
+	* Fixed bugs:
+		- wildcard on multiple labels signature verification
+		- error in -f packet writing for malformed packets
+		- made KSK check more resilient
+
+7 Jul 2006: 1.1.0: ldns-team
+	* Added tutorials and an introduction to the documentation
+	* Added include/ and lib/ dirs so that you can compile against ldns
+	  without installing ldns on your system
+	* Makefile updates
+	* Starting usage of assert throughout the library to catch illegal calls
+	* Solaris 9 testing was carried out. Ldns now compiles on that
+	  platform; some gnuism were identified and fixed.
+	* The ldns_zone structure was stress tested. The current setup
+	 (ie. just a list of rrs) can scale to zone file in order of
+  	  megabytes. Sorting such zone is still difficult.
+	* Reading multiline b64 encoded rdata works.
+	* OpenSSL was made optional, configure --without-ssl.
+	  Ofcourse all dnssec/tsig related functions are disabled
+	* Building of examples and drill now happens with the same
+	  defines as the building of ldns itself.
+	* Preliminary sha-256 support was added. Currently is your
+     	  OpenSSL supports it, it is supported in the DS creation.
+	* ldns_resolver_search was implemented
+	* Fixed a lot of bugs
+
+	Drill:
+	* -r was killed in favor of -o <header bit mnemonic> which 
+	  allows for a header bits setting (and maybe more in the
+	  future)
+	* DNSSEC is never automaticaly set, even when you query
+	  for DNSKEY/RRSIG or DS.
+	* Implement a crude RTT check, it now distinguishes between
+	  reachable and unreachable.
+        * A form of secure tracing was added
+        * Secure Chasing has been improved
+	* -x does a reverse lookup for the given IP address
+	
+	Examples:
+	* ldns-dpa was added to the examples - this is the Dns Packet
+	  Analyzer tool.
+	* ldnsd - as very, very simple nameserver impl.
+	* ldns-zsplit - split zones for parrallel signing
+	* ldns-zcat - cat split zones back together
+        * ldns-keyfetcher - Fetches DNSKEY records with a few (non-strong, 
+	  non-DNSSEC) anti-spoofing techniques.
+	* ldns-walk - 'Walks' a DNSSEC signed zone
+	* Added an all-static target to the makefile so you can use examples
+	  without installing the library
+	* When building in the source tree or in a direct subdirectory of
+	  the build dir, configure does not need --with-ldns=../ anymore
+
+	Code:
+	* All networking code was moved to net.c
+	* rdata.c: added asserts to the rdf set/get functions
+	* const keyword was added to pointer arguments that 
+	  aren't changed
+
+	API:
+	Changed:
+	* renamed ldns/dns.h to ldns/ldns.h
+	* ldns_rr_new_frm_str() is extented with an extra variable which
+	  in common use may be NULL. This trickles through to:
+          o ldns_rr_new_frm_fp
+	  o ldns_rr_new_frm_fp_l
+	  Which also get an extra variable
+	  Also the function has been changed to return a status message.
+	  The compiled RR is returned in the first argument.
+	* ldns_zone_new_frm_fp_l()  and ldns_zone_new_frm_fp() are
+          changed to return a status msg.
+	* ldns_key_new_frm_fp is changed to return ldns_status and
+	  the actual key list in the first argument
+	* ldns_rdata_new_frm_fp[_l]() are changed to return a status.
+	  the rdf is return in the first argument
+        * ldns_resolver_new_frm_fp: same treatment: return status and 
+	  the new resolver in the first argument
+	* ldns_pkt_query_new_frm_str(): same: return status and the
+	  packet in the first arg
+	* tsig.h: internal used functions are now static:
+	  ldns_digest_name and ldns_tsig_mac_new
+	* ldns_key_rr2ds has an extra argument to specify the hash to
+	  use.
+	* ldns_pkt_rcode() is renamed to ldns_pkt_get_rcode, ldns_pkt_rcode
+	  is now the rcode type, like ldns_pkt_opcode
+	New:
+	* ldns_resolver_searchlist_count: return the searchlist counter
+	* ldns_zone_sort: Sort a zone
+	* ldns_bgsend(): background send, returns a socket.
+	* ldns_pkt_empty(): check is a packet is empty
+	* ldns_rr_list_pop_rr_list(): pop multiple rr's from another rr_list
+	* ldns_rr_list_push_rr_list(): push multiple rr's to an rr_list
+        * ldns_rr_list_compare(): compare 2 ldns_rr_lists
+	* ldns_pkt_push_rr_list: rr_list equiv for rr
+	* ldns_pkt_safe_push_rr_list: rr_list equiv for rr
+	Removed:
+	* ldns_resolver_bgsend(): was not used in 1.0.0 and is not used now
+	* ldns_udp_server_connect(): was faulty and isn't really part of
+	  the core ldns idea any how.
+	* ldns_rr_list_insert_rr(): obsoleted, because not used.
+	* char *_when was removed from the ldns_pkt structure
+
+18 Oct 2005: 1.0.0: ldns-team
+	* Commited a patch from Håkan Olsson
+	* Added UPDATE support (Jakob Schlyter and Håkan Olsson)
+	* License change: ldns is now BSD licensed
+	* ldns now depends on SSL
+	* Networking code cleanup, added (some) server udp/tcp support
+	* A zone type is introduced. Currently this is a list
+	  of RRs, so it will not scale well.
+	* [beta] Zonefile parsing was added
+	* [tools] Drill was added to ldns - see drill/
+	* [tools] experimental signer was added
+	* [building] better check for ssl
+	* [building] major revision of build system
+	* [building] added rpm .spec in packaging/ (thanks to Paul Wouters)
+	* [building] A lot of cleanup in the build scripts (thanks to Jakob Schlyter
+	and Paul Wouters)
+
+28 Jul 2005: 0.70: ldns-team
+	* [func] ldns_pkt_get_section now returns copies from the rrlists
+	  in the packet. This can be freed by the user program
+	* [code] added ldns_ prefixes to function from util.h
+	* [inst] removed documentation from default make install
+	* Usual fixes in documentation and code
+
+20 Jun 2005: 0.66: ldns-team
+	Rel. Focus: drill-pre2 uses some functions which are
+	not in 0.65
+	* dnssec_cd bit function was added
+	* Zone infrastructure was added
+	* Usual fixes in documentation and code
+
+13 Jun 2005: 0.65: ldns-team
+	* Repository is online at: 
+	  http://www.nlnetlabs.nl/ldns/svn/
+	* Apply reference copying throuhgout ldns, except in 2 
+	  places in the ldns_resolver structure (._domain and
+	 ._nameservers)
+	* Usual array of bugfixes
+	* Documentation added
+	* keygen.c added as an example for DNSSEC programming
+
+23 May 2005: 0.60: ldns-team
+	* Removed config.h from the header installed files
+	  (you're not supposed to include that in a libary)
+	* Further tweaking
+	  - DNSSEC signing/verification works
+	  - Assorted bug fixes and tweaks (memory management) 
+
+May 2005: 0.50: ldns-team
+	* First usable release
+	* Basic DNS functionality works
+	* DNSSEC validation works

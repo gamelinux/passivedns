@@ -73,7 +73,19 @@
 #define TF_CWR                        0x80
 
 #define SUCCESS     0
-#define ERROR       1
+#if defined(WIN32)
+
+//define types
+typedef unsigned __int8 uint8_t;
+typedef unsigned __int16 uint16_t;
+typedef unsigned __int32 uint32_t;
+typedef unsigned __int64 uint64_t;
+typedef unsigned short u_short;
+typedef unsigned char u_char;
+
+#else
+#define ERROR       1	//redefined in Windows
+#endif
 #define STDBUF      1024
 
 #ifdef __FreeBSD__
@@ -282,6 +294,37 @@ typedef struct _connection {
 
 #define CMP_PORT(p1,p2) \
     ((p1 == p2))
+#elif defined(WIN32)
+#define IP6ADDR0(ip) ((ip)->u.Word[0])
+#define IP6ADDR1(ip) ((ip)->u.Word[2])
+#define IP6ADDR2(ip) ((ip)->u.Word[4])
+#define IP6ADDR3(ip) ((ip)->u.Word[6])
+#define IP6ADDR(ip) \
+    IP6ADDR0(ip), IP6ADDR1(ip), IP6ADDR2(ip), IP6ADDR3(ip)
+
+#define IP4ADDR(ip) (ip)->u
+
+#define CMP_ADDR6(a1,a2) \
+    (((a1)->u.Word[7] == (a2)->u.Word[7] && \
+      (a1)->u.Word[6] == (a2)->u.Word[6] && \
+	  (a1)->u.Word[5] == (a2)->u.Word[5] && \
+	  (a1)->u.Word[4] == (a2)->u.Word[4] && \
+	  (a1)->u.Word[3] == (a2)->u.Word[3] && \
+	  (a1)->u.Word[2] == (a2)->u.Word[2] && \
+      (a1)->u.Word[1] == (a2)->u.Word[1]))
+
+// the reason why we can't get rid of pi->s6_addr32
+// apples and apples
+#define CMP_ADDR4A(a1,a2) \
+    ((a1)->u.Word[0] == (a2)->u.Word[0] && \
+	 (a1)->u.Word[1] == (a2)->u.Word[1])
+// apples and oranges
+#define CMP_ADDR4(apple,orange) \
+    (((apple)->u.Word[0] == orange.Word[0] && \
+	  (apple)->u.Word[1] == orange.Word[1]))
+#define CMP_PORT(p1,p2) \
+    ((p1 == p2))
+
 #else
 #define IP6ADDR0(ip) ((ip)->s6_addr32[0])
 #define IP6ADDR1(ip) ((ip)->s6_addr32[1])
@@ -332,6 +375,17 @@ typedef struct _connection {
     (a)->__u6_addr.__u6_addr32[2] = 0; \
     (a)->__u6_addr.__u6_addr32[3] = 0; \
 }
+#elif defined(WIN32)
+#define CLEAR_ADDR(a) { \
+    (a)->u.Word[7] = 0; \
+    (a)->u.Word[6] = 0; \
+    (a)->u.Word[5] = 0; \
+	(a)->u.Word[4] = 0; \
+	(a)->u.Word[3] = 0; \
+	(a)->u.Word[2] = 0; \
+	(a)->u.Word[1] = 0; \
+	(a)->u.Word[0] = 0; \
+}
 #else
 #define CLEAR_ADDR(a) { \
     (a)->s6_addr32[0] = 0; \
@@ -341,24 +395,41 @@ typedef struct _connection {
 }
 #endif
 
+#ifdef WIN32
+#define CXT_HASH4(src,dst,sp,dp,pr) \
+   ((src.Word[0] + src.Word[1] + dst.Word[0] + dst.Word[1] + sp + dp + pr) % BUCKET_SIZE)
+#else
 #define CXT_HASH4(src,dst,sp,dp,pr) \
    ((src + dst + sp + dp + pr) % BUCKET_SIZE)
+#endif
 
-#ifndef OSX
-#define CXT_HASH6(src,dst,sp,dp,pr) \
- (( \
-  (src)->s6_addr32[0] + (src)->s6_addr32[1] + \
-  (src)->s6_addr32[2] + (src)->s6_addr32[3] + \
-  (dst)->s6_addr32[0] + (dst)->s6_addr32[1] + \
-  (dst)->s6_addr32[2] + (dst)->s6_addr32[3] + \
-  sp + dp + pr ) % BUCKET_SIZE)
-#else
+#ifdef OSX
 #define CXT_HASH6(src,dest,sp,dp,pr) \
  (( \
   (src)->__u6_addr.__u6_addr32[0] + (src)->__u6_addr.__u6_addr32[1] + \
   (src)->__u6_addr.__u6_addr32[2] + (src)->__u6_addr.__u6_addr32[3] + \
   (dst)->__u6_addr.__u6_addr32[0] + (dst)->__u6_addr.__u6_addr32[1] + \
   (dst)->__u6_addr.__u6_addr32[2] + (dst)->__u6_addr.__u6_addr32[3] + \
+  sp + dp + pr ) % BUCKET_SIZE)
+#elif defined(WIN32)
+#define CXT_HASH6(src,dst,sp,dp,pr) \
+ (( \
+  (src)->u.Word[0] + (src)->u.Word[1] + \
+  (src)->u.Word[2] + (src)->u.Word[3] + \
+  (src)->u.Word[4] + (src)->u.Word[5] + \
+  (src)->u.Word[6] + (src)->u.Word[7] + \
+  (dst)->u.Word[0] + (dst)->u.Word[1] + \
+  (dst)->u.Word[2] + (dst)->u.Word[3] + \
+  (dst)->u.Word[4] + (dst)->u.Word[5] + \
+  (dst)->u.Word[6] + (dst)->u.Word[7] + \
+  sp + dp + pr ) % BUCKET_SIZE)
+#else
+#define CXT_HASH6(src,dst,sp,dp,pr) \
+ (( \
+  (src)->s6_addr32[0] + (src)->s6_addr32[1] + \
+  (src)->s6_addr32[2] + (src)->s6_addr32[3] + \
+  (dst)->s6_addr32[0] + (dst)->s6_addr32[1] + \
+  (dst)->s6_addr32[2] + (dst)->s6_addr32[3] + \
   sp + dp + pr ) % BUCKET_SIZE)
 #endif
 
@@ -489,10 +560,8 @@ typedef struct _globalconfig {
     uint8_t      cflags;                 /* config flags */
     uint8_t      verbose;                /* Verbose or not */
     uint8_t      print_updates;          /* Prints updates */
-    uint8_t      use_syslog;             /* Use syslog or not */
+    //uint8_t      use_syslog;             /* Use syslog or not */
     uint8_t      setfilter;
-    uint8_t      drop_privs_flag;        /* Flag marking to drop privs */
-    uint8_t      chroot_flag;            /* Flag for going chroot */
     uint8_t      daemon_flag;            /* Flag for going daemon */
     uint32_t     dnsf;                   /* Flags for DNS RR Type checks to do */
     uint32_t     dnsfe;                  /* Flags for DNS Server Error Types to check */
@@ -506,19 +575,18 @@ typedef struct _globalconfig {
     uint64_t     cxtrackerid;            /* cxtracker ID counter */
     char         errbuf[PCAP_ERRBUF_SIZE];   /**/
     char        *bpff;                   /**/
-    char        *user_filter;            /**/
-    char        *net_ip_string;          /**/
-    char        *logfile;                /* Filename of /var/log/passivedns.log */
-    char        *logfile_nxd;            /* Filename for NXDOMAIN logging /var/log/passivedns-nxd.log */
+    TCHAR       *user_filter;            /**/
+    TCHAR        *net_ip_string;          /**/
+    TCHAR        *logfile;                /* Filename of %APP_DATA%/passivedns.log */
+    TCHAR        *logfile_nxd;            /* Filename for NXDOMAIN logging %APP_DATA%/passivedns-nxd.log */
     char        *pcap_file;              /* Filename to pcap too read */
     char        *dev;                    /* Device name to use for sniffing */
-    char        *dpath;                  /* ... ??? seriously ???... */
-    char        *chroot_dir;             /* Directory to chroot to */
-    char        *group_name;             /* Groupe to drop privileges too */
-    char        *user_name;              /* User to drop privileges too */
-    char        *pidfile;                /* pidfile */
-    char        *configpath;             /* Path to config dir */
-    uint32_t     dnsprinttime;           /* Minimum time between printing duplicate dns info */
+    TCHAR        *dpath;                  /* ... ??? seriously ???... */
+    TCHAR        *domain_name;             /* User domain. Default is local computer */
+    TCHAR        *user_name;              /* User to drop privileges too */
+    TCHAR        *pidfile;                /* pidfile */
+    TCHAR        *configpath;             /* Path to config dir */
+    long		 dnsprinttime;           /* Minimum time between printing duplicate dns info */
     uint32_t     dnscachetimeout;        /* Time before a dns record/asset times out if not updated */
 } globalconfig;
 
@@ -533,12 +601,13 @@ typedef struct _globalconfig {
 
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 #define olog(fmt, ...) do{ if(!(ISSET_CONFIG_QUIET(config))) fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
+#define _wolog(fmt, ...) do{ if(!(ISSET_CONFIG_QUIET(config))) fwprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 #ifdef DEBUG
 #define dlog(fmt, ...) do { fprintf(stderr, ("[%s:%d(%s)] " fmt), __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__);} while(0)
 #define vlog(v, fmt, ...) do{ if(DEBUG == v) fprintf(stderr, ("[%s:%d(%s)] " fmt), __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__); }while(0)
 #define elog(fmt, ...) fprintf(stderr, ("[%s:%d(%s)] " fmt), __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__);
 #else
-#define elog(fmt, ...) fprintf(stderr, (fmt), ##__VA_ARGS__);
+#define elog(fmt, ...) fwprintf(stderr, (fmt), ##__VA_ARGS__);
 #define dlog(fmt, ...) do { ; } while(0)
 #define vlog(fmt, ...) do { ; } while(0)
 #endif
