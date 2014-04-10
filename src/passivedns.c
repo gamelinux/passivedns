@@ -57,6 +57,7 @@ connection *bucket[BUCKET_SIZE];
 static void usage();
 static void show_version();
 void check_vlan (packetinfo *pi);
+void prepare_raw (packetinfo *pi);
 void prepare_eth (packetinfo *pi);
 void prepare_ip4 (packetinfo *pi);
 void prepare_ip4ip (packetinfo *pi);
@@ -101,9 +102,15 @@ void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
         check_interrupt();
     }
     config.inpacket = 1;
-    prepare_eth(pi);
-    check_vlan(pi);
-    //parse_eth(pi);
+
+    if (config.linktype == DLT_RAW) {
+      prepare_raw(pi);
+    }
+    else {
+        prepare_eth(pi);
+        check_vlan(pi);
+        //parse_eth(pi);
+    }
 
     if (pi->eth_type == ETHERNET_TYPE_IP) {
         prepare_ip4(pi);
@@ -116,6 +123,18 @@ void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
         //vlog(0x3, "[*] ETHERNET TYPE : %x\n",pi->eth_hdr->eth_ip_type);
     }
     config.inpacket = 0;
+    return;
+}
+
+void prepare_raw(packetinfo *pi)
+{
+    pi->eth_hlen = 0;
+    if (IP_V((ip4_header *)pi->packet) == 4) {
+        pi->eth_type = ETHERNET_TYPE_IP;
+    }
+    else {
+        pi->eth_type = ETHERNET_TYPE_IPV6;
+    }
     return;
 }
 
@@ -1170,6 +1189,8 @@ int main(int argc, char *argv[])
        game_over();
        return (1);
     }
+
+    config.linktype = pcap_datalink(config.handle);
 
     /** segfaults on empty pcap! */
     if ((pcap_compile(config.handle, &config.cfilter, config.bpff, 1, config.net_mask)) == -1) {
