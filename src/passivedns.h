@@ -478,6 +478,7 @@ typedef struct _pdns_stat {
 typedef struct _globalconfig {
     pcap_t              *handle;         /* Pointer to libpcap handle */
     struct pcap_stat    ps;              /* libpcap stats */
+    int                 linktype;        /* libpcap linktype */
     pdns_stat           p_s;             /* pdns stats */
     struct bpf_program  cfilter;         /* */
     bpf_u_int32         net_mask;        /* */
