@@ -49,6 +49,7 @@
 #define IP_PROTO_IP6                  41
 #define IP6_PROTO_ICMP                58
 
+#define SLL_HDR_LEN                   16
 #define IP4_HEADER_LEN                20
 #define IP6_HEADER_LEN                40
 #define TCP_HEADER_LEN                20

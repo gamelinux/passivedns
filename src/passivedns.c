@@ -58,6 +58,7 @@ static void usage();
 static void show_version();
 void check_vlan (packetinfo *pi);
 void prepare_raw (packetinfo *pi);
+void prepare_sll (packetinfo *pi);
 void prepare_eth (packetinfo *pi);
 void prepare_ip4 (packetinfo *pi);
 void prepare_ip4ip (packetinfo *pi);
@@ -107,6 +108,9 @@ void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
        case DLT_RAW:
           prepare_raw(pi);
           break;
+       case DLT_LINUX_SLL:
+          prepare_sll(pi);
+          break;
        default:
           prepare_eth(pi);
           check_vlan(pi);
@@ -137,6 +141,19 @@ void prepare_raw(packetinfo *pi)
 {
     pi->eth_hlen = 0;
     if (IP_V((ip4_header *)pi->packet) == 4) {
+        pi->eth_type = ETHERNET_TYPE_IP;
+    }
+    else {
+        pi->eth_type = ETHERNET_TYPE_IPV6;
+    }
+    return;
+}
+
+void prepare_sll(packetinfo *pi)
+{
+    pi->eth_hlen = SLL_HDR_LEN;
+
+    if (IP_V((ip4_header *)(pi->packet + SLL_HDR_LEN)) == 4) {
         pi->eth_type = ETHERNET_TYPE_IP;
     }
     else {
