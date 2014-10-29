@@ -10,14 +10,18 @@ FreeBSD Install
   $ rehash
   $ mkdir /usr/local/src/; cd /usr/local/src
   $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/src/
+  $ cd passivedns/
+  $ autoreconf --install
+  $ ./configure
   $ gmake
 
 Ubuntu
   $ sudo apt-get install git-core binutils-dev libldns1 libldns-dev libpcap-dev 
   # libdate-simple-perl is also needed for pdns2db.pl
   $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/src/
+  $ cd passivedns/
+  $ autoreconf --install
+  $ ./configure
   $ make
 
 RedHat (RHEL 6u2 x86_64)
@@ -29,6 +33,8 @@ RedHat (RHEL 6u2 x86_64)
   $ wget http://www.tcpdump.org/release/libpcap-1.2.1.tar.gz
   $ tar zxf libpcap-1.2.1.tar.gz; cd libpcap-1.2.1; ./configure; make && make install
   $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/src/
+  $ cd passivedns/
+  $ autoreconf --install
+  $ ./configure
   $ make
 
