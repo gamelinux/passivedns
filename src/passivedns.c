@@ -1091,6 +1091,19 @@ void show_version()
     olog("[*] By Edward Bjarte Fjellskål <edward.fjellskaal@gmail.com>\n");
     olog("[*] Using %s\n", pcap_lib_version());
     olog("[*] Using ldns version %s\n",ldns_version());
+#ifdef HAVE_PFRING
+    /* Print PF_RING version if PF_RING is used */
+    if (config.use_pfring) {
+        char pfv[50];
+        u_int32_t pf_version;
+        pfring_version(config.pfhandle, &pf_version);
+        snprintf(pfv, 50, "%d.%d.%d",
+                (pf_version & 0xFFFF0000) >> 16,
+                (pf_version & 0x0000FF00) >> 8,
+                 pf_version & 0x000000FF);
+        olog("[*] Using PF_RING version %s\n", pfv);
+    }
+#endif /* HAVE_PFRING */
 }
 
 extern int optind, opterr, optopt; // getopt()
