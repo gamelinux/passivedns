@@ -27,7 +27,6 @@
 #endif /* HAVE_PFRING */
 
 /*  D E F I N E S  ************************************************************/
-#define VERSION                       "1.1.3"
 #define TIMEOUT                       60
 #define BUCKET_SIZE                   65537
 #define SNAPLENGTH                    1600
