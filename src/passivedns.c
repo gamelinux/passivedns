@@ -1295,6 +1295,8 @@ int main(int argc, char *argv[])
         }
 
         alarm(TIMEOUT);
+        olog("[*] Device: %s\n", config.dev);
+        olog("[*] Sniffing...\n\n");
 
         pfring_loop(config.pfhandle, pfring_got_packet, (u_char*)NULL, 1);
 
