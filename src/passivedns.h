@@ -20,6 +20,11 @@
 */
 
 /*  I N C L U D E S  **********************************************************/
+#include "config.h"
+
+#ifdef HAVE_PFRING
+#include <pfring.h>
+#endif /* HAVE_PFRING */
 
 /*  D E F I N E S  ************************************************************/
 #define VERSION                       "1.1.3"
@@ -478,6 +483,11 @@ typedef struct _pdns_stat {
 
 typedef struct _globalconfig {
     pcap_t              *handle;         /* Pointer to libpcap handle */
+#ifdef HAVE_PFRING
+    pfring              *pfhandle;       /* Pointer to libpfring handle */
+    uint8_t             use_pfring;      /* Use PF_RING or not */
+    u_int               cluster_id;      /* PF_RING cluster ID */
+#endif /* HAVE_PFRING */
     struct pcap_stat    ps;              /* libpcap stats */
     int                 linktype;        /* libpcap linktype */
     pdns_stat           p_s;             /* pdns stats */

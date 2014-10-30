@@ -20,6 +20,7 @@
 */
 
 /*  I N C L U D E S  **********************************************************/
+#include "config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <libgen.h>
@@ -43,6 +44,10 @@
 #include <ctype.h>
 #include "passivedns.h"
 #include "dns.h"
+
+#ifdef HAVE_PFRING
+#include <pfring.h>
+#endif /* HAVE_PFRING */
 
 #ifndef CONFDIR
 #define CONFDIR "/etc/passivedns/"
@@ -83,14 +88,38 @@ connection *cxt_new(packetinfo *pi);
 void del_connection(connection *, connection **);
 void print_pdns_stats();
 void free_config();
+void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
+                const u_char *packet);
+#ifdef HAVE_PFRING
+void pfring_got_packet(const struct pfring_pkthdr *pfheader,
+                       const u_char *packet, const u_char *useless);
+#endif /* HAVE_PFRING */
 
 //void dump_payload(const uint8_t* data,uint16_t dlen);
 void game_over ();
 
 /* F U N C T I O N S  ********************************************************/
 
-void got_packet(u_char * useless, const struct pcap_pkthdr *pheader,
-                const u_char * packet)
+#ifdef HAVE_PFRING
+
+void pfring_got_packet(const struct pfring_pkthdr *pfheader,
+                       const u_char *packet, const u_char *useless)
+{
+    /* pcap_pkthdr and pfring_pkthdr are identical to each other*/
+    struct pcap_pkthdr *pheader = (struct pcap_pkthdr *)pfheader;
+
+    /* Set timestamp if it's not set */
+    if (pheader->ts.tv_sec == 0)
+        pheader->ts.tv_sec = time(NULL);
+
+    /* pfring_loop orders the arguments differently than pcap_loop */
+    got_packet((u_char *)useless, (const struct pcap_pkthdr *)pheader, packet);
+}
+
+#endif /* HAVE_PFRING */
+
+void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
+                const u_char *packet)
 {
     config.p_s.got_packets++;
     packetinfo pstruct = {0};
@@ -970,6 +999,12 @@ void game_over()
         print_pdns_stats();
         if (config.handle != NULL) pcap_close(config.handle);
         config.handle = NULL;
+#ifdef HAVE_PFRING
+        if (config.use_pfring && config.pfhandle != NULL) {
+            pfring_breakloop(config.pfhandle);
+            pfring_close(config.pfhandle);
+        }
+#endif /* HAVE_PFRING */
         end_all_sessions();
         free_config();
         olog("\n[*] passivedns ended.\n");
@@ -1019,6 +1054,10 @@ void usage()
     olog(" OPTIONS:\n\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
+#ifdef HAVE_PFRING
+    olog(" -n              Use PF_RING.\n");
+    olog(" -c <cluster_id> Set PF_RING cluster_id.\n");
+#endif /* HAVE_PFRING */
     olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
     olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
@@ -1088,14 +1127,17 @@ int main(int argc, char *argv[])
 //    config.dnsf |= DNS_CHK_NS;
 //    config.dnsf |= DNS_CHK_MX;
 //    config.dnsf |= DNS_CHK_NXDOMAIN;
-
+#ifdef HAVE_PFRING
+    config.cluster_id = 0;
+    u_int32_t flags = 0;
+#endif /* HAVE_PFRING */
     signal(SIGTERM, game_over);
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:l:L:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:c:nl:L:hb:Dp:C:P:S:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1144,6 +1186,14 @@ int main(int argc, char *argv[])
             config.group_name = strdup(optarg);
             config.drop_privs_flag = 1;
             break;
+#ifdef HAVE_PFRING
+        case 'n':
+            config.use_pfring = 1;
+            break;
+        case 'c':
+            config.cluster_id = strtol(optarg, NULL, 0);
+            break;
+#endif /* HAVE_PFRING */
         case 'h':
             usage();
             exit(0);
@@ -1161,6 +1211,84 @@ int main(int argc, char *argv[])
         }
 
     show_version();
+
+#ifdef HAVE_PFRING
+    if (config.use_pfring) {
+        /* PF_RING does not have an option to read PCAP files */
+        if (config.pcap_file) {
+            olog("[!] Reading PCAP files are not supported when using PF_RING\n");
+            exit(1);
+        }
+
+        if (config.dev == NULL) {
+            olog("[!] Must specify capture NIC\n");
+            exit(1);
+        }
+
+        flags |= PF_RING_PROMISC;
+        config.pfhandle = pfring_open(config.dev, SNAPLENGTH, flags);
+
+        if (config.pfhandle == NULL) {
+            olog("[!] Could not start PF_RING capture\n");
+            exit(1);
+        }
+
+        config.linktype = DLT_EN10MB;
+        pfring_set_application_name(config.pfhandle, "passivedns");
+
+        if (config.cluster_id == 0)
+            config.cluster_id = 99; // default cluster_id
+
+        /* Don't add ring to cluster when using ZC or DNA */
+        if ((strncmp(config.dev, "zc", 2) != 0) && (strncmp(config.dev, "dna", 3)) != 0) {
+            if ((pfring_set_cluster(config.pfhandle, config.cluster_id,
+                 cluster_per_flow)) != 0) {
+                olog("[!] Could not set PF_RING cluster_id\n");
+            }
+        }
+
+#ifdef HAVE_PFRING_BPF
+        if (*config.bpff != '\0') {
+            if ((pfring_set_bpf_filter(config.pfhandle, config.bpff)) != 0) {
+                olog("[!] Unable to set bpf filter\n");
+            }
+        }
+#endif /* HAVE_PFRING_BPF */
+
+        if ((pfring_enable_ring(config.pfhandle)) != 0) {
+            olog("[!] Could not enable ring\n");
+            exit(1);
+        }
+
+        if(config.chroot_dir){
+            olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
+            if(set_chroot()){
+                elog("[!] failed to chroot\n");
+                exit(1);
+            }
+        }
+
+        if (config.drop_privs_flag) {
+            olog("[*] Dropping privs...\n");
+            drop_privs();
+        }
+
+        if (daemon) {
+            if (!is_valid_path(config.pidfile))
+                elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
+            openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
+            olog("[*] Daemonizing...\n\n");
+            daemonize();
+        }
+
+        alarm(TIMEOUT);
+
+        pfring_loop(config.pfhandle, pfring_got_packet, (u_char*)NULL, 1);
+
+        game_over();
+        return 0;
+    }
+#endif /* HAVE_PFRING */
 
     if (config.pcap_file) {
         /* Read from PCAP file specified by '-r' switch. */

@@ -81,6 +81,64 @@ if test "$LIBLDNS_L" = "no"; then
     exit 1
 fi
 
+# Checks for PF_RING.
+AC_ARG_ENABLE(pfring,
+    AS_HELP_STRING([--enable-pfring], [Enable PF_RING support]))
+
+AC_ARG_WITH(pfring_includes,
+    [  --with-pfring-includes=DIR    PF_RING include directory],
+    [with_pfring_includes="$withval"],[with_pfring_includes="no"])
+
+AC_ARG_WITH(pfring_libraries,
+    [  --with-pfring-libraries=DIR   PF_RING library directory],
+    [with_pfring_libraries="$withval"],[with_pfring_libraries="no"])
+
+AS_IF([test "x$enable_pfring" = "xyes"], [
+    AC_DEFINE([HAVE_PFRING],[1],[PF_RING support enabled])
+
+    if test "$with_pfring_includes" != "no"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_pfring_includes}"
+    fi
+
+    if test "$with_pfring_libraries" != "no"; then
+        LDFLAGS="${LDFLAGS} -L${with_pfring_libraries}"
+    fi
+
+    LDFLAGS="${LDFLAGS} -lnuma -lrt -lpfring"
+
+    # Checks for libnuma
+    AC_CHECK_HEADER(numa.h,,LIBNUMA="no")
+    AC_CHECK_LIB(numa,numa_available,,LIBNUMA="no")
+
+    if test "$LIBNUMA" = "no"; then
+        echo -e "\n  ERROR! libnuma not found (PF_RING requirement)\n"
+        exit 1
+    fi
+
+    # Check for PF_RING headers
+    AC_CHECK_HEADER(pfring.h,,LIBPFRING_H="no")
+
+    if test "$LIBPFRING_H" = "no"; then
+        echo -e "\n  ERROR! PF_RING headers not found\n"
+        exit 1
+    fi
+
+    # Check for PF_RING library
+    AC_CHECK_LIB(pfring,pfring_stats,,LIBPFRING_L="no")
+
+    if test "$LIBPFRING_L" = "no"; then
+        echo -e "\n  ERROR! PF_RING library not found\n"
+        exit 1
+    fi
+
+    # Check for PF_RING BPF support
+    AC_CHECK_LIB(pfring,pfring_set_bpf_filter,,LIBPFRING_BPF="no")
+
+    if test "$LIBPFRING_BPF" != "no"; then
+        AC_DEFINE([HAVE_PFRING_BPF],[1],[PF_RING BPF support])
+    fi
+])
+
 # Checks for header files.
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h netinet/in.h stdlib.h string.h syslog.h unistd.h])
 
