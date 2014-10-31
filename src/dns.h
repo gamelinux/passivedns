@@ -25,19 +25,19 @@
 #include <ldns/ldns.h>
 
 /* Default flags for types to handle */
-#define DNS_CHK_AAAA       0x0001
-#define DNS_CHK_A          0x0002
-#define DNS_CHK_PTR        0x0004
-#define DNS_CHK_CNAME      0x0008
-#define DNS_CHK_DNAME      0x0010
-#define DNS_CHK_NAPTR      0x0020
-#define DNS_CHK_RP         0x0040
-#define DNS_CHK_SRV        0x0080
-#define DNS_CHK_TXT        0x0100
-#define DNS_CHK_SOA        0x0200
-#define DNS_CHK_MX         0x0400
-#define DNS_CHK_NS         0x0800
-#define DNS_CHK_ALL        0x8000
+#define DNS_CHK_AAAA        0x0001
+#define DNS_CHK_A           0x0002
+#define DNS_CHK_PTR         0x0004
+#define DNS_CHK_CNAME       0x0008
+#define DNS_CHK_DNAME       0x0010
+#define DNS_CHK_NAPTR       0x0020
+#define DNS_CHK_RP          0x0040
+#define DNS_CHK_SRV         0x0080
+#define DNS_CHK_TXT         0x0100
+#define DNS_CHK_SOA         0x0200
+#define DNS_CHK_MX          0x0400
+#define DNS_CHK_NS          0x0800
+#define DNS_CHK_ALL         0x8000
 /* Default flags for Server Errors to handle */
 #define DNS_SE_CHK_FORMERR  0x0001
 #define DNS_SE_CHK_SERVFAIL 0x0002
@@ -86,14 +86,14 @@ typedef struct _pdns_asset {
     struct timeval         first_seen; /* First seen (unix timestamp) */
     struct timeval         last_seen;  /* Last seen (unix timestamp) */
     struct timeval         last_print; /* Last time asset was printet */
-    struct ldns_struct_rr *rr;         /* PTR,MX,TXT,A,AAAA...  */
+    struct ldns_struct_rr  *rr;        /* PTR,MX,TXT,A,AAAA...  */
     uint64_t               seen;       /* Number of times seen */
-    unsigned char         *answer;     /* Answer, like 8.8.8.8 or 2001:67c:21e0::16 */
+    unsigned char          *answer;    /* Answer, like 8.8.8.8 or 2001:67c:21e0::16 */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
-    struct _pdns_asset    *next;       /* Next dns asset */
-    struct _pdns_asset    *prev;       /* Prev dns asset */
+    struct _pdns_asset     *next;      /* Next dns asset */
+    struct _pdns_asset     *prev;      /* Prev dns asset */
 } pdns_asset;
 
 typedef struct _pdns_record {
@@ -101,14 +101,14 @@ typedef struct _pdns_record {
     struct timeval         last_seen;  /* Last seen (unix timestamp) */
     struct timeval         last_print; /* Last time record(NXD) was printet */
     uint64_t               seen;       /* Number of times seen */
-    unsigned char         *qname;      /* Query name (gamelinux.org) */
+    unsigned char          *qname;     /* Query name (gamelinux.org) */
     uint8_t                nxflag;     /* Flag to indicate if this is a NXDOMAIN */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
-    pdns_asset            *passet;     /* Head of dns assets */
-    struct _pdns_record   *next;       /* Next dns record */
-    struct _pdns_record   *prev;       /* Prev dns record */
+    pdns_asset             *passet;    /* Head of dns assets */
+    struct _pdns_record    *next;      /* Next dns record */
+    struct _pdns_record    *prev;      /* Prev dns record */
 } pdns_record;
 
 /* Declare */
@@ -123,11 +123,12 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
 void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
 void expire_dns_records();
 void expire_all_dns_records();
-void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr);
+void delete_dns_record (pdns_record *pdnsr, pdns_record **bucket_ptr);
 void delete_dns_asset (pdns_asset **passet_head, pdns_asset *passet);
 void update_config_mem_counters();
 void parse_dns_flags (char *args);
 void update_dns_stats(packetinfo *pi, uint8_t code);
 uint16_t pdns_chk_dnsfe(uint16_t rcode);
 
-#endif //DNS_H
+#endif /* DNS_H */
+

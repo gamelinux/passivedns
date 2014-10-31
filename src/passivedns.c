@@ -88,15 +88,14 @@ connection *cxt_new(packetinfo *pi);
 void del_connection(connection *, connection **);
 void print_pdns_stats();
 void free_config();
+//void dump_payload(const uint8_t* data,uint16_t dlen);
+void game_over ();
 void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
                 const u_char *packet);
 #ifdef HAVE_PFRING
 void pfring_got_packet(const struct pfring_pkthdr *pfheader,
                        const u_char *packet, const u_char *useless);
 #endif /* HAVE_PFRING */
-
-//void dump_payload(const uint8_t* data,uint16_t dlen);
-void game_over ();
 
 /* F U N C T I O N S  ********************************************************/
 
@@ -134,32 +133,32 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
     config.inpacket = 1;
 
     switch (config.linktype) {
-       case DLT_RAW:
-          prepare_raw(pi);
-          break;
-       case DLT_LINUX_SLL:
-          prepare_sll(pi);
-          break;
-       default:
-          prepare_eth(pi);
-          check_vlan(pi);
-          //parse_eth(pi);
-          break;
+        case DLT_RAW:
+            prepare_raw(pi);
+            break;
+        case DLT_LINUX_SLL:
+            prepare_sll(pi);
+            break;
+        default:
+            prepare_eth(pi);
+            check_vlan(pi);
+            //parse_eth(pi);
+            break;
     }
 
     switch (pi->eth_type) {
-       case ETHERNET_TYPE_IP:
-          prepare_ip4(pi);
-          parse_ip4(pi);
-          break;
-       case ETHERNET_TYPE_IPV6:
-          prepare_ip6(pi);
-          parse_ip6(pi);
-          break;
-       default:
-          config.p_s.otherl_recv++;
-          //vlog(0x3, "[*] ETHERNET TYPE : %x\n",pi->eth_hdr->eth_ip_type);
-          break;
+        case ETHERNET_TYPE_IP:
+            prepare_ip4(pi);
+            parse_ip4(pi);
+            break;
+        case ETHERNET_TYPE_IPV6:
+            prepare_ip6(pi);
+            parse_ip6(pi);
+            break;
+        default:
+            config.p_s.otherl_recv++;
+            //vlog(0x3, "[*] ETHERNET TYPE : %x\n",pi->eth_hdr->eth_ip_type);
+            break;
     }
 
     config.inpacket = 0;
@@ -246,7 +245,7 @@ void parse_ip4 (packetinfo *pi)
         return;
     }
     switch (pi->ip4->ip_p) {
-      case IP_PROTO_TCP:
+        case IP_PROTO_TCP:
             prepare_tcp(pi);
             parse_tcp(pi);
             break;            
@@ -260,7 +259,6 @@ void parse_ip4 (packetinfo *pi)
         case IP_PROTO_IP6:
             prepare_ip4ip(pi);
             break;
-
         default:
             break;
     }
@@ -332,7 +330,6 @@ void parse_ip6 (packetinfo *pi)
         case IP_PROTO_IP6:
             prepare_ip6ip(pi);
             break;
-
         default:
             break;
     }
@@ -413,10 +410,8 @@ void parse_tcp (packetinfo *pi)
     /* Reliable traffic comes from the servers (normally on port 53 or 5353)
      * and the client has sent at least one package on that
      * connecton (Maybe asking for an aswer :) */
-//    if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
-        dlog("[D] Parsing TCP packet...\n");
-        dns_parser(pi);
-//    }   
+    dlog("[D] Parsing TCP packet...\n");
+    dns_parser(pi);
     return;
 }
 
@@ -427,14 +422,13 @@ void parse_udp (packetinfo *pi)
     /* Reliable traffic comes from the servers (normally on port 53 or 5353)
      * and the client has sent at least one package on that
      * connecton (Maybe asking for an aswer :) */
-    //if ( pi->sc == SC_SERVER && pi->cxt->s_total_pkts > 0 ) {
-        dlog("[D] Parsing UDP packet...\n");
-        dns_parser(pi);
-    //}
+    dlog("[D] Parsing UDP packet...\n");
+    dns_parser(pi);
     return;
 }
 
-int connection_tracking(packetinfo *pi) {
+int connection_tracking(packetinfo *pi)
+{
     struct in6_addr *ip_src;
     struct in6_addr *ip_dst;
     struct in6_addr ips;
@@ -456,7 +450,7 @@ int connection_tracking(packetinfo *pi) {
         ip_dst = &ipd;
     }
 
-    // find the right connection bucket
+    /* Find the right connection bucket */
     if (af == AF_INET) {
         hash = CXT_HASH4(IP4ADDR(ip_src),IP4ADDR(ip_dst),src_port,dst_port,pi->proto);
     } else if (af == AF_INET6) {
@@ -465,15 +459,16 @@ int connection_tracking(packetinfo *pi) {
     cxt = bucket[hash];
     head = cxt;
 
-   // search through the bucket
-    while (cxt != NULL) {
-        // Two-way compare of given connection against connection table
+   /* Search through the bucket */
+    while (cxt != NULL)
+    {
+        /* Two-way compare of given connection against connection table */
         if (af == AF_INET) {
             if (CMP_CXT4(cxt,IP4ADDR(ip_src),src_port,IP4ADDR(ip_dst),dst_port)){
-                // Client sends first packet (TCP/SYN - UDP?) hence this is a client
+                /* Client sends first packet (TCP/SYN - UDP?) hence this is a client */
                 return cxt_update_client(cxt, pi);
             } else if (CMP_CXT4(cxt,IP4ADDR(ip_dst),dst_port,IP4ADDR(ip_src),src_port)) {
-                // This is a server (Maybe not when we start up but in the long run)
+                /* This is a server (Maybe not when we start up but in the long run) */
                 return cxt_update_server(cxt, pi);
             }
         } else if (af == AF_INET6) {
@@ -485,13 +480,13 @@ int connection_tracking(packetinfo *pi) {
         }
         cxt = cxt->next;
     }
-    // bucket turned upside down didn't yeild anything. new connection
+    /* Bucket turned upside down didn't yeild anything. new connection */
     cxt = cxt_new(pi);
 
     /* New connections are pushed on to the head of bucket[s_hash] */
     cxt->next = head;
     if (head != NULL) {
-        // are we doubly linked?
+        /* Are we doubly linked? */
         head->prev = cxt;
     }
     bucket[hash] = cxt;
@@ -499,7 +494,7 @@ int connection_tracking(packetinfo *pi) {
     return cxt_update_client(cxt, pi);
 }
 
-/* freshly smelling connection :d */
+/* Freshly smelling connection :d */
 connection *cxt_new(packetinfo *pi)
 {
     struct in6_addr ips;
@@ -548,7 +543,7 @@ int cxt_update_client(connection *cxt, packetinfo *pi)
     pi->sc = SC_CLIENT;
     if (cxt->s_total_bytes > MAX_BYTE_CHECK
         || cxt->s_total_pkts > MAX_PKT_CHECK) {
-        return 0;   // Dont Check!
+        return 0;   // Don't Check!
     }
     return SC_CLIENT;
 }
@@ -565,7 +560,7 @@ int cxt_update_server(connection *cxt, packetinfo *pi)
     pi->sc = SC_SERVER;
     if (cxt->d_total_bytes > MAX_BYTE_CHECK
         || cxt->d_total_pkts > MAX_PKT_CHECK) {
-        return 0;   // Dont check!
+        return 0;   // Don't check!
     }
     return SC_SERVER;
 }
@@ -576,9 +571,11 @@ void end_all_sessions()
     int cxkey;
     config.llcxt = 0;
 
-    for (cxkey = 0; cxkey < BUCKET_SIZE; cxkey++) {
+    for (cxkey = 0; cxkey < BUCKET_SIZE; cxkey++)
+    {
         cxt = bucket[cxkey];
-        while (cxt != NULL) {
+        while (cxt != NULL)
+        {
             config.llcxt++;
             if (cxt->prev)
                 cxt->prev->next = cxt->next;
@@ -608,18 +605,20 @@ void end_sessions()
 
     int iter;
 
-    for (iter = 0; iter < BUCKET_SIZE; iter++) {
+    for (iter = 0; iter < BUCKET_SIZE; iter++)
+    {
         cxt = bucket[iter];
-        while (cxt != NULL) {
+        while (cxt != NULL)
+        {
             ended = 0;
             config.llcxt++;
             /* TCP */
             if (cxt->proto == IP_PROTO_TCP) {
-                /* * FIN from both sides */
+                /* FIN from both sides */
                 if (cxt->s_tcpFlags & TF_FIN && cxt->d_tcpFlags & TF_FIN
                     && (check_time - cxt->last_pkt_time) > 5) {
                     ended = 1;
-                } /* * RST from either side */
+                } /* RST from either side */
                 else if ((cxt->s_tcpFlags & TF_RST
                           || cxt->d_tcpFlags & TF_RST)
                           && (check_time - cxt->last_pkt_time) > 5) {
@@ -641,13 +640,13 @@ void end_sessions()
                      expired = 1;
                 }
             }
-            /* All Other protocols */
+            /* All other protocols */
             else if ((check_time - cxt->last_pkt_time) > OTHER_TIMEOUT) {
                 expired = 1;
             }
 
             if (ended == 1 || expired == 1) {
-                /* remove from the hash */
+                /* Remove from the hash */
                 if (cxt->prev)
                     cxt->prev->next = cxt->next;
                 if (cxt->next)
@@ -674,25 +673,25 @@ void end_sessions()
 
 void del_connection(connection * cxt, connection ** bucket_ptr)
 {
-    connection *prev = cxt->prev;       /* OLDER connections */
-    connection *next = cxt->next;       /* NEWER connections */
+    connection *prev = cxt->prev;    /* Older connections */
+    connection *next = cxt->next;    /* Newer connections */
 
     if (prev == NULL) {
-        // beginning of list
+        /* Beginning of list */
         *bucket_ptr = next;
-        // not only entry
+        /* Not only entry */
         if (next)
             next->prev = NULL;
     } else if (next == NULL) {
-        // at end of list!
+        /* At end of list! */
         prev->next = NULL;
     } else {
-        // a node.
+        /* A node */
         prev->next = next;
         next->prev = prev;
     }
 
-    // Free and set to NULL 
+    /* Free and set to NULL */
     free(cxt);
     cxt = NULL;
     config.curcxt--;
@@ -742,7 +741,7 @@ void sig_alarm_handler()
     set_end_sessions();
     
     /* Only check for timed-out dns records each 10 minutes */
-    if ( (now_t - config.dnslastchk) >= 600 ) {
+    if ((now_t - config.dnslastchk) >= 600) {
         set_end_dns_records();
     }
     alarm(TIMEOUT);
@@ -769,26 +768,27 @@ void set_end_sessions()
     }
 }
 
-static int set_chroot(void) {
+static int set_chroot(void)
+{
    char *absdir;
 
-   /* logdir = get_abs_path(logpath); */
+   //logdir = get_abs_path(logpath);
 
-   /* change to the directory */
-   if ( chdir(config.chroot_dir) != 0 ) {
-      printf("set_chroot: Can not chdir to \"%s\": %s\n",config.chroot_dir,strerror(errno));
+   /* Change to the directory */
+   if (chdir(config.chroot_dir) != 0) {
+       printf("set_chroot: Can not chdir to \"%s\": %s\n",config.chroot_dir,strerror(errno));
    }
 
-   /* always returns an absolute pathname */
+   /* Always returns an absolute pathname */
    absdir = getcwd(NULL, 0);
 
-   /* make the chroot call */
-   if ( chroot(absdir) < 0 ) {
-      printf("Can not chroot to \"%s\": absolute: %s: %s\n",config.chroot_dir,absdir,strerror(errno));
+   /* Make the chroot call */
+   if (chroot(absdir) < 0) {
+       printf("Can not chroot to \"%s\": absolute: %s: %s\n",config.chroot_dir,absdir,strerror(errno));
    }
 
-   if ( chdir("/") < 0 ) {
-        printf("Can not chdir to \"/\" after chroot: %s\n",strerror(errno));
+   if (chdir("/") < 0) {
+       printf("Can not chdir to \"/\" after chroot: %s\n",strerror(errno));
    }
 
    return 0;
@@ -809,12 +809,12 @@ int drop_privs(void)
         do_setgid = 1;
         if (!isdigit(config.group_name[0])) {
             gr = getgrnam(config.group_name);
-            if(!gr){
-                if(config.chroot_dir){
+            if (!gr) {
+                if (config.chroot_dir) {
                     elog("ERROR: you have chrooted and must set numeric group ID.\n");
                     exit(1);
-                }else{
-                    elog("ERROR: couldn't get ID for group %s, group does not exist.", config.group_name)
+                } else {
+                    elog("ERROR: couldn't get ID for group %s, group does not exist.", config.group_name);
                     exit(1);
                 }
             }
@@ -969,27 +969,29 @@ int daemonize()
     return SUCCESS;
 }
 
-void a_dump_payload(const uint8_t* data,uint16_t dlen) {
-  uint8_t  tbuf[PKT_MAXPAY+2];
-  uint8_t* t = tbuf;
-  uint8_t  i;
-  uint8_t  max = dlen > PKT_MAXPAY ? PKT_MAXPAY : dlen;
+void a_dump_payload(const uint8_t* data,uint16_t dlen)
+{
+    uint8_t  tbuf[PKT_MAXPAY+2];
+    uint8_t* t = tbuf;
+    uint8_t  i;
+    uint8_t  max = dlen > PKT_MAXPAY ? PKT_MAXPAY : dlen;
 
-  if (!dlen) {
-     olog(" # No Payload...\n");
-     return;
-  }
+    if (!dlen) {
+        olog(" # No Payload...\n");
+        return;
+    }
 
-  for (i=0;i<max;i++) {
-    if (isprint(*data)) *(t++) = *data;
-      else if (!*data)  *(t++) = '?';
-      else *(t++) = '.';
-    data++;
-  }
+    for (i=0;i<max;i++)
+    {
+        if (isprint(*data)) *(t++) = *data;
+        else if (!*data)  *(t++) = '?';
+        else *(t++) = '.';
+        data++;
+    }
 
-  *t = 0;
+    *t = 0;
 
-  plog( "  # Payload: \"%s\"%s",tbuf,dlen > PKT_MAXPAY ? "...\n" : "\n");
+    plog( "  # Payload: \"%s\"%s",tbuf,dlen > PKT_MAXPAY ? "...\n" : "\n");
 }
 
 void game_over()
@@ -1016,7 +1018,7 @@ void game_over()
 void free_config()
 {
     if (config.cfilter.bf_insns != NULL) free (config.cfilter.bf_insns);
-// Grr - no nice way to tell if the settings comes from configfile or not :/
+    /* Grr - no nice way to tell if the settings comes from configfile or not :/ */
     //if (config.pidfile != NULL) free(config.pidfile);
     if (config.user_name != NULL) free(config.user_name);
     if (config.group_name != NULL) free(config.group_name);
@@ -1063,9 +1065,9 @@ void usage()
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
-    olog(" -C <sec>        Seconds to cache DNS objects in memory (default %u).\n",DNSCACHETIMEOUT);
+    olog(" -C <sec>        Seconds to cache DNS objects in memory (default: %u).\n",DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n",DNSPRINTTIME);
-    olog(" -X <flags>      Manually set DNS RR Types to care about(Default -X 46CDNPRS).\n");
+    olog(" -X <flags>      Manually set DNS RR Types to care about (default: -X 46CDNPRS).\n");
     olog(" -u <uid>        User ID to drop privileges to.\n");
     olog(" -g <gid>        Group ID to drop privileges to.\n");
     olog(" -T <dir>        Directory to chroot into.\n");
@@ -1273,9 +1275,9 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        if(config.chroot_dir){
+        if (config.chroot_dir) {
             olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
-            if(set_chroot()){
+            if (set_chroot()) {
                 elog("[!] failed to chroot\n");
                 exit(1);
             }
@@ -1329,7 +1331,7 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        if(config.chroot_dir){
+        if (config.chroot_dir) {
             olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
             if(set_chroot()){
                 elog("[!] failed to chroot\n");
@@ -1359,7 +1361,7 @@ int main(int argc, char *argv[])
 
     config.linktype = pcap_datalink(config.handle);
 
-    /** segfaults on empty pcap! */
+    /* Segfaults on empty pcap! */
     if ((pcap_compile(config.handle, &config.cfilter, config.bpff, 1, config.net_mask)) == -1) {
             olog("[*] Error pcap_compile user_filter: %s\n", pcap_geterr(config.handle));
             exit(1);
