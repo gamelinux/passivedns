@@ -14,7 +14,7 @@ AC_PROG_CC
 # Checks for libpcap.
 AC_ARG_WITH(libpcap_includes,
     [  --with-libpcap-includes=DIR   libpcap include directory],
-    [with_libcap_includes="$withval"],[with_libcap_includes="no"])
+    [with_libpcap_includes="$withval"],[with_libpcap_includes="no"])
 
 AC_ARG_WITH(libpcap_libraries,
     [  --with-libpcap-libraries=DIR  libpcap library directory],
