@@ -541,23 +541,15 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
 void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode)
 {
     FILE *fd;
-    uint8_t screen;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
-    if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0' ) {
-        if (config.handle == NULL) return;
-        screen = 1;
-        fd = stdout;
-    } else {
-        screen = 0;
-        fd = fopen(config.logfile_nxd, "a");
-        if (fd == NULL) {
-            plog("[E] ERROR: Cant open file %s\n",config.logfile_nxd);
-            l->last_print = l->last_seen;
-            return;
-        }
-    }
+    if (config.logfile_all)
+        fd = config.logfile_fd;
+    else
+        fd = config.logfile_nxd_fd;
+
+    if (fd == NULL) return;
 
     u_ntop(l->sip, l->af, ip_addr_s);
     u_ntop(l->cip, l->af, ip_addr_c);
@@ -565,7 +557,8 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     /* example output:
      * 1329575805.123456||100.240.60.160||80.160.30.30||IN||sadf.googles.com.||A||NXDOMAIN||0||1
      */
-    fprintf(fd,"%lu.%06lu||%s||%s||",l->last_seen.tv_sec, l->last_seen.tv_usec, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu.%06lu||%s||%s||",l->last_seen.tv_sec,
+                                  l->last_seen.tv_usec,ip_addr_c,ip_addr_s);
 
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
@@ -667,10 +660,10 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
             fprintf(fd,"||UNKNOWN-ERROR-%d",rcode);
             break;
     }
+
     fprintf(fd,"||0||1\n");
 
-    if (screen == 0)
-        fclose(fd);
+    fflush(fd);
 
     l->last_print = l->last_seen;
     l->seen = 0;
@@ -679,27 +672,16 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
 void print_passet (pdns_asset *p, pdns_record *l)
 {
     FILE *fd;
-    uint8_t screen;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
 
-    if (config.logfile[0] == '-' && config.logfile[1] == '\0' ) {
-        if (config.handle == NULL) return;
-        screen = 1;
-        fd = stdout;
-    } else {
-        screen = 0;
-        fd = fopen(config.logfile, "a");
-        if (fd == NULL) {
-            plog("[E] ERROR: Cant open file %s\n",config.logfile);
-            p->last_print = p->last_seen;
-            return;
-        }
-    }
+    fd = config.logfile_fd;
+    if (fd == NULL) return;
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
-    fprintf(fd,"%lu.%06lu||%s||%s||",p->last_seen.tv_sec, p->last_seen.tv_usec, ip_addr_c, ip_addr_s);
+    fprintf(fd,"%lu.%06lu||%s||%s||",p->last_seen.tv_sec,
+                              p->last_seen.tv_usec,ip_addr_c,ip_addr_s);
 
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:
@@ -767,9 +749,8 @@ void print_passet (pdns_asset *p, pdns_record *l)
     }
 
     fprintf(fd,"||%s||%u||%lu\n", p->answer,p->rr->_ttl,p->seen);
-    
-    if (screen == 0)
-        fclose(fd);
+
+    fflush(fd);
 
     p->last_print = p->last_seen;
     p->seen = 0;

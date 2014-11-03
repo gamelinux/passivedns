@@ -507,6 +507,7 @@ typedef struct _globalconfig {
     uint8_t             drop_privs_flag; /* Flag marking to drop privs */
     uint8_t             chroot_flag;     /* Flag for going chroot */
     uint8_t             daemon_flag;     /* Flag for going daemon */
+    uint8_t             logfile_all;     /* Log everything in the same log file */
     uint32_t            dnsf;            /* Flags for DNS RR Type checks to do */
     uint32_t            dnsfe;           /* Flags for DNS Server Error Types to check */
     uint32_t            payload;         /* Dump how much of the payload ?  */
@@ -524,6 +525,8 @@ typedef struct _globalconfig {
     char                *logfile;        /* Filename of /var/log/passivedns.log */
     char                *logfile_nxd;    /* Filename for NXDOMAIN logging /var/log/passivedns-nxd.log */
     char                *pcap_file;      /* Filename to PCAP too read */
+    FILE                *logfile_fd;     /* File descriptor for log file */
+    FILE                *logfile_nxd_fd; /* File descriptor for NXDOMAIN log file */
     char                *dev;            /* Device name to use for sniffing */
     char                *dpath;          /* ... ??? seriously ???... */
     char                *chroot_dir;     /* Directory to chroot to */

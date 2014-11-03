@@ -1008,6 +1008,10 @@ void game_over()
         }
 #endif /* HAVE_PFRING */
         end_all_sessions();
+        if (config.logfile_fd != NULL && config.logfile_fd != stdout)
+            fclose(config.logfile_fd);
+        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
+            fclose(config.logfile_nxd_fd);
         free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
@@ -1223,7 +1227,31 @@ int main(int argc, char *argv[])
             break;
         default:
             elog("Did not recognize argument '%c'\n", ch);
+    }
+
+    /* Open log file */
+    if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
+        config.logfile_fd = stdout;
+    } else {
+        config.logfile_fd = fopen(config.logfile, "a");
+        if (config.logfile_fd == NULL) {
+            olog("[!] Error opening log file %s\n", config.logfile);
+            exit(1);
         }
+    }
+
+    /* Open NXDOMAIN log file */
+    if (strcmp(config.logfile, config.logfile_nxd) == 0) {
+        config.logfile_all = 1;
+    } else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
+        config.logfile_nxd_fd = stdout;
+    } else {
+        config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+        if (config.logfile_nxd_fd == NULL) {
+            olog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
+            exit(1);
+        }
+    }
 
     show_version();
 
