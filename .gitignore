@@ -3,3 +3,22 @@ src/passivedns
 
 # Object files
 *.o
+
+# Autotools files
+aclocal.m4
+autom4te.cache/
+config.guess
+config.log
+config.sub
+config.status
+configure
+install-sh
+missing
+Makefile
+Makefile.in
+src/config.h
+src/config.h.in
+src/Makefile
+src/Makefile.in
+src/stamp-h1
+

@@ -1,32 +1,26 @@
 #Makefile
-UNAME := $(shell uname -s)
+AUTOMAKE_OPTIONS = -Wno-portability
 
 OCFLAGS=-O3
 #DCFLAGS=-Wall -Wextra -Werror -g -DDEBUG
 DCFLAGS=-Wall -g -DDEBUG
 PCFLAGS=-g -pg
-LDFLAGS=-lpcap -lldns
 
 OBJECTS=$(patsubst %.c,%.o,$(wildcard *.c))
 DOBJECTS=$(patsubst %.o,%_dbg.o,$(OBJECTS))
 POBJECTS=$(patsubst %.o,%_pfl.o,$(OBJECTS))
 BINARY=passivedns
 
-ifeq ($(UNAME), FreeBSD)
-    OCFLAGS=-I/usr/local/include -O3
-    LDFLAGS=-L/usr/local/lib -lpcap -lldns
-endif
-
 all: $(BINARY)
 
 %_dbg.o: %.c
-	gcc $(DCFLAGS) -c $< -o $@
+	gcc $(DCFLAGS) $(CPPFLAGS) -c $< -o $@
 
 %_pfl.o: %.c
-	gcc $(PCFLAGS) -c $< -o $@
+	gcc $(PCFLAGS) $(CPPFLAGS) -c $< -o $@
 
 %.o: %.c
-	gcc $(OCFLAGS) -c $< -o $@
+	gcc $(OCFLAGS) $(CPPFLAGS) -c $< -o $@
 
 passivedns: $(OBJECTS)
 	gcc -o passivedns $(OBJECTS) $(LDFLAGS)
