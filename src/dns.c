@@ -543,6 +543,9 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     FILE *fd;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
+    char *rr_class;
+    char *rr_type;
+    char *rr_rcode;
 
     if (config.logfile_all)
         fd = config.logfile_fd;
@@ -554,115 +557,108 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     u_ntop(l->sip, l->af, ip_addr_s);
     u_ntop(l->cip, l->af, ip_addr_c);
 
-    /* example output:
-     * 1329575805.123456||100.240.60.160||80.160.30.30||IN||sadf.googles.com.||A||NXDOMAIN||0||1
-     */
-    fprintf(fd,"%lu.%06lu||%s||%s||",l->last_seen.tv_sec,
-                                  l->last_seen.tv_usec,ip_addr_c,ip_addr_s);
-
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
-             fprintf(fd,"IN");
-             break;
+            rr_class = "IN";
+            break;
         case LDNS_RR_CLASS_CH:
-             fprintf(fd,"CH");
-             break;
+            rr_class = "CH";
+            break;
         case LDNS_RR_CLASS_HS:
-             fprintf(fd,"HS");
-             break;
+            rr_class = "HS";
+            break;
         case LDNS_RR_CLASS_NONE:
-             fprintf(fd,"NONE");
-             break;
+            rr_class = "NONE";
+            break;
         case LDNS_RR_CLASS_ANY:
-             fprintf(fd,"ANY");
-             break; 
+            rr_class = "ANY";
+            break;
         default:
-             fprintf(fd,"%d",ldns_rr_get_class(rr));
-             break;
+            sprintf(rr_class, "%d", ldns_rr_get_class(rr));
+            break;
     }    
     
-    fprintf(fd,"||%s||",l->qname);
-
     switch (ldns_rr_get_type(rr)) {
         case LDNS_RR_TYPE_PTR:
-             fprintf(fd,"PTR");
-             break;
+            rr_type = "PTR";
+            break;
         case LDNS_RR_TYPE_A:
-             fprintf(fd,"A");
-             break;
+            rr_type = "A";
+            break;
         case LDNS_RR_TYPE_AAAA:
-             fprintf(fd,"AAAA");
-             break;
+            rr_type = "AAAA";
+            break;
         case LDNS_RR_TYPE_CNAME:
-             fprintf(fd,"CNAME");
-             break;
+            rr_type = "CNAME";
+            break;
         case LDNS_RR_TYPE_DNAME:
-             fprintf(fd,"DNAME");
-             break;
+            rr_type = "DNAME";
+            break;
         case LDNS_RR_TYPE_NAPTR:
-             fprintf(fd,"NAPTR");
-             break;
+            rr_type = "NAPTR";
+            break;
         case LDNS_RR_TYPE_RP:
-             fprintf(fd,"RP");
-             break;
+            rr_type = "RP";
+            break;
         case LDNS_RR_TYPE_SRV:
-             fprintf(fd,"SRV");
-             break;
+            rr_type = "SRV";
+            break;
         case LDNS_RR_TYPE_TXT:
-             fprintf(fd,"TXT");
-             break;
+            rr_type = "TXT";
+            break;
         case LDNS_RR_TYPE_SOA:
-             fprintf(fd,"SOA");
-             break;
+            rr_type = "SOA";
+            break;
         case LDNS_RR_TYPE_NS:
-             fprintf(fd,"NS");
-             break;
+            rr_type = "NS";
+            break;
         case LDNS_RR_TYPE_MX:
-             fprintf(fd,"MX");
-             break; 
+            rr_type = "MX";
+            break;
         default:
-            fprintf(fd,"%d",ldns_rdf_get_type(lname));
+            sprintf(rr_type, "%d", ldns_rdf_get_type(lname));
             break;
     }
 
     switch (rcode) {
         case 1:
-            fprintf(fd,"||FORMERR");
+            rr_rcode = "FORMERR";
             break;
         case 2:
-            fprintf(fd,"||SERVFAIL");
+            rr_rcode = "SERVFAIL";
             break;
         case 3:
-            fprintf(fd,"||NXDOMAIN");
+            rr_rcode = "NXDOMAIN";
             break;
         case 4:
-            fprintf(fd,"||NOTIMPL");
+            rr_rcode = "NOTIMPL";
             break;
         case 5:
-            fprintf(fd,"||REFUSED");
+            rr_rcode = "REFUSED";
             break;
         case 6:
-            fprintf(fd,"||YXDOMAIN");
+            rr_rcode = "YXDOMAIN";
             break;
         case 7:
-            fprintf(fd,"||YXRRSET");
+            rr_rcode = "YXRRSET";
             break;
         case 8:
-            fprintf(fd,"||NXRRSET");
+            rr_rcode = "NXRRSET";
             break;
         case 9:
-            fprintf(fd,"||NOTAUTH");
+            rr_rcode = "NOTAUTH";
             break;
         case 10:
-            fprintf(fd,"||NOTZONE");
+            rr_rcode = "NOTZONE";
             break;
         default:
-            fprintf(fd,"||UNKNOWN-ERROR-%d",rcode);
+            sprintf(rr_rcode, "UNKNOWN-ERROR-%d", rcode);
             break;
     }
 
-    fprintf(fd,"||0||1\n");
-
+    fprintf(fd, "%lu.%06lu||%s||%s||%s||%s||%s||%s||0||1\n",
+                l->last_seen.tv_sec, l->last_seen.tv_usec, ip_addr_c, ip_addr_s,
+                rr_class, l->qname, rr_type, rr_rcode);
     fflush(fd);
 
     l->last_print = l->last_seen;
@@ -674,82 +670,81 @@ void print_passet (pdns_asset *p, pdns_record *l)
     FILE *fd;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
+    char *rr_class;
+    char *rr_type;
 
     fd = config.logfile_fd;
     if (fd == NULL) return;
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
-    fprintf(fd,"%lu.%06lu||%s||%s||",p->last_seen.tv_sec,
-                              p->last_seen.tv_usec,ip_addr_c,ip_addr_s);
 
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:
-             fprintf(fd,"IN");
-             break;
+            rr_class = "IN";
+            break;
         case LDNS_RR_CLASS_CH:
-             fprintf(fd,"CH");
-             break;
+            rr_class = "CH";
+            break;
         case LDNS_RR_CLASS_HS:
-             fprintf(fd,"HS");
-             break;
+            rr_class = "HS";
+            break;
         case LDNS_RR_CLASS_NONE:
-             fprintf(fd,"NONE");
-             break;
+            rr_class = "NONE";
+            break;
         case LDNS_RR_CLASS_ANY:
-             fprintf(fd,"ANY");
-             break;
+            rr_class = "ANY";
+            break;
         default:
-             fprintf(fd,"%d",p->rr->_rr_class);
-             break;
-    }
-
-    fprintf(fd,"||%s||",l->qname);
-
-    switch (ldns_rr_get_type(p->rr)) {
-        case LDNS_RR_TYPE_PTR:
-             fprintf(fd,"PTR");
-             break;
-        case LDNS_RR_TYPE_A:
-             fprintf(fd,"A");
-             break;
-        case LDNS_RR_TYPE_AAAA:
-             fprintf(fd,"AAAA");
-             break;
-        case LDNS_RR_TYPE_CNAME:
-             fprintf(fd,"CNAME");
-             break;
-        case LDNS_RR_TYPE_DNAME:
-             fprintf(fd,"DNAME");
-             break;
-        case LDNS_RR_TYPE_NAPTR:
-             fprintf(fd,"NAPTR");
-             break;
-        case LDNS_RR_TYPE_RP:
-             fprintf(fd,"RP");
-             break;
-        case LDNS_RR_TYPE_SRV:
-             fprintf(fd,"SRV");
-             break;
-        case LDNS_RR_TYPE_TXT:
-             fprintf(fd,"TXT");
-             break;
-        case LDNS_RR_TYPE_SOA:
-             fprintf(fd,"SOA");
-             break;
-        case LDNS_RR_TYPE_NS:
-             fprintf(fd,"NS");
-             break;
-        case LDNS_RR_TYPE_MX:
-             fprintf(fd,"MX");
-             break;
-        default:
-            fprintf(fd,"%d",p->rr->_rr_type);
+            sprintf(rr_class, "%d", p->rr->_rr_class);
             break;
     }
 
-    fprintf(fd,"||%s||%u||%lu\n", p->answer,p->rr->_ttl,p->seen);
+    switch (ldns_rr_get_type(p->rr)) {
+        case LDNS_RR_TYPE_PTR:
+            rr_type = "PTR";
+            break;
+        case LDNS_RR_TYPE_A:
+            rr_type = "A";
+            break;
+        case LDNS_RR_TYPE_AAAA:
+            rr_type = "AAAA";
+            break;
+        case LDNS_RR_TYPE_CNAME:
+            rr_type = "CNAME";
+            break;
+        case LDNS_RR_TYPE_DNAME:
+            rr_type = "DNAME";
+            break;
+        case LDNS_RR_TYPE_NAPTR:
+            rr_type = "NAPTR";
+            break;
+        case LDNS_RR_TYPE_RP:
+            rr_type = "RP";
+            break;
+        case LDNS_RR_TYPE_SRV:
+            rr_type = "SRV";
+            break;
+        case LDNS_RR_TYPE_TXT:
+            rr_type = "TXT";
+            break;
+        case LDNS_RR_TYPE_SOA:
+            rr_type = "SOA";
+            break;
+        case LDNS_RR_TYPE_NS:
+            rr_type = "NS";
+            break;
+        case LDNS_RR_TYPE_MX:
+            rr_type = "MX";
+            break;
+        default:
+            sprintf(rr_type, "%d", p->rr->_rr_type);
+            break;
+    }
 
+    fprintf(fd, "%lu.%06lu||%s||%s||%s||%s||%s||%s||%u||%lu\n",
+            p->last_seen.tv_sec, p->last_seen.tv_usec, ip_addr_c, ip_addr_s,
+            rr_class, l->qname, rr_type, p->answer, p->rr->_ttl, p->seen);
     fflush(fd);
 
     p->last_print = p->last_seen;
