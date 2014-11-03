@@ -747,6 +747,21 @@ void sig_alarm_handler()
     alarm(TIMEOUT);
 }
 
+void reopen_log_files()
+{
+    if (config.logfile_fd != NULL && config.logfile_fd != stdout)
+        fclose(config.logfile_fd);
+    config.logfile_fd = fopen(config.logfile, "a");
+
+    if (config.logfile_all) {
+        /* Do nothing, since both logs use the same file */
+    } else {
+        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
+            fclose(config.logfile_nxd_fd);
+        config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+    }
+}
+
 void set_end_dns_records()
 {
     config.intr_flag |= INTERRUPT_DNS;
@@ -1154,6 +1169,7 @@ int main(int argc, char *argv[])
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
+    signal(SIGHUP, reopen_log_files);
     signal(SIGUSR1, print_pdns_stats);
 
 #define ARGS "i:r:c:nl:L:hb:Dp:C:P:S:X:u:g:T:V"
