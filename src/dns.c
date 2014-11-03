@@ -543,6 +543,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     FILE *fd;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
+    char *d = config.log_delimiter;
     char *rr_class;
     char *rr_type;
     char *rr_rcode;
@@ -656,9 +657,10 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
             break;
     }
 
-    fprintf(fd, "%lu.%06lu||%s||%s||%s||%s||%s||%s||0||1\n",
-                l->last_seen.tv_sec, l->last_seen.tv_usec, ip_addr_c, ip_addr_s,
-                rr_class, l->qname, rr_type, rr_rcode);
+    fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s0%s1\n",
+                l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
+                ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
+                rr_rcode, d, d);
     fflush(fd);
 
     l->last_print = l->last_seen;
@@ -670,6 +672,7 @@ void print_passet (pdns_asset *p, pdns_record *l)
     FILE *fd;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
+    char *d = config.log_delimiter;
     char *rr_class;
     char *rr_type;
 
@@ -742,9 +745,10 @@ void print_passet (pdns_asset *p, pdns_record *l)
             break;
     }
 
-    fprintf(fd, "%lu.%06lu||%s||%s||%s||%s||%s||%s||%u||%lu\n",
-            p->last_seen.tv_sec, p->last_seen.tv_usec, ip_addr_c, ip_addr_s,
-            rr_class, l->qname, rr_type, p->answer, p->rr->_ttl, p->seen);
+    fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu\n",
+            p->last_seen.tv_sec, p->last_seen.tv_usec, d, ip_addr_c, d,
+            ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d, p->answer, d,
+            p->rr->_ttl, d, p->seen);
     fflush(fd);
 
     p->last_print = p->last_seen;

@@ -522,6 +522,7 @@ typedef struct _globalconfig {
     char                *bpff;
     char                *user_filter;
     char                *net_ip_string;
+    char                *log_delimiter;  /* Delimiter between fields in log */
     char                *logfile;        /* Filename of /var/log/passivedns.log */
     char                *logfile_nxd;    /* Filename for NXDOMAIN logging /var/log/passivedns-nxd.log */
     char                *pcap_file;      /* Filename to PCAP too read */

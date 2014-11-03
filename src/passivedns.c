@@ -1081,6 +1081,7 @@ void usage()
 #endif /* HAVE_PFRING */
     olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
     olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
+    olog(" -d <delimiter>  Delimiter between fields in log file (default: ||).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1148,6 +1149,7 @@ int main(int argc, char *argv[])
     config.dnsprinttime = DNSPRINTTIME;
     config.dnscachetimeout =  DNSCACHETIMEOUT;
     config.dnsf = 0;
+    config.log_delimiter = "||";
     config.dnsf |= DNS_CHK_A;
     config.dnsf |= DNS_CHK_AAAA;
     config.dnsf |= DNS_CHK_PTR;
@@ -1172,7 +1174,7 @@ int main(int argc, char *argv[])
     signal(SIGHUP, reopen_log_files);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:c:nl:L:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:c:nl:L:d:hb:Dp:C:P:S:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1187,6 +1189,9 @@ int main(int argc, char *argv[])
             break;
         case 'l':
             config.logfile = strdup(optarg);
+            break;
+        case 'd':
+            config.log_delimiter = strdup(optarg);
             break;
         case 'b':
             config.bpff = strdup(optarg);
