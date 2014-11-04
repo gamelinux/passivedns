@@ -30,6 +30,9 @@
 #include <pcap.h>
 #include "passivedns.h"
 #include "dns.h"
+#ifdef HAVE_JSON
+#include <jansson.h>
+#endif /* HAVE_JSON */
 
 globalconfig config;
 
@@ -548,6 +551,14 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     char *rr_type;
     char *rr_rcode;
 
+#ifdef HAVE_JSON
+    json_t *jdata;
+    size_t data_flags;
+
+    /* Print in the same order as inserted */
+    data_flags |= JSON_PRESERVE_ORDER;
+#endif /* HAVE_JSON */
+
     if (config.logfile_all)
         fd = config.logfile_fd;
     else
@@ -558,113 +569,144 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     u_ntop(l->sip, l->af, ip_addr_s);
     u_ntop(l->cip, l->af, ip_addr_c);
 
+    rr_class = malloc(10);
+    rr_type  = malloc(10);
+    rr_rcode = malloc(20);
+
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
-            rr_class = "IN";
+            snprintf(rr_class, 10, "IN");
             break;
         case LDNS_RR_CLASS_CH:
-            rr_class = "CH";
+            snprintf(rr_class, 10, "CH");
             break;
         case LDNS_RR_CLASS_HS:
-            rr_class = "HS";
+            snprintf(rr_class, 10, "HS");
             break;
         case LDNS_RR_CLASS_NONE:
-            rr_class = "NONE";
+            snprintf(rr_class, 10, "NONE");
             break;
         case LDNS_RR_CLASS_ANY:
-            rr_class = "ANY";
+            snprintf(rr_class, 10, "ANY");
             break;
         default:
-            sprintf(rr_class, "%d", ldns_rr_get_class(rr));
+            snprintf(rr_class, 10, "%d", ldns_rr_get_class(rr));
             break;
     }    
     
     switch (ldns_rr_get_type(rr)) {
         case LDNS_RR_TYPE_PTR:
-            rr_type = "PTR";
+            snprintf(rr_type, 10, "PTR");
             break;
         case LDNS_RR_TYPE_A:
-            rr_type = "A";
+            snprintf(rr_type, 10, "A");
             break;
         case LDNS_RR_TYPE_AAAA:
-            rr_type = "AAAA";
+            snprintf(rr_type, 10, "AAAA");
             break;
         case LDNS_RR_TYPE_CNAME:
-            rr_type = "CNAME";
+            snprintf(rr_type, 10, "CNAME");
             break;
         case LDNS_RR_TYPE_DNAME:
-            rr_type = "DNAME";
+            snprintf(rr_type, 10, "DNAME");
             break;
         case LDNS_RR_TYPE_NAPTR:
-            rr_type = "NAPTR";
+            snprintf(rr_type, 10, "NAPTR");
             break;
         case LDNS_RR_TYPE_RP:
-            rr_type = "RP";
+            snprintf(rr_type, 10, "RP");
             break;
         case LDNS_RR_TYPE_SRV:
-            rr_type = "SRV";
+            snprintf(rr_type, 10, "SRV");
             break;
         case LDNS_RR_TYPE_TXT:
-            rr_type = "TXT";
+            snprintf(rr_type, 10, "TXT");
             break;
         case LDNS_RR_TYPE_SOA:
-            rr_type = "SOA";
+            snprintf(rr_type, 10, "SOA");
             break;
         case LDNS_RR_TYPE_NS:
-            rr_type = "NS";
+            snprintf(rr_type, 10, "NS");
             break;
         case LDNS_RR_TYPE_MX:
-            rr_type = "MX";
+            snprintf(rr_type, 10, "MX");
             break;
         default:
-            sprintf(rr_type, "%d", ldns_rdf_get_type(lname));
+            snprintf(rr_type, 10, "%d", ldns_rdf_get_type(lname));
             break;
     }
 
     switch (rcode) {
         case 1:
-            rr_rcode = "FORMERR";
+            snprintf(rr_rcode, 20, "FORMERR");
             break;
         case 2:
-            rr_rcode = "SERVFAIL";
+            snprintf(rr_rcode, 20, "SERVFAIL");
             break;
         case 3:
-            rr_rcode = "NXDOMAIN";
+            snprintf(rr_rcode, 20, "NXDOMAIN");
             break;
         case 4:
-            rr_rcode = "NOTIMPL";
+            snprintf(rr_rcode, 20, "NOTIMPL");
             break;
         case 5:
-            rr_rcode = "REFUSED";
+            snprintf(rr_rcode, 20, "REFUSED");
             break;
         case 6:
-            rr_rcode = "YXDOMAIN";
+            snprintf(rr_rcode, 20, "YXDOMAIN");
             break;
         case 7:
-            rr_rcode = "YXRRSET";
+            snprintf(rr_rcode, 20, "YXRRSET");
             break;
         case 8:
-            rr_rcode = "NXRRSET";
+            snprintf(rr_rcode, 20, "NXRRSET");
             break;
         case 9:
-            rr_rcode = "NOTAUTH";
+            snprintf(rr_rcode, 20, "NOTAUTH");
             break;
         case 10:
-            rr_rcode = "NOTZONE";
+            snprintf(rr_rcode, 20, "NOTZONE");
             break;
         default:
-            sprintf(rr_rcode, "UNKNOWN-ERROR-%d", rcode);
+            snprintf(rr_rcode, 20, "UNKNOWN-ERROR-%d", rcode);
             break;
     }
 
-    fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s0%s1\n",
-                l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
-                ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
-                rr_rcode, d, d);
+#ifdef HAVE_JSON
+    if (config.use_json_nxd) {
+        jdata = json_object();
+        json_object_set_new(jdata, "timestamp_sec",  json_integer(l->last_seen.tv_sec));
+        json_object_set_new(jdata, "timestamp_msec", json_integer(l->last_seen.tv_usec));
+        json_object_set_new(jdata, "client_ip",      json_string(ip_addr_c));
+        json_object_set_new(jdata, "server_ip",      json_string(ip_addr_s));
+        json_object_set_new(jdata, "rr_class",       json_string(rr_class));
+        json_object_set_new(jdata, "query",          json_string(l->qname));
+        json_object_set_new(jdata, "rr_type",        json_string(rr_type));
+        json_object_set_new(jdata, "answer",         json_string(rr_rcode));
+        json_object_set_new(jdata, "ttl",            json_integer(0));
+        json_object_set_new(jdata, "count",          json_integer(1));
+
+        if (json_dumpf(jdata, fd, data_flags) != 0)
+            olog("[!] Error printing JSON\n");
+
+    } else {
+#endif /* HAVE_JSON */
+        fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s0%s1\n",
+                    l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
+                    ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
+                    rr_rcode, d, d);
+#ifdef HAVE_JSON
+    }
+#endif /* HAVE_JSON */
+
     fflush(fd);
 
     l->last_print = l->last_seen;
     l->seen = 0;
+
+    free(rr_class);
+    free(rr_type);
+    free(rr_rcode);
 }
 
 void print_passet (pdns_asset *p, pdns_record *l)
@@ -676,83 +718,120 @@ void print_passet (pdns_asset *p, pdns_record *l)
     char *rr_class;
     char *rr_type;
 
+#ifdef HAVE_JSON
+    json_t *jdata;
+    size_t data_flags;
+
+    /* Print in the same order as inserted */
+    data_flags |= JSON_PRESERVE_ORDER;
+#endif /* HAVE_JSON */
+
     fd = config.logfile_fd;
     if (fd == NULL) return;
 
     u_ntop(p->sip, p->af, ip_addr_s);
     u_ntop(p->cip, p->af, ip_addr_c);
 
+    rr_class = malloc(10);
+    rr_type  = malloc(10);
+
     switch (ldns_rr_get_class(p->rr)) {
         case LDNS_RR_CLASS_IN:
-            rr_class = "IN";
+            snprintf(rr_class, 10, "IN");
             break;
         case LDNS_RR_CLASS_CH:
-            rr_class = "CH";
+            snprintf(rr_class, 10, "CH");
             break;
         case LDNS_RR_CLASS_HS:
-            rr_class = "HS";
+            snprintf(rr_class, 10, "HS");
             break;
         case LDNS_RR_CLASS_NONE:
-            rr_class = "NONE";
+            snprintf(rr_class, 10, "NONE");
             break;
         case LDNS_RR_CLASS_ANY:
-            rr_class = "ANY";
+            snprintf(rr_class, 10, "ANY");
             break;
         default:
-            sprintf(rr_class, "%d", p->rr->_rr_class);
+            snprintf(rr_class, 10, "%d", p->rr->_rr_class);
             break;
     }
 
     switch (ldns_rr_get_type(p->rr)) {
         case LDNS_RR_TYPE_PTR:
-            rr_type = "PTR";
+            snprintf(rr_type, 10, "PTR");
             break;
         case LDNS_RR_TYPE_A:
-            rr_type = "A";
+            snprintf(rr_type, 10, "A");
             break;
         case LDNS_RR_TYPE_AAAA:
-            rr_type = "AAAA";
+            snprintf(rr_type, 10, "AAAA");
             break;
         case LDNS_RR_TYPE_CNAME:
-            rr_type = "CNAME";
+            snprintf(rr_type, 10, "CNAME");
             break;
         case LDNS_RR_TYPE_DNAME:
-            rr_type = "DNAME";
+            snprintf(rr_type, 10, "DNAME");
             break;
         case LDNS_RR_TYPE_NAPTR:
-            rr_type = "NAPTR";
+            snprintf(rr_type, 10, "NAPTR");
             break;
         case LDNS_RR_TYPE_RP:
-            rr_type = "RP";
+            snprintf(rr_type, 10, "RP");
             break;
         case LDNS_RR_TYPE_SRV:
-            rr_type = "SRV";
+            snprintf(rr_type, 10, "SRV");
             break;
         case LDNS_RR_TYPE_TXT:
-            rr_type = "TXT";
+            snprintf(rr_type, 10, "TXT");
             break;
         case LDNS_RR_TYPE_SOA:
-            rr_type = "SOA";
+            snprintf(rr_type, 10, "SOA");
             break;
         case LDNS_RR_TYPE_NS:
-            rr_type = "NS";
+            snprintf(rr_type, 10, "NS");
             break;
         case LDNS_RR_TYPE_MX:
-            rr_type = "MX";
+            snprintf(rr_type, 10, "MX");
             break;
         default:
-            sprintf(rr_type, "%d", p->rr->_rr_type);
+            snprintf(rr_type, 10, "%d", p->rr->_rr_type);
             break;
     }
 
-    fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu\n",
-            p->last_seen.tv_sec, p->last_seen.tv_usec, d, ip_addr_c, d,
-            ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d, p->answer, d,
-            p->rr->_ttl, d, p->seen);
+#ifdef HAVE_JSON
+    if (config.use_json) {
+        jdata = json_object();
+        json_object_set_new(jdata, "timestamp_sec",  json_integer(p->last_seen.tv_sec));
+        json_object_set_new(jdata, "timestamp_msec", json_integer(p->last_seen.tv_usec));
+        json_object_set_new(jdata, "client_ip",      json_string(ip_addr_c));
+        json_object_set_new(jdata, "server_ip",      json_string(ip_addr_s));
+        json_object_set_new(jdata, "rr_class",       json_string(rr_class));
+        json_object_set_new(jdata, "query",          json_string(l->qname));
+        json_object_set_new(jdata, "rr_type",        json_string(rr_type));
+        json_object_set_new(jdata, "answer",         json_string(p->answer));
+        json_object_set_new(jdata, "ttl",            json_integer(p->rr->_ttl));
+        json_object_set_new(jdata, "count",          json_integer(p->seen));
+
+        if (json_dumpf(jdata, fd, data_flags) != 0)
+            olog("[!] Error printing JSON\n");
+
+    } else {
+#endif /* HAVE_JSON */
+        fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu\n",
+                p->last_seen.tv_sec, p->last_seen.tv_usec, d, ip_addr_c, d,
+                ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d, p->answer,
+                d, p->rr->_ttl, d, p->seen);
+#ifdef HAVE_JSON
+    }
+#endif /* HAVE_JSON */
+
     fflush(fd);
 
     p->last_print = p->last_seen;
     p->seen = 0;
+
+    free(rr_class);
+    free(rr_type);
 }
 
 pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *domain_name)

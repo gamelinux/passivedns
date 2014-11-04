@@ -1082,6 +1082,10 @@ void usage()
     olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
     olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
     olog(" -d <delimiter>  Delimiter between fields in log file (default: ||).\n");
+#ifdef HAVE_JSON
+    olog(" -j              Use JSON as output in log file.\n");
+    olog(" -J              Use JSON as output in NXDOMAIN log file.\n");
+#endif /* HAVE_JSON */
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1174,7 +1178,7 @@ int main(int argc, char *argv[])
     signal(SIGHUP, reopen_log_files);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:c:nl:L:d:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:c:njJl:L:d:hb:Dp:C:P:S:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1190,6 +1194,14 @@ int main(int argc, char *argv[])
         case 'l':
             config.logfile = strdup(optarg);
             break;
+#ifdef HAVE_JSON
+        case 'j':
+            config.use_json = 1;
+            break;
+        case 'J':
+            config.use_json_nxd = 1;
+            break;
+#endif /* HAVE_JSON */
         case 'd':
             config.log_delimiter = strdup(optarg);
             break;
