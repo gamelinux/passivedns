@@ -747,6 +747,21 @@ void sig_alarm_handler()
     alarm(TIMEOUT);
 }
 
+void reopen_log_files()
+{
+    if (config.logfile_fd != NULL && config.logfile_fd != stdout)
+        fclose(config.logfile_fd);
+    config.logfile_fd = fopen(config.logfile, "a");
+
+    if (config.logfile_all) {
+        /* Do nothing, since both logs use the same file */
+    } else {
+        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
+            fclose(config.logfile_nxd_fd);
+        config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+    }
+}
+
 void set_end_dns_records()
 {
     config.intr_flag |= INTERRUPT_DNS;
@@ -1008,6 +1023,10 @@ void game_over()
         }
 #endif /* HAVE_PFRING */
         end_all_sessions();
+        if (config.logfile_fd != NULL && config.logfile_fd != stdout)
+            fclose(config.logfile_fd);
+        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
+            fclose(config.logfile_nxd_fd);
         free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
@@ -1062,6 +1081,11 @@ void usage()
 #endif /* HAVE_PFRING */
     olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
     olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
+    olog(" -d <delimiter>  Delimiter between fields in log file (default: ||).\n");
+#ifdef HAVE_JSON
+    olog(" -j              Use JSON as output in log file.\n");
+    olog(" -J              Use JSON as output in NXDOMAIN log file.\n");
+#endif /* HAVE_JSON */
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1129,6 +1153,7 @@ int main(int argc, char *argv[])
     config.dnsprinttime = DNSPRINTTIME;
     config.dnscachetimeout =  DNSCACHETIMEOUT;
     config.dnsf = 0;
+    config.log_delimiter = "||";
     config.dnsf |= DNS_CHK_A;
     config.dnsf |= DNS_CHK_AAAA;
     config.dnsf |= DNS_CHK_PTR;
@@ -1150,9 +1175,10 @@ int main(int argc, char *argv[])
     signal(SIGINT, game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
+    signal(SIGHUP, reopen_log_files);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:c:nl:L:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:c:njJl:L:d:hb:Dp:C:P:S:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1167,6 +1193,17 @@ int main(int argc, char *argv[])
             break;
         case 'l':
             config.logfile = strdup(optarg);
+            break;
+#ifdef HAVE_JSON
+        case 'j':
+            config.use_json = 1;
+            break;
+        case 'J':
+            config.use_json_nxd = 1;
+            break;
+#endif /* HAVE_JSON */
+        case 'd':
+            config.log_delimiter = strdup(optarg);
             break;
         case 'b':
             config.bpff = strdup(optarg);
@@ -1223,7 +1260,31 @@ int main(int argc, char *argv[])
             break;
         default:
             elog("Did not recognize argument '%c'\n", ch);
+    }
+
+    /* Open log file */
+    if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
+        config.logfile_fd = stdout;
+    } else {
+        config.logfile_fd = fopen(config.logfile, "a");
+        if (config.logfile_fd == NULL) {
+            olog("[!] Error opening log file %s\n", config.logfile);
+            exit(1);
         }
+    }
+
+    /* Open NXDOMAIN log file */
+    if (strcmp(config.logfile, config.logfile_nxd) == 0) {
+        config.logfile_all = 1;
+    } else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
+        config.logfile_nxd_fd = stdout;
+    } else {
+        config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+        if (config.logfile_nxd_fd == NULL) {
+            olog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
+            exit(1);
+        }
+    }
 
     show_version();
 
