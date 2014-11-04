@@ -1,0 +1,13 @@
+/var/log/passivedns.log {
+    daily
+    rotate 30
+    missingok
+    notifempty
+    compress
+    delaycompress
+    postrotate
+        /bin/kill -HUP `pgrep passivedns 2>/dev/null` 2>/dev/null || true
+    endscript
+    su root syslog
+}
+
