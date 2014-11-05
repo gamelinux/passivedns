@@ -54,6 +54,10 @@
 // Flag for indicating an NXDOMAIN
 #define DNS_NXDOMAIN       0x01
 
+/* Static values for print_passet_err() */
+#define PASSET_ERR_TTL     0
+#define PASSET_ERR_COUNT   1
+
 /* To avoid spaming the logfile with duplicate dns info 
  * we only print a dns record one time each 24H. This way
  * you will get a last seen timestamp update once a day

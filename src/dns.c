@@ -683,18 +683,18 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
         json_object_set_new(jdata, "query",          json_string(l->qname));
         json_object_set_new(jdata, "rr_type",        json_string(rr_type));
         json_object_set_new(jdata, "answer",         json_string(rr_rcode));
-        json_object_set_new(jdata, "ttl",            json_integer(0));
-        json_object_set_new(jdata, "count",          json_integer(1));
+        json_object_set_new(jdata, "ttl",            json_integer(PASSET_ERR_TTL));
+        json_object_set_new(jdata, "count",          json_integer(PASSET_ERR_COUNT));
 
         if (json_dumpf(jdata, fd, data_flags) != 0)
             olog("[!] Error printing JSON\n");
 
     } else {
 #endif /* HAVE_JSON */
-        fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s0%s1\n",
+        fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%d\n",
                     l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
                     ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
-                    rr_rcode, d, d);
+                    rr_rcode, d, PASSET_ERR_TTL, d, PASSET_ERR_COUNT);
 #ifdef HAVE_JSON
     }
 #endif /* HAVE_JSON */
