@@ -552,6 +552,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     char *rr_rcode;
 
 #ifdef HAVE_JSON
+    char   *output;
     json_t *jdata;
     size_t data_flags;
 
@@ -686,8 +687,12 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
         json_object_set_new(jdata, "ttl",            json_integer(PASSET_ERR_TTL));
         json_object_set_new(jdata, "count",          json_integer(PASSET_ERR_COUNT));
 
-        if (json_dumpf(jdata, fd, data_flags) != 0)
-            olog("[!] Error printing JSON\n");
+        output = json_dumps(jdata, data_flags);
+        if (output == NULL)
+            return;
+
+        fprintf(fd, "%s\n", output);
+        free(output);
 
     } else {
 #endif /* HAVE_JSON */
@@ -719,6 +724,7 @@ void print_passet (pdns_asset *p, pdns_record *l)
     char *rr_type;
 
 #ifdef HAVE_JSON
+    char   *output;
     json_t *jdata;
     size_t data_flags;
 
@@ -812,8 +818,12 @@ void print_passet (pdns_asset *p, pdns_record *l)
         json_object_set_new(jdata, "ttl",            json_integer(p->rr->_ttl));
         json_object_set_new(jdata, "count",          json_integer(p->seen));
 
-        if (json_dumpf(jdata, fd, data_flags) != 0)
-            olog("[!] Error printing JSON\n");
+        output = json_dumps(jdata, data_flags);
+        if (output == NULL)
+            return;
+
+        fprintf(fd, "%s\n", output);
+        free(output);
 
     } else {
 #endif /* HAVE_JSON */
