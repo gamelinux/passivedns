@@ -293,8 +293,6 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
          */
          if (config.dnsfe & (pdns_chk_dnsfe(rcode))) {
             ldns_rr_list  *dns_query_domains;
-            ldns_rr_class class;
-            ldns_rr_type  type;
             ldns_rr       *rr;
 
             dnshash = hash(domain_name);
@@ -306,8 +304,6 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
             dns_query_domains = ldns_pkt_question(dns_pkt);
             rr    = ldns_rr_list_rr(dns_query_domains, 0);
-            class = ldns_rr_get_class(rr);
-            type  = ldns_rr_get_type(rr);
             if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
                 /* Print the SRC Error record */
                 print_passet_err(pr, rdf_data, rr, rcode);
@@ -560,7 +556,7 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
 #ifdef HAVE_JSON
     char   *output;
     json_t *jdata;
-    size_t data_flags;
+    size_t data_flags = 0;
 
     /* Print in the same order as inserted */
     data_flags |= JSON_PRESERVE_ORDER;
@@ -687,7 +683,7 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
         json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
         json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
         json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
-        json_object_set_new(jdata, JSON_QUERY,        json_string(l->qname));
+        json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
         json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
         json_object_set_new(jdata, JSON_ANSWER,       json_string(rr_rcode));
         json_object_set_new(jdata, JSON_TTL,          json_integer(PASSET_ERR_TTL));
@@ -732,7 +728,7 @@ void print_passet(pdns_asset *p, pdns_record *l)
 #ifdef HAVE_JSON
     char   *output;
     json_t *jdata;
-    size_t data_flags;
+    size_t data_flags = 0;
 
     /* Print in the same order as inserted */
     data_flags |= JSON_PRESERVE_ORDER;
@@ -818,9 +814,9 @@ void print_passet(pdns_asset *p, pdns_record *l)
         json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
         json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
         json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
-        json_object_set_new(jdata, JSON_QUERY,        json_string(l->qname));
+        json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
         json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
-        json_object_set_new(jdata, JSON_ANSWER,       json_string(p->answer));
+        json_object_set_new(jdata, JSON_ANSWER,       json_string((const char *)p->answer));
         json_object_set_new(jdata, JSON_TTL,          json_integer(p->rr->_ttl));
         json_object_set_new(jdata, JSON_COUNT,        json_integer(p->seen));
 

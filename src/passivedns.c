@@ -442,6 +442,11 @@ int connection_tracking(packetinfo *pi)
     else if (af == AF_INET6) {
         hash = CXT_HASH6(ip_src, ip_dst, src_port, dst_port, pi->proto);
     }
+    else {
+        dlog("[D] Only CTX with AF_INET and AF_INET6 are supported: %d\n", af);
+        return 0;
+    }
+
     cxt = bucket[hash];
     head = cxt;
 
