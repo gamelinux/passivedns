@@ -24,12 +24,12 @@
 #include <string.h>
 #include <time.h>
 #include <sys/types.h>
-//#include <ldns/ldns.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pcap.h>
 #include "passivedns.h"
 #include "dns.h"
+
 #ifdef HAVE_JSON
 #include <jansson.h>
 #endif /* HAVE_JSON */
@@ -38,7 +38,7 @@ globalconfig config;
 
 /* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
 //#define DBUCKET_SIZE     16769023
-#define DBUCKET_SIZE     3967   /* Carol that is primes */
+#define DBUCKET_SIZE  3967   /* Carol that is primes */
 
 pdns_record *dbucket[DBUCKET_SIZE];
 
@@ -52,17 +52,17 @@ uint64_t hash(unsigned char *str)
     return hash % DBUCKET_SIZE;
 }
 
-void dns_parser (packetinfo *pi)
+void dns_parser(packetinfo *pi)
 {
-    ldns_status   status;
-    ldns_pkt     *dns_pkt;
+    ldns_status status;
+    ldns_pkt    *dns_pkt;
 
     status = LDNS_STATUS_ERR; 
 
     /* In DNS tcp messages, the first 2 bytes signal the
      * amount of data to expect. So we need to skip them in the read.
      */
-    if (pi->plen <= 2) return; /* The minimum bytes in a packet - else return */
+    if (pi->plen <= 2) return;  /* The minimum bytes in a packet, else return */
 
     if (pi->af == AF_INET) {
         switch (pi->ip4->ip_p) {
@@ -75,7 +75,8 @@ void dns_parser (packetinfo *pi)
             default:
                 break;
         }
-    } else if (pi->af == AF_INET6) {
+    }
+    else if (pi->af == AF_INET6) {
         switch (pi->ip6->next) {
             case IP_PROTO_TCP:
                 status = ldns_wire2pkt(&dns_pkt,pi->payload + 2, pi->plen - 2);
@@ -94,7 +95,7 @@ void dns_parser (packetinfo *pi)
         return;
     }
 
-    /* We dont want to process truncated packets */
+    /* We don't want to process truncated packets */
     if (ldns_pkt_tc(dns_pkt)) {
        dlog("[D] DNS packet with Truncated (TC) bit set! Skipping!\n");
        ldns_pkt_free(dns_pkt);
@@ -105,18 +106,21 @@ void dns_parser (packetinfo *pi)
     /* We only care about answers when we record data */
     if (ldns_pkt_qr(dns_pkt)) {
         /* Answer must come from the server, and the client has to have sent a packet! */
-        if ( pi->sc != SC_SERVER || pi->cxt->s_total_pkts == 0 ) {
-            dlog("[D] DNS Answer without a Question?: Query TID = %d and Answer TID = %d\n", pi->cxt->plid,ldns_pkt_id(dns_pkt));
+        if (pi->sc != SC_SERVER || pi->cxt->s_total_pkts == 0) {
+            dlog("[D] DNS Answer without a Question?: Query TID = %d and Answer TID = %d\n",
+                 pi->cxt->plid, ldns_pkt_id(dns_pkt));
             ldns_pkt_free(dns_pkt);
-            update_dns_stats(pi,ERROR);
+            update_dns_stats(pi, ERROR);
             return;
         }
         dlog("[D] DNS Answer\n");
         /* Check the DNS TID */
         if ((pi->cxt->plid == ldns_pkt_id(dns_pkt))) {
             dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
-        } else {
-            dlog("[D] DNS Query TID did not match Answer TID: %d != %d - Skipping!\n", pi->cxt->plid, ldns_pkt_id(dns_pkt));
+        }
+        else {
+            dlog("[D] DNS Query TID did not match Answer TID: %d != %d - Skipping!\n",
+                 pi->cxt->plid, ldns_pkt_id(dns_pkt));
             ldns_pkt_free(dns_pkt);
             update_dns_stats(pi,ERROR);
             return;
@@ -147,7 +151,7 @@ void dns_parser (packetinfo *pi)
             /* No questions or answers */
             dlog("[D] DNS packet did not contain a question. Skipping!\n");
             ldns_pkt_free(dns_pkt);
-            update_dns_stats(pi,ERROR);
+            update_dns_stats(pi, ERROR);
             return;
         }
 
@@ -155,7 +159,8 @@ void dns_parser (packetinfo *pi)
         if (process_dns_answer(pi, dns_pkt) < 0) {
             dlog("[D] process_dns_answer() returned -1\n");
         }
-    } else {
+    }
+    else {
         /* We need to get the DNS TID from the Query to later match with the
          * DNS TID in the answer - to harden the implementation.
          */
@@ -183,7 +188,8 @@ void dns_parser (packetinfo *pi)
              * To implement this fully, each cxt should be include
              * the TID in its tuple, but still this will make a mess :/
              */
-        } else {
+        }
+        else {
             dlog("[D] New DNS Query\n");
         }
 
@@ -197,21 +203,13 @@ void dns_parser (packetinfo *pi)
 
         if ((pi->cxt->plid = ldns_pkt_id(dns_pkt))) {
             dlog("[D] DNS Query with TID = %d\n", pi->cxt->plid);
-        } else {
+        }
+        else {
             dlog("[E] Error getting DNS TID from Query!\n");
             ldns_pkt_free(dns_pkt);
             update_dns_stats(pi, ERROR);
             return;
         }
-
-        /* For hardening, we can extract the query and add it to the cxt
-         * and then check it later in the answer, that they match.
-         */
-        /*
-        if (update_query_cxt(pi, dns_pkt) < 0) {
-            dlog("[D] update_query_cxt() returned -1\n");
-        }
-        */
     }
 
     ldns_pkt_free(dns_pkt);
@@ -219,18 +217,18 @@ void dns_parser (packetinfo *pi)
 
 int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt)
 {
-    int            rrcount_query;
-    int            j;
-    ldns_rr_list  *dns_query_domains;
-    ldns_buffer   *dns_buff;
+    int          rrcount_query;
+    int          j;
+    ldns_rr_list *dns_query_domains;
+    ldns_buffer  *dns_buff;
 
     dns_query_domains = ldns_pkt_question(dns_pkt);
     rrcount_query     = ldns_rr_list_rr_count(dns_query_domains);
     dns_buff = ldns_buffer_new(LDNS_MIN_BUFLEN);
     dlog("[*] rrcount_query: %d\n", rrcount_query);
     
-    /* Do we ever have more than one Question?
-       If we do - are we handling it correctly ? */
+    /* Do we ever have more than one question?
+       If we do, are we handling it correctly? */
     for (j = 0; j < rrcount_query; j++) {
         ldns_rdf *rdf_data;
 
@@ -243,27 +241,27 @@ int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt)
     }
 
     ldns_buffer_free(dns_buff);
-    update_dns_stats(pi,SUCCESS);
-    return(0);
+    update_dns_stats(pi, SUCCESS);
+    return 0;
 }
 
 int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
-                             ldns_buffer *buff, ldns_pkt *dns_pkt)
+                      ldns_buffer *buff, ldns_pkt *dns_pkt)
 {
-    int             j;
-    int             dns_answer_domain_cnt;
-    uint64_t        dnshash;
-    ldns_status     status;
-    pdns_record    *pr = NULL;
-    ldns_rr_list   *dns_answer_domains;
-    unsigned char  *domain_name = 0;
+    int           j;
+    int           dns_answer_domain_cnt;
+    uint64_t      dnshash;
+    ldns_status   status;
+    pdns_record   *pr = NULL;
+    ldns_rr_list  *dns_answer_domains;
+    unsigned char *domain_name = 0;
 
     ldns_buffer_clear(buff);
     status = ldns_rdf2buffer_str(buff, rdf_data);
 
     if (status != LDNS_STATUS_OK) {
         dlog("[D] Error in ldns_rdf2buffer_str(): %d\n", status);
-        return(-1);
+        return -1;
     }
 
     dns_answer_domains    = ldns_pkt_answer(dns_pkt);
@@ -272,8 +270,9 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
     if (domain_name == NULL) {
         dlog("[D] Error in ldns_buffer2str(%p)\n", buff);
-        return(-1);
-    } else {
+        return -1;
+    }
+    else {
         dlog("[D] domain_name: %s\n", domain_name);
         dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
     }
@@ -281,8 +280,9 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
     if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) != 0) {
         uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
         dlog("[D] Error return code: %d\n", rcode);
+
         /* PROBLEM:
-         * As there is no valid ldns_rr here and we cant fake one that will
+         * As there is no valid ldns_rr here and we can't fake one that will
          * be very unique, we cant push this to the normal
          * bucket[hash->linked_list]. We should probably allocate a static
          * bucket[MAX_NXDOMAIN] to hold NXDOMAINS, and when that is full, pop
@@ -293,8 +293,8 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
          */
          if (config.dnsfe & (pdns_chk_dnsfe(rcode))) {
             ldns_rr_list  *dns_query_domains;
-            ldns_rr_class  class;
-            ldns_rr_type   type;
+            ldns_rr_class class;
+            ldns_rr_type  type;
             ldns_rr       *rr;
 
             dnshash = hash(domain_name);
@@ -313,18 +313,19 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 print_passet_err(pr, rdf_data, rr, rcode);
             }
         } else {
-            dlog("[D] Error return code %d was not processed:%d\n", pdns_chk_dnsfe(rcode),config.dnsfe);
+            dlog("[D] Error return code %d was not processed:%d\n",
+                 pdns_chk_dnsfe(rcode), config.dnsfe);
         }
         free(domain_name);
-        return(0);
+        return 0;
     }
    
     for (j = 0; j < dns_answer_domain_cnt; j++)
     {
-        int             offset = -1;
-        ldns_rr        *rr;
-        ldns_rdf       *rname;
-        unsigned char  *rdomain_name = 0;
+        int           offset = -1;
+        ldns_rr       *rr;
+        ldns_rdf      *rname;
+        unsigned char *rdomain_name = 0;
 
         rr = ldns_rr_list_rr(dns_answer_domains, j);
 
@@ -379,12 +380,13 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 break;
             default:
                 offset = -1;
-                dlog("[D] ldns_rr_get_type: %d\n",ldns_rr_get_type(rr));
+                dlog("[D] ldns_rr_get_type: %d\n", ldns_rr_get_type(rr));
                 break;
         }
 
         if (offset == -1) {
-            dlog("[D] LDNS_RR_TYPE not enabled/supported: %d\n",ldns_rr_get_type(rr));
+            dlog("[D] LDNS_RR_TYPE not enabled/supported: %d\n",
+                 ldns_rr_get_type(rr));
             //data_offset = 0;
             continue;
         }
@@ -399,7 +401,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
         ldns_buffer_clear(buff);
         ldns_rdf2buffer_str(buff, rname);
-        rdomain_name = (unsigned char *)ldns_buffer2str(buff);
+        rdomain_name = (unsigned char *) ldns_buffer2str(buff);
 
         if (rdomain_name == NULL) {
             dlog("[D] ldns_buffer2str returned: NULL\n");
@@ -414,10 +416,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             pr = get_pdns_record(dnshash, pi, domain_name);
         }
 
-        // Update the pdns record with the pdns asset
+        /* Update the pdns record with the pdns asset */
         update_pdns_record_asset(pi, pr, rr, rdomain_name);
 
-        /* If CNAME, free domain_name, cp rdomain_name to domain_name */
+        /* If CNAME, free domain_name, and cp rdomain_name to domain_name */
         if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_CNAME) {
             if (config.dnsf & DNS_CHK_CNAME) {
                 int len;
@@ -435,49 +437,53 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         free(rdomain_name);
     }
     free(domain_name);
-    return(0);
+    return 0;
 }
 
-void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
-                               ldns_rr *rr, unsigned char *rdomain_name)
+void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
+                              ldns_rr *rr, unsigned char *rdomain_name)
 {
     pdns_asset *passet = pr->passet;
     pdns_asset *head   = passet;
     ldns_rr    *prr    = NULL;
     uint32_t    len    = 0;
 
-    dlog("Searching: %u, %s, %s\n",rr->_rr_type, pr->qname, rdomain_name);
+    dlog("Searching: %u, %s, %s\n", rr->_rr_type, pr->qname, rdomain_name);
 
     while (passet != NULL)
     {
         /* If found, update */
-        dlog("Matching: %u, %s, %s\n",passet->rr->_rr_type, pr->qname, passet->answer);
-        dlog("[*] RR:%u, %u\n",passet->rr->_rr_type, rr->_rr_type);
+        dlog("Matching: %u, %s, %s\n",passet->rr->_rr_type, pr->qname,
+             passet->answer);
+        dlog("[*] RR:%u, %u\n", passet->rr->_rr_type, rr->_rr_type);
         if (passet->rr->_rr_type == rr->_rr_type) {
-          dlog("[*] rr match\n");
-          dlog("r:%s == a:%s\n",rdomain_name,passet->answer);
-          if (strcmp((const char *)rdomain_name,(const char *)passet->answer) == 0 ) {
-            dlog("[*] rname/answer match\n");
-            /* We have this, update & if its over 24h since last print - print it, then return */
-            passet->seen++;
-            passet->last_seen = pi->pheader->ts;
-            passet->cip       = pi->cxt->s_ip; // This should always be the client IP
-            passet->sip       = pi->cxt->d_ip; // This should always be the server IP
-            if (rr->_ttl > passet->rr->_ttl) {
-                passet->rr->_ttl = rr->_ttl; // Catch the highest TTL seen
+            dlog("[*] rr match\n");
+            dlog("r:%s == a:%s\n", rdomain_name, passet->answer);
+            if (strcmp((const char *)rdomain_name,
+                       (const char *)passet->answer) == 0 ) {
+                dlog("[*] rname/answer match\n");
+                /* We have this, update and if its over 24h since last print -
+                   print it, then return */
+                passet->seen++;
+                passet->last_seen = pi->pheader->ts;
+                passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
+                passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
+                if (rr->_ttl > passet->rr->_ttl) {
+                    passet->rr->_ttl = rr->_ttl;   /* Catch the highest TTL seen */
+                }
+                dlog("[*] DNS asset updated...\n");
+                if ((passet->last_seen.tv_sec -
+                     passet->last_print.tv_sec) >= config.dnsprinttime) {
+                    print_passet(passet, pr);
+                }
+                return;
             }
-            dlog("[*] DNS asset updated...\n");
-            if ((passet->last_seen.tv_sec - passet->last_print.tv_sec) >= config.dnsprinttime) {
-                print_passet(passet, pr);
-            }
-            return;
-          }
         }
         passet = passet->next;
     }
 
     /* Else, we got a new passet :) */
-    if ( passet == NULL ) {
+    if (passet == NULL) {
         passet = (pdns_asset*) calloc(1, sizeof(pdns_asset));
         dlog("[*] Allocated a new dns asset...\n");
         config.p_s.dns_assets++;
@@ -491,14 +497,16 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
         prr->_rdata_fields = rr->_rdata_fields;
         passet->seen = 1;
         passet->rr = prr;
-    } else {
+    }
+    else {
         dlog("[D] BAD\n");
     }
 
     if (head != NULL ) {
         head->prev = passet;
         passet->next = head;
-    } else {
+    }
+    else {
         passet->next = NULL;
     }
 
@@ -513,26 +521,24 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr,
     passet->answer     = calloc(1, (len + 1));
     strncpy((char *)passet->answer, (char *)rdomain_name, len);
 
-    dlog("[D] Adding: %u, %s, %s\n",passet->rr->_rr_type, pr->qname, rdomain_name);
+    dlog("[D] Adding: %u, %s, %s\n",passet->rr->_rr_type, pr->qname,
+         rdomain_name);
 
     pr->passet = passet;
 
     print_passet(passet, pr);
-
-    return;
 }
 
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
 {
     if (af == AF_INET) {
-        if (!inet_ntop
-            (AF_INET,
-         &IP4ADDR(&ip_addr),
-         dest, INET_ADDRSTRLEN + 1)) {
+        if (!inet_ntop(AF_INET, &IP4ADDR(&ip_addr), dest,
+            INET_ADDRSTRLEN + 1)) {
             dlog("[E] Something died in inet_ntop\n");
             return NULL;
         }
-    } else if (af == AF_INET6) {
+    }
+    else if (af == AF_INET6) {
         if (!inet_ntop(AF_INET6, &ip_addr, dest, INET6_ADDRSTRLEN + 1)) {
             dlog("[E] Something died in inet_ntop\n");
             return NULL;
@@ -541,7 +547,7 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
     return dest;
 }
 
-void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode)
+void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode)
 {
     FILE *fd;
     static char ip_addr_s[INET6_ADDRSTRLEN];
@@ -714,7 +720,7 @@ void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rc
     free(rr_rcode);
 }
 
-void print_passet (pdns_asset *p, pdns_record *l)
+void print_passet(pdns_asset *p, pdns_record *l)
 {
     FILE *fd;
     static char ip_addr_s[INET6_ADDRSTRLEN];
@@ -844,19 +850,23 @@ void print_passet (pdns_asset *p, pdns_record *l)
     free(rr_type);
 }
 
-pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *domain_name)
+pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
+                             unsigned char *domain_name)
 {
     pdns_record *pdnsr = dbucket[dnshash];
     pdns_record *head  = pdnsr;
-    uint32_t     len   = 0;
+    uint32_t    len    = 0;
 
     /* Search through the bucket */
-    while (pdnsr != NULL) {
-        /* If found, update & return dnsr */
-        if (strcmp((const char *)domain_name,(const char *)pdnsr->qname) == 0) { // match :)
+    while (pdnsr != NULL)
+    {
+        /* If found, update and return dnsr */
+        if (strcmp((const char *)domain_name,
+                   (const char *)pdnsr->qname) == 0) {
+            /* match :) */
             pdnsr->last_seen = pi->pheader->ts;
-            pdnsr->cip       = pi->cxt->s_ip; // This should always be the client IP
-            pdnsr->sip       = pi->cxt->d_ip; // This should always be the server IP
+            pdnsr->cip       = pi->cxt->s_ip; /* This should always be the client IP */
+            pdnsr->sip       = pi->cxt->d_ip; /* This should always be the server IP */
             return pdnsr;
         }
         pdnsr = pdnsr->next;
@@ -869,7 +879,7 @@ pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *d
         config.p_s.dns_records++;
         config.dns_records++;
     }
-    if (head != NULL ) {
+    if (head != NULL) {
         head->prev = pdnsr;
     }
     /* Populate new values */
@@ -877,8 +887,8 @@ pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *d
     pdnsr->last_seen  = pi->pheader->ts;
     pdnsr->af         = pi->cxt->af;
     pdnsr->nxflag     = 0;
-    pdnsr->cip        = pi->cxt->s_ip; // This should always be the client IP
-    pdnsr->sip        = pi->cxt->d_ip; // This should always be the server IP
+    pdnsr->cip        = pi->cxt->s_ip; /* This should always be the client IP */
+    pdnsr->sip        = pi->cxt->d_ip; /* This should always be the server IP */
     pdnsr->next       = head;
     pdnsr->prev       = NULL;
     pdnsr->passet     = NULL;
@@ -905,11 +915,13 @@ void expire_dns_records()
     {
         uint32_t iter;
         run = 1;
-        for (iter = 0; iter < DBUCKET_SIZE; iter++) {
+        for (iter = 0; iter < DBUCKET_SIZE; iter++)
+        {
             pdnsr = dbucket[iter];
             while (pdnsr != NULL)
             {
-                if (pdnsr->last_seen.tv_sec < oldest) /* Find the LRU asset timestamp */
+                if (pdnsr->last_seen.tv_sec < oldest)
+                    /* Find the LRU asset timestamp */
                     oldest = pdnsr->last_seen.tv_sec;
 
                 if (pdnsr->last_seen.tv_sec <= expire_t) {
@@ -928,7 +940,8 @@ void expire_dns_records()
                     if (pdnsr == NULL && tmp_prev == NULL ) {
                         dbucket[iter] = NULL;
                     }
-                } else {
+                }
+                else {
                     /* Search through a domain record for assets to expire */
                     expire_dns_assets(pdnsr, expire_t);
                     pdnsr = pdnsr->next;
@@ -941,7 +954,7 @@ void expire_dns_records()
          * decrease expire_t too the oldest seen asset at least
          */
         if (config.mem_limit_size > config.mem_limit_max) {
-            expire_t = (oldest + 300); // Oldest asset + 5 minutes
+            expire_t = (oldest + 300);  /* Oldest asset + 5 minutes */
             oldest = config.tstamp.tv_sec;
             run = 0;
         }
@@ -950,13 +963,14 @@ void expire_dns_records()
 
 void update_config_mem_counters()
 {
-    config.mem_limit_size = (sizeof(pdns_record) * config.dns_records) + (sizeof(pdns_asset) * config.dns_assets);
+    config.mem_limit_size = (sizeof(pdns_record) * config.dns_records) +
+                            (sizeof(pdns_asset)  * config.dns_assets);
 
     dlog("DNS and Memory stats:\n");
-    dlog("DNS Records         :       %12u\n",config.dns_records);
-    dlog("DNS Assets          :       %12u\n",config.dns_assets);
-    dlog("Current memory size :       %12lu Bytes\n",config.mem_limit_size);
-    dlog("Max memory size     :       %12lu Bytes\n",config.mem_limit_max);
+    dlog("DNS Records         :       %12u\n",        config.dns_records);
+    dlog("DNS Assets          :       %12u\n",        config.dns_assets);
+    dlog("Current memory size :       %12lu Bytes\n", config.mem_limit_size);
+    dlog("Max memory size     :       %12lu Bytes\n", config.mem_limit_max);
     dlog("------------------------------------------------\n");
 }
 
@@ -967,9 +981,11 @@ void expire_all_dns_records()
     dlog("[D] Expiring all domain records\n");
 
     uint32_t iter;
-    for (iter = 0; iter < DBUCKET_SIZE; iter++) {
+    for (iter = 0; iter < DBUCKET_SIZE; iter++)
+    {
         pdnsr = dbucket[iter];
-        while (pdnsr != NULL) {
+        while (pdnsr != NULL)
+        {
             /* Expire the record and all its assets */
             /* Remove from the hash */
             if (pdnsr->prev)
@@ -988,11 +1004,11 @@ void expire_all_dns_records()
     }
 }
 
-void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr)
+void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
 {
-    pdns_record *prev       = pdnsr->prev;       /* Older dns record */
-    pdns_record *next       = pdnsr->next;       /* Newer dns record */
-    pdns_asset  *asset      = pdnsr->passet;
+    pdns_record *prev  = pdnsr->prev;    /* Older DNS record */
+    pdns_record *next  = pdnsr->next;    /* Newer DNS record */
+    pdns_asset  *asset = pdnsr->passet;
     pdns_asset  *tmp_asset;
  
     dlog("[D] Deleting domain record: %s\n", pdnsr->qname);
@@ -1004,7 +1020,8 @@ void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr)
          * has been updated since it last was printed */
         if (asset->last_seen.tv_sec > asset->last_print.tv_sec) {
             print_passet(asset, pdnsr);
-        } else if (asset->last_seen.tv_sec == asset->last_print.tv_sec) {
+        }
+        else if (asset->last_seen.tv_sec == asset->last_print.tv_sec) {
             if (asset->last_seen.tv_usec > asset->last_print.tv_usec) {
                 print_passet(asset, pdnsr);
             }
@@ -1020,10 +1037,12 @@ void delete_dns_record (pdns_record * pdnsr, pdns_record ** bucket_ptr)
         /* Not only entry */
         if (next)
             next->prev = NULL;
-    } else if (next == NULL) {
+    }
+    else if (next == NULL) {
         /* At end of list! */
         prev->next = NULL;
-    } else {
+    }
+    else {
         /* A node */
         prev->next = next;
         next->prev = prev;
@@ -1049,7 +1068,8 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
                has been updated since it last was printed */
             if (passet->last_seen.tv_sec > passet->last_print.tv_sec) {
                 print_passet(passet, pdnsr);
-            } else if (passet->last_seen.tv_sec == passet->last_print.tv_sec) {
+            }
+            else if (passet->last_seen.tv_sec == passet->last_print.tv_sec) {
                 if (passet->last_seen.tv_usec > passet->last_print.tv_usec) {
                     print_passet(passet, pdnsr);
                 }
@@ -1065,11 +1085,11 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
 
             /* Delete the asset */
             delete_dns_asset(&pdnsr->passet, tmp);
-        } else {
+        }
+        else {
             passet = passet->next;
         }
     }
-    return;
 }
 
 void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
@@ -1079,7 +1099,7 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
     if (passet == NULL)
         return;
 
-    pdns_asset *tmp_pa = NULL;
+    pdns_asset *tmp_pa  = NULL;
     pdns_asset *next_pa = NULL;
     pdns_asset *prev_pa = NULL;
 
@@ -1093,10 +1113,12 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
         /* Not only entry */
         if (next_pa)
             next_pa->prev = NULL;
-    } else if (next_pa == NULL) {
+    }
+    else if (next_pa == NULL) {
         /* At end of list! */
         prev_pa->next = NULL;
-    } else {
+    }
+    else {
         /* A node */
         prev_pa->next = next_pa;
         next_pa->prev = prev_pa;
@@ -1113,7 +1135,7 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
 
 void update_dns_stats(packetinfo *pi, uint8_t code)
 {
-    if ( pi->af == AF_INET ) {
+    if (pi->af == AF_INET) {
         switch (pi->ip4->ip_p) {
             case IP_PROTO_TCP:
                 config.p_s.ip4_dns_tcp++;
@@ -1132,7 +1154,8 @@ void update_dns_stats(packetinfo *pi, uint8_t code)
             default:
                break;
         }
-    } else if (pi->af == AF_INET6) {
+    }
+    else if (pi->af == AF_INET6) {
         switch (pi->ip6->next) {
             case IP_PROTO_TCP:
                  config.p_s.ip6_dns_tcp++;
@@ -1251,37 +1274,37 @@ void parse_dns_flags (char *args)
                ok++;
                break;
 
-            case 'o':
+            case 'o': /* NOTIMPL */
                config.dnsfe |= DNS_SE_CHK_NOTIMPL;
                dlog("[D] Enabling flag: DNS_SE_CHK_NOTIMPL\n");
                ok++;
                break;
-            case 'r':
+            case 'r': /* REFUSED */
                config.dnsfe |= DNS_SE_CHK_REFUSED;
                dlog("[D] Enabling flag: DNS_SE_CHK_REFUSED\n");
                ok++;
                break;
-            case 'y':
+            case 'y': /* YXDOMAIN */
                config.dnsfe |= DNS_SE_CHK_YXDOMAIN;
                dlog("[D] Enabling flag: DNS_SE_CHK_YXDOMAIN\n");
                ok++;
                break;
-            case 'e':
+            case 'e': /* YXRRSET */
                config.dnsfe |= DNS_SE_CHK_YXRRSET;
                dlog("[D] Enabling flag: DNS_SE_CHK_YXRRSET\n");
                ok++;
                break;
-            case 't':
+            case 't': /* NXRRSET */
                config.dnsfe |= DNS_SE_CHK_NXRRSET;
                dlog("[D] Enabling flag: DNS_SE_CHK_NXRRSET\n");
                ok++;
                break;
-            case 'a':
+            case 'a': /* NOTAUTH */
                config.dnsfe |= DNS_SE_CHK_NOTAUTH;
                dlog("[D] Enabling flag: DNS_SE_CHK_NOTAUTH\n");
                ok++;
                break;
-            case 'z':
+            case 'z': /* NOTZONE */
                config.dnsfe |= DNS_SE_CHK_NOTZONE;
                dlog("[D] Enabling flag: DNS_SE_CHK_NOTZONE\n");
                ok++;
@@ -1337,7 +1360,7 @@ uint16_t pdns_chk_dnsfe(uint16_t rcode)
             retcode = DNS_SE_CHK_NOTZONE;
             break;
         default:
-            retcode = 0x0000; // UNKNOWN-ERROR
+            retcode = 0x0000;  /* UNKNOWN-ERROR */
             break;
     }
     return retcode;
