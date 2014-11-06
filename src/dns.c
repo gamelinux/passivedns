@@ -682,16 +682,16 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
 #ifdef HAVE_JSON
     if (config.use_json_nxd) {
         jdata = json_object();
-        json_object_set_new(jdata, "timestamp_sec",  json_integer(l->last_seen.tv_sec));
-        json_object_set_new(jdata, "timestamp_msec", json_integer(l->last_seen.tv_usec));
-        json_object_set_new(jdata, "client_ip",      json_string(ip_addr_c));
-        json_object_set_new(jdata, "server_ip",      json_string(ip_addr_s));
-        json_object_set_new(jdata, "rr_class",       json_string(rr_class));
-        json_object_set_new(jdata, "query",          json_string(l->qname));
-        json_object_set_new(jdata, "rr_type",        json_string(rr_type));
-        json_object_set_new(jdata, "answer",         json_string(rr_rcode));
-        json_object_set_new(jdata, "ttl",            json_integer(PASSET_ERR_TTL));
-        json_object_set_new(jdata, "count",          json_integer(PASSET_ERR_COUNT));
+        json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(l->last_seen.tv_sec));
+        json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(l->last_seen.tv_usec));
+        json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
+        json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
+        json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
+        json_object_set_new(jdata, JSON_QUERY,        json_string(l->qname));
+        json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
+        json_object_set_new(jdata, JSON_ANSWER,       json_string(rr_rcode));
+        json_object_set_new(jdata, JSON_TTL,          json_integer(PASSET_ERR_TTL));
+        json_object_set_new(jdata, JSON_COUNT,        json_integer(PASSET_ERR_COUNT));
 
         output = json_dumps(jdata, data_flags);
         if (output == NULL)
@@ -813,16 +813,16 @@ void print_passet(pdns_asset *p, pdns_record *l)
 #ifdef HAVE_JSON
     if (config.use_json) {
         jdata = json_object();
-        json_object_set_new(jdata, "timestamp_sec",  json_integer(p->last_seen.tv_sec));
-        json_object_set_new(jdata, "timestamp_msec", json_integer(p->last_seen.tv_usec));
-        json_object_set_new(jdata, "client_ip",      json_string(ip_addr_c));
-        json_object_set_new(jdata, "server_ip",      json_string(ip_addr_s));
-        json_object_set_new(jdata, "rr_class",       json_string(rr_class));
-        json_object_set_new(jdata, "query",          json_string(l->qname));
-        json_object_set_new(jdata, "rr_type",        json_string(rr_type));
-        json_object_set_new(jdata, "answer",         json_string(p->answer));
-        json_object_set_new(jdata, "ttl",            json_integer(p->rr->_ttl));
-        json_object_set_new(jdata, "count",          json_integer(p->seen));
+        json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(p->last_seen.tv_sec));
+        json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(p->last_seen.tv_usec));
+        json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
+        json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
+        json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
+        json_object_set_new(jdata, JSON_QUERY,        json_string(l->qname));
+        json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
+        json_object_set_new(jdata, JSON_ANSWER,       json_string(p->answer));
+        json_object_set_new(jdata, JSON_TTL,          json_integer(p->rr->_ttl));
+        json_object_set_new(jdata, JSON_COUNT,        json_integer(p->seen));
 
         output = json_dumps(jdata, data_flags);
         if (output == NULL)

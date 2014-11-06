@@ -58,6 +58,18 @@
 #define PASSET_ERR_TTL     0
 #define PASSET_ERR_COUNT   1
 
+/* JSON fields used when printing PDNS */
+#define JSON_TIMESTAMP_S   "timestamp_s"
+#define JSON_TIMESTAMP_MS  "timestamp_ms"
+#define JSON_CLIENT        "client"
+#define JSON_SERVER        "server"
+#define JSON_CLASS         "class"
+#define JSON_QUERY         "query"
+#define JSON_TYPE          "type"
+#define JSON_ANSWER        "answer"
+#define JSON_TTL           "ttl"
+#define JSON_COUNT         "count"
+
 /* To avoid spaming the logfile with duplicate dns info 
  * we only print a dns record one time each 24H. This way
  * you will get a last seen timestamp update once a day
