@@ -306,7 +306,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             rr    = ldns_rr_list_rr(dns_query_domains, 0);
             if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
                 /* Print the SRC Error record */
-                print_passet_err(pr, rdf_data, rr, rcode);
+                print_passet(pr, NULL, rr, rdf_data, rcode);
             }
         } else {
             dlog("[D] Error return code %d was not processed:%d\n",
@@ -470,7 +470,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 dlog("[*] DNS asset updated...\n");
                 if ((passet->last_seen.tv_sec -
                      passet->last_print.tv_sec) >= config.dnsprinttime) {
-                    print_passet(passet, pr);
+                    print_passet(pr, passet, passet->rr, NULL, 0);
                 }
                 return;
             }
@@ -522,7 +522,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
 
     pr->passet = passet;
 
-    print_passet(passet, pr);
+    print_passet(pr, passet, passet->rr, NULL, 0);
 }
 
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
@@ -543,7 +543,8 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
     return dest;
 }
 
-void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode)
+void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
+                  ldns_rdf *lname, uint16_t rcode)
 {
     FILE *fd;
     static char ip_addr_s[INET6_ADDRSTRLEN];
@@ -552,9 +553,10 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
     char *rr_class;
     char *rr_type;
     char *rr_rcode;
+    uint8_t is_err_record = 0;
 
 #ifdef HAVE_JSON
-    char   *output;
+    char *output;
     json_t *jdata;
     size_t data_flags = 0;
 
@@ -562,15 +564,32 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
     data_flags |= JSON_PRESERVE_ORDER;
 #endif /* HAVE_JSON */
 
-    if (config.logfile_all)
+    /* If pdns_asset is not defined, then this is a NXD record */
+    if (p == NULL) {
+        is_err_record = 1;
+    }
+
+    /* Use the correct file descriptor */
+    if (config.logfile_all) {
         fd = config.logfile_fd;
-    else
+    }
+    else if (is_err_record == 1) {
         fd = config.logfile_nxd_fd;
+    }
+    else {
+        fd = config.logfile_fd;
+    }
 
     if (fd == NULL) return;
 
-    u_ntop(l->sip, l->af, ip_addr_s);
-    u_ntop(l->cip, l->af, ip_addr_c);
+    if (is_err_record == 1) {
+        u_ntop(l->sip, l->af, ip_addr_s);
+        u_ntop(l->cip, l->af, ip_addr_c);
+    }
+    else {
+        u_ntop(p->sip, p->af, ip_addr_s);
+        u_ntop(p->cip, p->af, ip_addr_c);
+    }
 
     rr_class = malloc(10);
     rr_type  = malloc(10);
@@ -595,8 +614,8 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
         default:
             snprintf(rr_class, 10, "%d", ldns_rr_get_class(rr));
             break;
-    }    
-    
+    }
+
     switch (ldns_rr_get_type(rr)) {
         case LDNS_RR_TYPE_PTR:
             snprintf(rr_type, 10, "PTR");
@@ -635,48 +654,56 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
             snprintf(rr_type, 10, "MX");
             break;
         default:
-            snprintf(rr_type, 10, "%d", ldns_rdf_get_type(lname));
+            if (is_err_record == 1) {
+                snprintf(rr_type, 10, "%d", ldns_rdf_get_type(lname));
+            }
+            else {
+                snprintf(rr_type, 10, "%d", p->rr->_rr_type);
+            }
             break;
     }
 
-    switch (rcode) {
-        case 1:
-            snprintf(rr_rcode, 20, "FORMERR");
-            break;
-        case 2:
-            snprintf(rr_rcode, 20, "SERVFAIL");
-            break;
-        case 3:
-            snprintf(rr_rcode, 20, "NXDOMAIN");
-            break;
-        case 4:
-            snprintf(rr_rcode, 20, "NOTIMPL");
-            break;
-        case 5:
-            snprintf(rr_rcode, 20, "REFUSED");
-            break;
-        case 6:
-            snprintf(rr_rcode, 20, "YXDOMAIN");
-            break;
-        case 7:
-            snprintf(rr_rcode, 20, "YXRRSET");
-            break;
-        case 8:
-            snprintf(rr_rcode, 20, "NXRRSET");
-            break;
-        case 9:
-            snprintf(rr_rcode, 20, "NOTAUTH");
-            break;
-        case 10:
-            snprintf(rr_rcode, 20, "NOTZONE");
-            break;
-        default:
-            snprintf(rr_rcode, 20, "UNKNOWN-ERROR-%d", rcode);
-            break;
+    if (is_err_record == 1) {
+        switch (rcode) {
+            case 1:
+                snprintf(rr_rcode, 20, "FORMERR");
+                break;
+            case 2:
+                snprintf(rr_rcode, 20, "SERVFAIL");
+                break;
+            case 3:
+                snprintf(rr_rcode, 20, "NXDOMAIN");
+                break;
+            case 4:
+                snprintf(rr_rcode, 20, "NOTIMPL");
+                break;
+            case 5:
+                snprintf(rr_rcode, 20, "REFUSED");
+                break;
+            case 6:
+                snprintf(rr_rcode, 20, "YXDOMAIN");
+                break;
+            case 7:
+                snprintf(rr_rcode, 20, "YXRRSET");
+                break;
+            case 8:
+                snprintf(rr_rcode, 20, "NXRRSET");
+                break;
+            case 9:
+                snprintf(rr_rcode, 20, "NOTAUTH");
+                break;
+            case 10:
+                snprintf(rr_rcode, 20, "NOTZONE");
+                break;
+            default:
+                snprintf(rr_rcode, 20, "UNKNOWN-ERROR-%d", rcode);
+                break;
+        }
     }
 
 #ifdef HAVE_JSON
-    if (config.use_json_nxd) {
+    if ((is_err_record == 1 && config.use_json_nxd) ||
+        (is_err_record == 0 && config.use_json)) {
         jdata = json_object();
         json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(l->last_seen.tv_sec));
         json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(l->last_seen.tv_usec));
@@ -685,9 +712,17 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
         json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
         json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
         json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
-        json_object_set_new(jdata, JSON_ANSWER,       json_string(rr_rcode));
-        json_object_set_new(jdata, JSON_TTL,          json_integer(PASSET_ERR_TTL));
-        json_object_set_new(jdata, JSON_COUNT,        json_integer(PASSET_ERR_COUNT));
+
+        if (is_err_record == 1) {
+            json_object_set_new(jdata, JSON_ANSWER,   json_string(rr_rcode));
+            json_object_set_new(jdata, JSON_TTL,      json_integer(PASSET_ERR_TTL));
+            json_object_set_new(jdata, JSON_COUNT,    json_integer(PASSET_ERR_COUNT));
+        }
+        else {
+            json_object_set_new(jdata, JSON_ANSWER,   json_string((const char *)p->answer));
+            json_object_set_new(jdata, JSON_TTL,      json_integer(p->rr->_ttl));
+            json_object_set_new(jdata, JSON_COUNT,    json_integer(p->seen));
+        }
 
         output = json_dumps(jdata, data_flags);
         if (output == NULL)
@@ -698,152 +733,37 @@ void print_passet_err(pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rco
 
     } else {
 #endif /* HAVE_JSON */
-        fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%d\n",
-                    l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
-                    ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
-                    rr_rcode, d, PASSET_ERR_TTL, d, PASSET_ERR_COUNT);
+        if (is_err_record == 1) {
+            fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%d\n",
+                        l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
+                        ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
+                        rr_rcode, d, PASSET_ERR_TTL, d, PASSET_ERR_COUNT);
+        }
+        else {
+            fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu\n",
+                        p->last_seen.tv_sec, p->last_seen.tv_usec, d, ip_addr_c, d,
+                        ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d, p->answer,
+                        d, p->rr->_ttl, d, p->seen);
+        }
 #ifdef HAVE_JSON
     }
 #endif /* HAVE_JSON */
 
     fflush(fd);
 
-    l->last_print = l->last_seen;
-    l->seen = 0;
+    if (is_err_record == 1) {
+        l->last_print = l->last_seen;
+        l->seen = 0;
+    }
+    else {
+        p->last_print = p->last_seen;
+        p->seen = 0;
+    }
 
     free(rr_class);
     free(rr_type);
     free(rr_rcode);
-}
 
-void print_passet(pdns_asset *p, pdns_record *l)
-{
-    FILE *fd;
-    static char ip_addr_s[INET6_ADDRSTRLEN];
-    static char ip_addr_c[INET6_ADDRSTRLEN];
-    char *d = config.log_delimiter;
-    char *rr_class;
-    char *rr_type;
-
-#ifdef HAVE_JSON
-    char   *output;
-    json_t *jdata;
-    size_t data_flags = 0;
-
-    /* Print in the same order as inserted */
-    data_flags |= JSON_PRESERVE_ORDER;
-#endif /* HAVE_JSON */
-
-    fd = config.logfile_fd;
-    if (fd == NULL) return;
-
-    u_ntop(p->sip, p->af, ip_addr_s);
-    u_ntop(p->cip, p->af, ip_addr_c);
-
-    rr_class = malloc(10);
-    rr_type  = malloc(10);
-
-    switch (ldns_rr_get_class(p->rr)) {
-        case LDNS_RR_CLASS_IN:
-            snprintf(rr_class, 10, "IN");
-            break;
-        case LDNS_RR_CLASS_CH:
-            snprintf(rr_class, 10, "CH");
-            break;
-        case LDNS_RR_CLASS_HS:
-            snprintf(rr_class, 10, "HS");
-            break;
-        case LDNS_RR_CLASS_NONE:
-            snprintf(rr_class, 10, "NONE");
-            break;
-        case LDNS_RR_CLASS_ANY:
-            snprintf(rr_class, 10, "ANY");
-            break;
-        default:
-            snprintf(rr_class, 10, "%d", p->rr->_rr_class);
-            break;
-    }
-
-    switch (ldns_rr_get_type(p->rr)) {
-        case LDNS_RR_TYPE_PTR:
-            snprintf(rr_type, 10, "PTR");
-            break;
-        case LDNS_RR_TYPE_A:
-            snprintf(rr_type, 10, "A");
-            break;
-        case LDNS_RR_TYPE_AAAA:
-            snprintf(rr_type, 10, "AAAA");
-            break;
-        case LDNS_RR_TYPE_CNAME:
-            snprintf(rr_type, 10, "CNAME");
-            break;
-        case LDNS_RR_TYPE_DNAME:
-            snprintf(rr_type, 10, "DNAME");
-            break;
-        case LDNS_RR_TYPE_NAPTR:
-            snprintf(rr_type, 10, "NAPTR");
-            break;
-        case LDNS_RR_TYPE_RP:
-            snprintf(rr_type, 10, "RP");
-            break;
-        case LDNS_RR_TYPE_SRV:
-            snprintf(rr_type, 10, "SRV");
-            break;
-        case LDNS_RR_TYPE_TXT:
-            snprintf(rr_type, 10, "TXT");
-            break;
-        case LDNS_RR_TYPE_SOA:
-            snprintf(rr_type, 10, "SOA");
-            break;
-        case LDNS_RR_TYPE_NS:
-            snprintf(rr_type, 10, "NS");
-            break;
-        case LDNS_RR_TYPE_MX:
-            snprintf(rr_type, 10, "MX");
-            break;
-        default:
-            snprintf(rr_type, 10, "%d", p->rr->_rr_type);
-            break;
-    }
-
-#ifdef HAVE_JSON
-    if (config.use_json) {
-        jdata = json_object();
-        json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(p->last_seen.tv_sec));
-        json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(p->last_seen.tv_usec));
-        json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
-        json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
-        json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
-        json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
-        json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
-        json_object_set_new(jdata, JSON_ANSWER,       json_string((const char *)p->answer));
-        json_object_set_new(jdata, JSON_TTL,          json_integer(p->rr->_ttl));
-        json_object_set_new(jdata, JSON_COUNT,        json_integer(p->seen));
-
-        output = json_dumps(jdata, data_flags);
-        if (output == NULL)
-            return;
-
-        fprintf(fd, "%s\n", output);
-        free(output);
-
-    } else {
-#endif /* HAVE_JSON */
-        fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu\n",
-                p->last_seen.tv_sec, p->last_seen.tv_usec, d, ip_addr_c, d,
-                ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d, p->answer,
-                d, p->rr->_ttl, d, p->seen);
-#ifdef HAVE_JSON
-    }
-#endif /* HAVE_JSON */
-
-    fflush(fd);
-
-    p->last_print = p->last_seen;
-    p->seen = 0;
-
-    free(rr_class);
-    free(rr_type);
 }
 
 pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
@@ -1015,11 +935,11 @@ void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
         /* Print the asset before we expires if it
          * has been updated since it last was printed */
         if (asset->last_seen.tv_sec > asset->last_print.tv_sec) {
-            print_passet(asset, pdnsr);
+            print_passet(pdnsr, asset, asset->rr, NULL, 0);
         }
         else if (asset->last_seen.tv_sec == asset->last_print.tv_sec) {
             if (asset->last_seen.tv_usec > asset->last_print.tv_usec) {
-                print_passet(asset, pdnsr);
+                print_passet(pdnsr, asset, asset->rr, NULL, 0);
             }
         }
         tmp_asset = asset;
@@ -1063,11 +983,11 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
             /* Print the asset before we expires if it
                has been updated since it last was printed */
             if (passet->last_seen.tv_sec > passet->last_print.tv_sec) {
-                print_passet(passet, pdnsr);
+                print_passet(pdnsr, passet, passet->rr, NULL, 0);
             }
             else if (passet->last_seen.tv_sec == passet->last_print.tv_sec) {
                 if (passet->last_seen.tv_usec > passet->last_print.tv_usec) {
-                    print_passet(passet, pdnsr);
+                    print_passet(pdnsr, passet, passet->rr, NULL, 0);
                 }
             }
             /* Remove the asset from the linked list */

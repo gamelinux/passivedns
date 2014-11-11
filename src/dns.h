@@ -134,8 +134,7 @@ pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *d
 const char *u_ntop (const struct in6_addr ip_addr, int af, char *dest);
 void dns_parser (packetinfo *pi);
 void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr, unsigned char *rdomain_name);
-void print_passet (pdns_asset *p, pdns_record *l);
-void print_passet_err (pdns_record *l, ldns_rdf *lname, ldns_rr *rr, uint16_t rcode);
+void print_passet (pdns_record *l, pdns_asset *p, ldns_rr *rr, ldns_rdf *lname, uint16_t rcode);
 void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
 void expire_dns_records();
 void expire_all_dns_records();
