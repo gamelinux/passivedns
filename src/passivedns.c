@@ -655,7 +655,8 @@ void end_sessions()
                 if (cxt == NULL && tmp_pre == NULL) {
                     bucket[iter] = NULL;
                 }
-            } else {
+            }
+            else {
                 cxt = cxt->next;
             }
         }
@@ -745,16 +746,21 @@ void sig_alarm_handler()
 
 void reopen_log_files()
 {
-    if (config.logfile_fd != NULL && config.logfile_fd != stdout)
-        fclose(config.logfile_fd);
-    config.logfile_fd = fopen(config.logfile, "a");
+    if (config.output_log) {
+        if (config.logfile_fd != NULL && config.logfile_fd != stdout)
+            fclose(config.logfile_fd);
+        config.logfile_fd = fopen(config.logfile, "a");
+    }
 
-    if (config.logfile_all) {
-        /* Do nothing, since both logs use the same file */
-    } else {
-        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
-            fclose(config.logfile_nxd_fd);
-        config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+    if (config.output_log_nxd) {
+        if (config.logfile_all) {
+            /* Do nothing, since both logs use the same file */
+        }
+        else {
+            if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
+                fclose(config.logfile_nxd_fd);
+            config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+        }
     }
 }
 
@@ -1079,6 +1085,8 @@ void usage()
 #endif /* HAVE_PFRING */
     olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
     olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
+    olog(" -y              Log to syslog (uses local7 syslog facility).\n");
+    olog(" -Y              Log NXDOMAIN to syslog.\n");
     olog(" -d <delimiter>  Delimiter between fields in log file (default: ||).\n");
 #ifdef HAVE_JSON
     olog(" -j              Use JSON as output in log file.\n");
@@ -1145,6 +1153,10 @@ int main(int argc, char *argv[])
     config.logfile = "/var/log/passivedns.log";
     config.logfile_nxd = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
+    config.output_log = 0;
+    config.output_log_nxd = 0;
+    config.output_syslog = 0;
+    config.output_syslog_nxd = 0;
     /* Default memory limit: 256 MB */
     config.mem_limit_max = (256 * 1024 * 1024);
     config.dnsprinttime = DNSPRINTTIME;
@@ -1175,7 +1187,7 @@ int main(int argc, char *argv[])
     signal(SIGHUP,  reopen_log_files);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:c:njJl:L:d:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1186,10 +1198,18 @@ int main(int argc, char *argv[])
             config.pcap_file = strdup(optarg);
             break;
         case 'L':
+            config.output_log_nxd = 1;
             config.logfile_nxd = strdup(optarg);
             break;
         case 'l':
+            config.output_log = 1;
             config.logfile = strdup(optarg);
+            break;
+        case 'y':
+            config.output_syslog = 1;
+            break;
+        case 'Y':
+            config.output_syslog_nxd = 1;
             break;
 #ifdef HAVE_JSON
         case 'j':
@@ -1259,27 +1279,43 @@ int main(int argc, char *argv[])
             elog("Did not recognize argument '%c'\n", ch);
     }
 
+    /* Fall back to log file if syslog is not used */
+    if (config.output_syslog == 0) {
+        config.output_log = 1;
+    }
+
+    if (config.output_syslog_nxd == 0) {
+        config.output_log_nxd = 1;
+    }
+
     /* Open log file */
-    if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
-        config.logfile_fd = stdout;
-    } else {
-        config.logfile_fd = fopen(config.logfile, "a");
-        if (config.logfile_fd == NULL) {
-            olog("[!] Error opening log file %s\n", config.logfile);
-            exit(1);
+    if (config.output_log) {
+        if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
+            config.logfile_fd = stdout;
+        }
+        else {
+            config.logfile_fd = fopen(config.logfile, "a");
+            if (config.logfile_fd == NULL) {
+                olog("[!] Error opening log file %s\n", config.logfile);
+                exit(1);
+            }
         }
     }
 
     /* Open NXDOMAIN log file */
-    if (strcmp(config.logfile, config.logfile_nxd) == 0) {
-        config.logfile_all = 1;
-    } else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
-        config.logfile_nxd_fd = stdout;
-    } else {
-        config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
-        if (config.logfile_nxd_fd == NULL) {
-            olog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
-            exit(1);
+    if (config.output_log_nxd) {
+        if (config.output_log && strcmp(config.logfile, config.logfile_nxd) == 0) {
+            config.logfile_all = 1;
+        }
+        else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
+            config.logfile_nxd_fd = stdout;
+        }
+        else {
+            config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+            if (config.logfile_nxd_fd == NULL) {
+                olog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
+                exit(1);
+            }
         }
     }
 

@@ -58,6 +58,9 @@
 #define PASSET_ERR_TTL     0
 #define PASSET_ERR_COUNT   1
 
+/* Syslog */
+#define PDNS_IDENT         "passivedns"
+
 /* JSON fields used when printing PDNS */
 #define JSON_TIMESTAMP_S   "timestamp_s"
 #define JSON_TIMESTAMP_MS  "timestamp_ms"

@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <syslog.h>
 #include <pcap.h>
 #include "passivedns.h"
 #include "dns.h"
@@ -553,15 +554,18 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     char *rr_class;
     char *rr_type;
     char *rr_rcode;
+    char *output;
     uint8_t is_err_record = 0;
 
 #ifdef HAVE_JSON
-    char *output;
     json_t *jdata;
     size_t data_flags = 0;
 
     /* Print in the same order as inserted */
     data_flags |= JSON_PRESERVE_ORDER;
+
+    /* No whitespace between fields */
+    data_flags |= JSON_COMPACT;
 #endif /* HAVE_JSON */
 
     /* If pdns_asset is not defined, then this is a NXD record */
@@ -570,19 +574,22 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     /* Use the correct file descriptor */
-    if (config.logfile_all) {
-        fd = config.logfile_fd;
+    if (is_err_record && config.output_log_nxd) {
+        if (config.logfile_all) {
+            fd = config.logfile_fd;
+        }
+        else {
+            fd = config.logfile_nxd_fd;
+        }
+        if (fd == NULL) return;
     }
-    else if (is_err_record == 1) {
-        fd = config.logfile_nxd_fd;
-    }
-    else {
+    else if (!is_err_record && config.output_log) {
         fd = config.logfile_fd;
+        if (fd == NULL) return;
     }
 
-    if (fd == NULL) return;
 
-    if (is_err_record == 1) {
+    if (is_err_record) {
         u_ntop(l->sip, l->af, ip_addr_s);
         u_ntop(l->cip, l->af, ip_addr_c);
     }
@@ -594,6 +601,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     rr_class = malloc(10);
     rr_type  = malloc(10);
     rr_rcode = malloc(20);
+    output   = malloc(1000);
 
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
@@ -654,7 +662,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             snprintf(rr_type, 10, "MX");
             break;
         default:
-            if (is_err_record == 1) {
+            if (is_err_record) {
                 snprintf(rr_type, 10, "%d", ldns_rdf_get_type(lname));
             }
             else {
@@ -663,7 +671,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             break;
     }
 
-    if (is_err_record == 1) {
+    if (is_err_record) {
         switch (rcode) {
             case 1:
                 snprintf(rr_rcode, 20, "FORMERR");
@@ -702,8 +710,8 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
 #ifdef HAVE_JSON
-    if ((is_err_record == 1 && config.use_json_nxd) ||
-        (is_err_record == 0 && config.use_json)) {
+    if ((is_err_record && config.use_json_nxd) ||
+        (!is_err_record && config.use_json)) {
         jdata = json_object();
         json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(l->last_seen.tv_sec));
         json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(l->last_seen.tv_usec));
@@ -713,7 +721,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
         json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
 
-        if (is_err_record == 1) {
+        if (is_err_record) {
             json_object_set_new(jdata, JSON_ANSWER,   json_string(rr_rcode));
             json_object_set_new(jdata, JSON_TTL,      json_integer(PASSET_ERR_TTL));
             json_object_set_new(jdata, JSON_COUNT,    json_integer(PASSET_ERR_COUNT));
@@ -727,20 +735,17 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         output = json_dumps(jdata, data_flags);
         if (output == NULL)
             return;
-
-        fprintf(fd, "%s\n", output);
-        free(output);
-
-    } else {
+    }
+    else {
 #endif /* HAVE_JSON */
-        if (is_err_record == 1) {
-            fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%d\n",
+        if (is_err_record) {
+            snprintf(output, 1000, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%d",
                         l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
                         ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
                         rr_rcode, d, PASSET_ERR_TTL, d, PASSET_ERR_COUNT);
         }
         else {
-            fprintf(fd, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu\n",
+            snprintf(output, 1000, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu",
                         p->last_seen.tv_sec, p->last_seen.tv_usec, d, ip_addr_c, d,
                         ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d, p->answer,
                         d, p->rr->_ttl, d, p->seen);
@@ -749,9 +754,22 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 #endif /* HAVE_JSON */
 
-    fflush(fd);
+    /* Print to log file */
+    if ((is_err_record && config.output_log_nxd) ||
+        (!is_err_record && config.output_log)) {
+        fprintf(fd, "%s\n", output);
+        fflush(fd);
+    }
 
-    if (is_err_record == 1) {
+    /* Print to syslog */
+    if ((is_err_record && config.output_syslog_nxd) ||
+        (!is_err_record && config.output_syslog)) {
+        openlog(PDNS_IDENT, LOG_NDELAY, LOG_LOCAL7);
+        syslog(LOG_INFO, "%s", output);
+        closelog();
+    }
+
+    if (is_err_record) {
         l->last_print = l->last_seen;
         l->seen = 0;
     }
@@ -763,6 +781,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     free(rr_class);
     free(rr_type);
     free(rr_rcode);
+    free(output);
 
 }
 
