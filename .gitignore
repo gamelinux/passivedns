@@ -5,6 +5,7 @@ src/passivedns
 *.o
 
 # Autotools files
+*.swp
 aclocal.m4
 autom4te.cache/
 config.guess
@@ -12,12 +13,14 @@ config.log
 config.sub
 config.status
 configure
+depcomp
 install-sh
 missing
 Makefile
 Makefile.in
 src/config.h
 src/config.h.in
+src/.deps/
 src/Makefile
 src/Makefile.in
 src/stamp-h1
