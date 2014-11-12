@@ -15,7 +15,7 @@ AC_ARG_ENABLE(debug,
     AS_HELP_STRING([--enable-debug], [Enable debug output]))
 
 AS_IF([test "x$enable_debug" = "xyes"], [
-    CPPFLAGS="${CFLAGS} -Wall -g -DDEBUG"
+    CPPFLAGS="${CPPFLAGS} -Wall -g -DDEBUG"
 ])
 
 # Checks for libpcap.
