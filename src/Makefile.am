@@ -12,9 +12,6 @@ all: $(bin_PROGRAMS)
 passivedns: $(OBJECTS)
 	gcc -o passivedns $(OBJECTS) $(LDFLAGS)
 
-static: $(OBJECTS)
-	gcc -static -o passivedns $(OBJECTS) $(LDFLAGS) -lc -lnsl -lcrypto -lz
-
 clean:
 	-rm -v passivedns *.o 2>/dev/null || true
 
