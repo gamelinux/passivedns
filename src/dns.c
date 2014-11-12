@@ -547,7 +547,7 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
 void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                   ldns_rdf *lname, uint16_t rcode)
 {
-    FILE *fd;
+    FILE *fd = NULL;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
     char *d = config.log_delimiter;
@@ -755,8 +755,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 #endif /* HAVE_JSON */
 
     /* Print to log file */
-    if ((is_err_record && config.output_log_nxd) ||
-        (!is_err_record && config.output_log)) {
+    if (fd) {
         fprintf(fd, "%s\n", output);
         fflush(fd);
     }
