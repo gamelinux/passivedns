@@ -10,6 +10,14 @@ AC_CONFIG_HEADERS([src/config.h])
 # Checks for programs.
 AC_PROG_CC
 
+# Enable debug output.
+AC_ARG_ENABLE(debug,
+    AS_HELP_STRING([--enable-debug], [Enable debug output]))
+
+AS_IF([test "x$enable_debug" = "xyes"], [
+    CPPFLAGS="${CFLAGS} -Wall -g -DDEBUG"
+])
+
 # Checks for libpcap.
 AC_ARG_WITH(libpcap_includes,
     [  --with-libpcap-includes=DIR   libpcap include directory],
