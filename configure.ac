@@ -18,6 +18,14 @@ AS_IF([test "x$enable_debug" = "xyes"], [
     CPPFLAGS="${CPPFLAGS} -Wall -g -DDEBUG"
 ])
 
+# Enable gcc profile info.
+AC_ARG_ENABLE(gccprofile,
+    AS_HELP_STRING([--enable-gccprofile], [Enable gcc profile info (set -pg flag)]))
+
+AS_IF([test "x$enable_gccprofile" = "xyes"], [
+    CPPFLAGS="${CPPFLAGS} -g -pg"
+])
+
 # Checks for libpcap.
 AC_ARG_WITH(libpcap_includes,
     [  --with-libpcap-includes=DIR   libpcap include directory],
