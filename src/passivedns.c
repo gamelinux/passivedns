@@ -1040,16 +1040,7 @@ void game_over()
 
 void free_config()
 {
-    if (config.cfilter.bf_insns != NULL) free (config.cfilter.bf_insns);
-    /* Grr - no nice way to tell if the settings comes from configfile or not :/ */
-    //if (config.pidfile != NULL) free(config.pidfile);
-    if (config.user_name != NULL) free(config.user_name);
-    if (config.group_name != NULL) free(config.group_name);
-    if (config.chroot_dir != NULL) free(config.chroot_dir);
-    //if (config.bpff != NULL) free(config.bpff);
-    //if (config.dev != NULL) free(config.dev);
-    if (config.pcap_file != NULL) free(config.pcap_file);
-    //if (config.logfile != NULL) free(config.logfile);
+    if (config.cfilter.bf_insns != NULL) free(config.cfilter.bf_insns);
 }
 
 
@@ -1192,18 +1183,18 @@ int main(int argc, char *argv[])
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
         case 'i':
-            config.dev = strdup(optarg);
+            config.dev = optarg;
             break;
         case 'r':
-            config.pcap_file = strdup(optarg);
+            config.pcap_file = optarg;
             break;
         case 'L':
             config.output_log_nxd = 1;
-            config.logfile_nxd = strdup(optarg);
+            config.logfile_nxd = optarg;
             break;
         case 'l':
             config.output_log = 1;
-            config.logfile = strdup(optarg);
+            config.logfile = optarg;
             break;
         case 'y':
             config.output_syslog = 1;
@@ -1220,13 +1211,13 @@ int main(int argc, char *argv[])
             break;
 #endif /* HAVE_JSON */
         case 'd':
-            config.log_delimiter = strdup(optarg);
+            config.log_delimiter = optarg;
             break;
         case 'b':
-            config.bpff = strdup(optarg);
+            config.bpff = optarg;
             break;
         case 'p':
-            config.pidfile = strdup(optarg);
+            config.pidfile = optarg;
             break;
         case 'C':
             config.dnscachetimeout = strtol(optarg, NULL, 0);
@@ -1244,15 +1235,15 @@ int main(int argc, char *argv[])
             daemon = 1;
             break;
         case 'T':
-            config.chroot_dir = strdup(optarg);
+            config.chroot_dir = optarg;
             config.chroot_flag = 1;
             break;
         case 'u':
-            config.user_name = strdup(optarg);
+            config.user_name = optarg;
             config.drop_privs_flag = 1;
             break;
         case 'g':
-            config.group_name = strdup(optarg);
+            config.group_name = optarg;
             config.drop_privs_flag = 1;
             break;
 #ifdef HAVE_PFRING
