@@ -1139,7 +1139,6 @@ int main(int argc, char *argv[])
     memset(&config, 0, sizeof(globalconfig));
     config.inpacket = config.intr_flag = 0;
     config.dnslastchk = 0;
-#define BPFF "port 53"
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
     config.logfile_nxd = "/var/log/passivedns.log";

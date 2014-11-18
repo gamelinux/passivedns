@@ -81,6 +81,8 @@
 #define ERROR                         1
 #define STDBUF                        1024
 
+#define BPFF "port 53"                          /* Default BPF filter */
+
 #if defined(__FreeBSD__) || defined(__APPLE__)
 #define s6_addr32   __u6_addr.__u6_addr32
 #endif /* __FreeBSD__ or __APPLE__ */
