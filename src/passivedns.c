@@ -1161,11 +1161,6 @@ int main(int argc, char *argv[])
     config.dnsf |= DNS_CHK_NAPTR;
     config.dnsf |= DNS_CHK_RP;
     config.dnsf |= DNS_CHK_SRV;
-//    config.dnsf |= DNS_CHK_TXT;
-//    config.dnsf |= DNS_CHK_SOA;
-//    config.dnsf |= DNS_CHK_NS;
-//    config.dnsf |= DNS_CHK_MX;
-//    config.dnsf |= DNS_CHK_NXDOMAIN;
 #ifdef HAVE_PFRING
     config.cluster_id = 0;
     u_int32_t flags = 0;
