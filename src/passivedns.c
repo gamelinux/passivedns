@@ -318,14 +318,6 @@ void parse_ip6(packetinfo *pi)
     }
 }
 
-void parse_arp(packetinfo *pi)
-{
-    vlog(0x3, "[*] Got ARP packet...\n");
-    config.p_s.arp_recv++;
-    pi->af = AF_INET;
-    pi->arph = (ether_arp *) (pi->packet + pi->eth_hlen);
-}
-
 void set_pkt_end_ptr(packetinfo *pi)
 {
     /* Paranoia! */
@@ -986,31 +978,6 @@ int daemonize()
     }
 
     return SUCCESS;
-}
-
-void a_dump_payload(const uint8_t* data,uint16_t dlen)
-{
-    uint8_t  tbuf[PKT_MAXPAY+2];
-    uint8_t* t = tbuf;
-    uint8_t  i;
-    uint8_t  max = dlen > PKT_MAXPAY ? PKT_MAXPAY : dlen;
-
-    if (!dlen) {
-        olog(" # No Payload...\n");
-        return;
-    }
-
-    for (i=0;i<max;i++)
-    {
-        if (isprint(*data)) *(t++) = *data;
-        else if (!*data)  *(t++) = '?';
-        else *(t++) = '.';
-        data++;
-    }
-
-    *t = 0;
-
-    plog( "  # Payload: \"%s\"%s",tbuf,dlen > PKT_MAXPAY ? "...\n" : "\n");
 }
 
 void game_over()
