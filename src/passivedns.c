@@ -903,7 +903,6 @@ int create_pid_file(const char *path)
 {
     char pid_buffer[12];
     struct flock lock;
-    int rval;
     int fd;
 
     if (!path) {
@@ -925,14 +924,8 @@ int create_pid_file(const char *path)
     lock.l_len = 0;
 
     if (fcntl(fd, F_SETLK, &lock) == -1) {
-        if (errno == EACCES || errno == EAGAIN) {
-            rval = ERROR;
-        }
-        else {
-            rval = ERROR;
-        }
         close(fd);
-        return rval;
+        return ERROR;
     }
     snprintf(pid_buffer, sizeof(pid_buffer), "%d\n", (int)getpid());
     if (ftruncate(fd, 0) != 0) {
