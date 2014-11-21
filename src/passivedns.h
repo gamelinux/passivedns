@@ -141,16 +141,6 @@ typedef struct _arphdr {
     uint8_t ar_hln;             /* Length of hardware address */
     uint8_t ar_pln;             /* Length of protocol address */
     uint16_t ar_op;             /* ARP opcode (command) */
-#if 0
-    /*
-     * Ethernet looks like this : This bit is variable sized
-     * however...  
-     */
-    unsigned char __ar_sha[MAC_ADDR_LEN];       /* Sender hardware address.  */
-    unsigned char __ar_sip[4];  /* Sender IP address.  */
-    unsigned char __ar_tha[MAC_ADDR_LEN];       /* Target hardware address.  */
-    unsigned char __ar_tip[4];  /* Target IP address.  */
-#endif
 } arphdr;
 
 typedef struct _ether_arp {
@@ -386,17 +376,12 @@ typedef struct _packetinfo {
     ip4_header      *ip4;             /* IPv4 header struct pointer */
     ip6_header      *ip6;             /* IPv6 header struct pointer */
     uint16_t        packet_bytes;     /* Lenght of IP payload in packet */
-    //struct in6_addr ip_src;           /* Source address */
-    //struct in6_addr ip_dst;           /* Destination address */
     uint16_t        s_port;           /* Source port */
     uint16_t        d_port;           /* Destination port */
     uint8_t         proto;            /* IP protocol type */
     uint8_t         sc;               /* SC_SERVER or SC_CLIENT */
     tcp_header      *tcph;            /* TCP header struct pointer */
     udp_header      *udph;            /* UDP header struct pointer */
-    //icmp_header     *icmph;           /* ICMP header struct pointer */
-    //icmp6_header    *icmp6h;          /* ICMP6 header struct pointer */
-    //gre_header      *greh;            /* GRE header struct pointer */
     uint16_t        gre_hlen;         /* Length of dynamic GRE header length */
     const uint8_t   *end_ptr;         /* Paranoid end pointer of packet */
     const uint8_t   *payload;         /* Char pointer to transport payload */
@@ -404,8 +389,6 @@ typedef struct _packetinfo {
     uint32_t        our;              /* Is the asset in our defined network */
     uint8_t         up;               /* Set if the asset has been updated */
     connection      *cxt;             /* Pointer to the cxt for this packet */
-    //struct _asset    *asset;          /* Pointer to the asset for this (src) packet */
-    //enum { SIGNATURE, FINGERPRINT } type;
 } packetinfo;
 
 /*
