@@ -45,6 +45,10 @@
 #include "passivedns.h"
 #include "dns.h"
 
+#ifdef HAVE_JSON
+#include <jansson.h>
+#endif /* HAVE_JSON */
+
 #ifdef HAVE_PFRING
 #include <pfring.h>
 #endif /* HAVE_PFRING */
@@ -1087,6 +1091,11 @@ void show_version()
         olog("[*] Using PF_RING version %s\n", pfv);
     }
 #endif /* HAVE_PFRING */
+#ifdef HAVE_JSON
+    if (config.use_json || config.use_json_nxd) {
+        olog("[*] Using jansson version %s\n", JANSSON_VERSION);
+    }
+#endif /* HAVE_JSON */
 }
 
 extern int optind, opterr, optopt; // getopt()
