@@ -1047,6 +1047,7 @@ void usage()
     olog(" -j              Use JSON as output in log file.\n");
     olog(" -J              Use JSON as output in NXDOMAIN log file.\n");
 #endif /* HAVE_JSON */
+    olog(" -f <fields>     Choose which fields to print (default: -f SMcsCQTAtn).\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1059,6 +1060,12 @@ void usage()
     olog(" -D              Run as daemon.\n");
     olog(" -V              Show version and exit.\n");
     olog(" -h              This help message.\n\n");
+    olog(" FIELDS:\n");
+    olog("\n");
+    olog("   S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  s: Server IP\n");
+    olog("   C: Class         Q: Query          T: Type       A: Answer\n");
+    olog("   t: TTL           n: Count\n");
+    olog("\n");
     olog(" FLAGS:\n");
     olog("\n");
     olog(" * For Record Types:\n");
@@ -1122,6 +1129,17 @@ int main(int argc, char *argv[])
     config.dnscachetimeout =  DNSCACHETIMEOUT;
     config.dnsf = 0;
     config.log_delimiter = "||";
+    config.fieldsf = 0;
+    config.fieldsf |= FIELD_TIMESTAMP_S;
+    config.fieldsf |= FIELD_TIMESTAMP_MS;
+    config.fieldsf |= FIELD_CLIENT;
+    config.fieldsf |= FIELD_SERVER;
+    config.fieldsf |= FIELD_CLASS;
+    config.fieldsf |= FIELD_QUERY;
+    config.fieldsf |= FIELD_TYPE;
+    config.fieldsf |= FIELD_ANSWER;
+    config.fieldsf |= FIELD_TTL;
+    config.fieldsf |= FIELD_COUNT;
     config.dnsf |= DNS_CHK_A;
     config.dnsf |= DNS_CHK_AAAA;
     config.dnsf |= DNS_CHK_PTR;
@@ -1141,7 +1159,7 @@ int main(int argc, char *argv[])
     signal(SIGHUP,  reopen_log_files);
     signal(SIGUSR1, print_pdns_stats);
 
-#define ARGS "i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:X:u:g:T:V"
+#define ARGS "i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1190,6 +1208,9 @@ int main(int argc, char *argv[])
             break;
         case 'S':
             config.mem_limit_max = (strtol(optarg, NULL, 0) * 1024 * 1024);
+            break;
+        case 'f':
+            parse_field_flags(optarg);
             break;
         case 'X':
             parse_dns_flags(optarg);

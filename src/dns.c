@@ -554,7 +554,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     char *rr_class;
     char *rr_type;
     char *rr_rcode;
-    char *output;
+    char buffer[1000] = "";
+    char *output = buffer;
+    int offset = 0;
     uint8_t is_err_record = 0;
 
 #ifdef HAVE_JSON
@@ -601,7 +603,6 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     rr_class = malloc(10);
     rr_type  = malloc(10);
     rr_rcode = malloc(20);
-    output   = malloc(1000);
 
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
@@ -713,23 +714,36 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     if ((is_err_record && config.use_json_nxd) ||
         (!is_err_record && config.use_json)) {
         jdata = json_object();
-        json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(l->last_seen.tv_sec));
-        json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(l->last_seen.tv_usec));
-        json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
-        json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
-        json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
-        json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
-        json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
+        if (config.fieldsf & FIELD_TIMESTAMP_S)
+            json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(l->last_seen.tv_sec));
+        if (config.fieldsf & FIELD_TIMESTAMP_MS)
+            json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(l->last_seen.tv_usec));
+        if (config.fieldsf & FIELD_CLIENT)
+            json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
+        if (config.fieldsf & FIELD_SERVER)
+            json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
+        if (config.fieldsf & FIELD_CLASS)
+            json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
+        if (config.fieldsf & FIELD_QUERY)
+            json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
+        if (config.fieldsf & FIELD_TYPE)
+            json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
 
         if (is_err_record) {
-            json_object_set_new(jdata, JSON_ANSWER,   json_string(rr_rcode));
-            json_object_set_new(jdata, JSON_TTL,      json_integer(PASSET_ERR_TTL));
-            json_object_set_new(jdata, JSON_COUNT,    json_integer(PASSET_ERR_COUNT));
+            if (config.fieldsf & FIELD_ANSWER)
+                json_object_set_new(jdata, JSON_ANSWER,   json_string(rr_rcode));
+            if (config.fieldsf & FIELD_TTL)
+                json_object_set_new(jdata, JSON_TTL,      json_integer(PASSET_ERR_TTL));
+            if (config.fieldsf & FIELD_COUNT)
+                json_object_set_new(jdata, JSON_COUNT,    json_integer(PASSET_ERR_COUNT));
         }
         else {
-            json_object_set_new(jdata, JSON_ANSWER,   json_string((const char *)p->answer));
-            json_object_set_new(jdata, JSON_TTL,      json_integer(p->rr->_ttl));
-            json_object_set_new(jdata, JSON_COUNT,    json_integer(p->seen));
+            if (config.fieldsf & FIELD_ANSWER)
+                json_object_set_new(jdata, JSON_ANSWER,   json_string((const char *)p->answer));
+            if (config.fieldsf & FIELD_TTL)
+                json_object_set_new(jdata, JSON_TTL,      json_integer(p->rr->_ttl));
+            if (config.fieldsf & FIELD_COUNT)
+                json_object_set_new(jdata, JSON_COUNT,    json_integer(p->seen));
         }
 
         output = json_dumps(jdata, data_flags);
@@ -738,17 +752,98 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
     else {
 #endif /* HAVE_JSON */
-        if (is_err_record) {
-            snprintf(output, 1000, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%d%s%d",
-                        l->last_seen.tv_sec, l->last_seen.tv_usec, d, ip_addr_c, d,
-                        ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d,
-                        rr_rcode, d, PASSET_ERR_TTL, d, PASSET_ERR_COUNT);
+        /* Print timestamp */
+        if ((config.fieldsf & FIELD_TIMESTAMP_S) &&
+            (config.fieldsf & FIELD_TIMESTAMP_MS)) {
+            if (is_err_record) {
+                offset += snprintf(output, sizeof(buffer) - offset, "%lu.%06lu",
+                                   l->last_seen.tv_sec, l->last_seen.tv_usec);
+            }
+            else {
+                offset += snprintf(output, sizeof(buffer) - offset, "%lu.%06lu",
+                                   p->last_seen.tv_sec, p->last_seen.tv_usec);
+            }
         }
-        else {
-            snprintf(output, 1000, "%lu.%06lu%s%s%s%s%s%s%s%s%s%s%s%s%s%u%s%lu",
-                        p->last_seen.tv_sec, p->last_seen.tv_usec, d, ip_addr_c, d,
-                        ip_addr_s, d, rr_class, d, l->qname, d, rr_type, d, p->answer,
-                        d, p->rr->_ttl, d, p->seen);
+        else if (config.fieldsf & FIELD_TIMESTAMP_S) {
+            if (is_err_record) {
+                offset += snprintf(output, sizeof(buffer) - offset, "%lu", l->last_seen.tv_sec);
+            }
+            else {
+                offset += snprintf(output, sizeof(buffer) - offset, "%lu", p->last_seen.tv_sec);
+            }
+        }
+        else if (config.fieldsf & FIELD_TIMESTAMP_MS) {
+            if (is_err_record) {
+                offset += snprintf(output, sizeof(buffer) - offset, "%06lu", l->last_seen.tv_usec);
+            }
+            else {
+                offset += snprintf(output, sizeof(buffer) - offset, "%06lu", p->last_seen.tv_usec);
+            }
+        }
+
+        /* Print client IP */
+        if (config.fieldsf & FIELD_CLIENT) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_c);
+        }
+
+        /* Print server IP */
+        if (config.fieldsf & FIELD_SERVER) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_s);
+        }
+
+        /* Print class */
+        if (config.fieldsf & FIELD_CLASS) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_class);
+        }
+
+        /* Print query */
+        if (config.fieldsf & FIELD_QUERY) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", l->qname);
+        }
+
+        /* Print type */
+        if (config.fieldsf & FIELD_TYPE) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_type);
+        }
+
+        /* Print answer */
+        if (config.fieldsf & FIELD_ANSWER) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (is_err_record)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_rcode);
+            else
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", p->answer);
+        }
+
+        /* Print TTL */
+        if (config.fieldsf & FIELD_TTL) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (is_err_record)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%d", PASSET_ERR_TTL);
+            else
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%u", p->rr->_ttl);
+        }
+
+        /* Print count */
+       if (config.fieldsf & FIELD_COUNT) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (is_err_record)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%d", PASSET_ERR_COUNT);
+            else
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%lu", p->seen);
         }
 #ifdef HAVE_JSON
     }
@@ -780,7 +875,6 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     free(rr_class);
     free(rr_type);
     free(rr_rcode);
-    free(output);
 
 }
 
@@ -1108,6 +1202,89 @@ void update_dns_stats(packetinfo *pi, uint8_t code)
             default:
                 break;
         }
+    }
+}
+
+void parse_field_flags(char *args)
+{
+    int i;
+    int ok  = 0;
+    int len = 0;
+    uint8_t tmpf;
+
+    tmpf = config.fieldsf;
+    len = strlen(args);
+
+    if (len == 0) {
+        plog("[W] No fields are specified!\n");
+        plog("[*] Continuing with default fields...\n");
+        return;
+    }
+
+    config.fieldsf = 0;
+
+    for (i = 0; i < len; i++)
+    {
+        switch(args[i]) {
+            case 'S': /* Timestamp(s) */
+                config.fieldsf |= FIELD_TIMESTAMP_S;
+                dlog("[D] Enabling field: FIELD_TIMESTAMP_S\n");
+                ok++;
+                break;
+            case 'M': /* Timestamp(ms) */
+                config.fieldsf |= FIELD_TIMESTAMP_MS;
+                dlog("[D] Enabling field: FIELD_TIMESTAMP_MS\n");
+                ok++;
+                break;
+            case 'c': /* Client */
+                config.fieldsf |= FIELD_CLIENT;
+                dlog("[D] Enabling field: FIELD_CLIENT\n");
+                ok++;
+                break;
+            case 's': /* Server */
+                config.fieldsf |= FIELD_SERVER;
+                dlog("[D] Enabling field: FIELD_SERVER\n");
+                ok++;
+                break;
+            case 'C': /* Class */
+                config.fieldsf |= FIELD_CLASS;
+                dlog("[D] Enabling field: FIELD_CLASS\n");
+                ok++;
+                break;
+            case 'Q': /* Query */
+                config.fieldsf |= FIELD_QUERY;
+                dlog("[D] Enabling field: FIELD_QUERY\n");
+                ok++;
+                break;
+            case 'T': /* Type */
+                config.fieldsf |= FIELD_TYPE;
+                dlog("[D] Enabling field: FIELD_TYPE\n");
+                ok++;
+                break;
+            case 'A': /* Answer */
+                config.fieldsf |= FIELD_ANSWER;
+                dlog("[D] Enabling field: FIELD_ANSWER\n");
+                ok++;
+                break;
+            case 't': /* TTL */
+                config.fieldsf |= FIELD_TTL;
+                dlog("[D] Enabling field: FIELD_TTL\n");
+                ok++;
+                break;
+            case 'n': /* Count */
+                config.fieldsf |= FIELD_COUNT;
+                dlog("[D] Enabling field: FIELD_COUNT\n");
+                ok++;
+                break;
+            default:
+               plog("[*] Unknown field '%c'\n",args[i]);
+               break;
+        }
+    }
+
+    if (ok == 0) {
+        plog("[W] No valid fields parsed, continuing with defaults.\n");
+        config.fieldsf = tmpf;
     }
 }
 

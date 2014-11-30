@@ -500,6 +500,7 @@ typedef struct _globalconfig {
     uint8_t             chroot_flag;       /* Flag for going chroot */
     uint8_t             daemon_flag;       /* Flag for going daemon */
     uint8_t             logfile_all;       /* Log everything in the same log file */
+    uint32_t            fieldsf;           /* flags for fields to print */
     uint32_t            dnsf;              /* Flags for DNS RR Type checks to do */
     uint32_t            dnsfe;             /* Flags for DNS Server Error Types to check */
     uint32_t            payload;           /* Dump how much of the payload ?  */

@@ -54,6 +54,18 @@
 /* Flag for indicating an NXDOMAIN */
 #define DNS_NXDOMAIN       0x01
 
+/* Flags for which fields to print */
+#define FIELD_TIMESTAMP_S  0x0001
+#define FIELD_TIMESTAMP_MS 0x0002
+#define FIELD_CLIENT       0x0004
+#define FIELD_SERVER       0x0008
+#define FIELD_CLASS        0x0010
+#define FIELD_QUERY        0x0020
+#define FIELD_TYPE         0x0040
+#define FIELD_ANSWER       0x0080
+#define FIELD_TTL          0x0100
+#define FIELD_COUNT        0x0200
+
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
 #define PASSET_ERR_COUNT   1
