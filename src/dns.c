@@ -198,7 +198,7 @@ void dns_parser(packetinfo *pi)
             /* No questions or answers */
             dlog("[D] DNS Query packet did not contain a question? Skipping!\n");
             ldns_pkt_free(dns_pkt);
-            update_dns_stats(pi,ERROR);
+            update_dns_stats(pi, ERROR);
             return;
         }
 
@@ -304,7 +304,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             /* Set the SRC flag: */
             //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
             dns_query_domains = ldns_pkt_question(dns_pkt);
-            rr    = ldns_rr_list_rr(dns_query_domains, 0);
+            rr = ldns_rr_list_rr(dns_query_domains, 0);
             if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
                 /* Print the SRC Error record */
                 print_passet(pr, NULL, rr, rdf_data, rcode);
@@ -1475,6 +1475,7 @@ uint16_t pdns_chk_dnsfe(uint16_t rcode)
             retcode = 0x0000;  /* UNKNOWN-ERROR */
             break;
     }
+
     return retcode;
 }
 
