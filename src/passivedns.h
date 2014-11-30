@@ -89,7 +89,7 @@
 
 /*  D A T A  S T R U C T U R E S  *********************************************/
 
-/* 
+/*
  * Ethernet header
  */
 
@@ -151,7 +151,7 @@ typedef struct _ether_arp {
     uint8_t arp_tpa[4];              /* Target protocol address */
 } ether_arp;
 
-/* 
+/*
  * IPv4 header
  */
 
@@ -175,7 +175,7 @@ typedef struct _ip4_header {
 #define IP_HL(ip4_header) (((ip4_header)->ip_vhl) & 0x0f)
 #define IP_V(ip4_header)  (((ip4_header)->ip_vhl) >> 4)
 
-/* 
+/*
  * IPv6 header
  */
 
@@ -190,7 +190,7 @@ typedef struct _ip6_header {
     struct in6_addr ip_dst;          /* Destination address */
 } ip6_header;
 
-/* 
+/*
  * TCP header
  */
 
@@ -210,7 +210,7 @@ typedef struct _tcp_header {
 #define TCP_X2(tcp_header)               ((tcp_header)->t_offx2 & 0x0f)
 #define TCP_ISFLAGSET(tcp_header, flags) (((tcp_header)->t_flags & (flags)) == (flags))
 
-/* 
+/*
  * UDP header
  */
 
@@ -481,7 +481,7 @@ typedef struct _globalconfig {
     bpf_u_int32         net_mask;
     uint8_t             intr_flag;
     uint8_t             inpacket;
-    
+
     time_t              dnslastchk;        /* Timestamp for last DNS cache expiration check */
     struct timeval      tstamp;            /* Current timestamp from packet-header */
     uint8_t             cflags;            /* Config flags */

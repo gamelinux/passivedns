@@ -58,7 +58,7 @@ void dns_parser(packetinfo *pi)
     ldns_status status;
     ldns_pkt    *dns_pkt;
 
-    status = LDNS_STATUS_ERR; 
+    status = LDNS_STATUS_ERR;
 
     /* In DNS tcp messages, the first 2 bytes signal the
      * amount of data to expect. So we need to skip them in the read.
@@ -127,7 +127,7 @@ void dns_parser(packetinfo *pi)
             return;
         }
 
-        /* From isc.org wording: 
+        /* From isc.org wording:
          * We do not collect any of the query-response traffic that
          * occurs when the client sets the RD or "Recursion Desired"
          * bit to 1, that is, the traffic that occurs between DNS
@@ -143,7 +143,7 @@ void dns_parser(packetinfo *pi)
              * between a client and a DNS proxy, will need this most likely
              * to see any traffic at all. In the future, this might be
              * controlled by a cmdline switch.
-             */ 
+             */
             //ldns_pkt_free(decoded_dns);
             //return;
         }
@@ -173,7 +173,7 @@ void dns_parser(packetinfo *pi)
             update_dns_stats(pi, ERROR);
             return;
         }
-        
+
         /* Check for reuse of a session and a hack for
          * no timeout of sessions when reading pcaps atm. :/
          * 60 Secs are default UDP timeout in cxt, and should
@@ -227,7 +227,7 @@ int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt)
     rrcount_query     = ldns_rr_list_rr_count(dns_query_domains);
     dns_buff = ldns_buffer_new(LDNS_MIN_BUFLEN);
     dlog("[*] rrcount_query: %d\n", rrcount_query);
-    
+
     /* Do we ever have more than one question?
        If we do, are we handling it correctly? */
     for (j = 0; j < rrcount_query; j++) {
@@ -300,7 +300,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             dlog("[D] Hash: %lu\n", dnshash);
             /* Check if the node exists, if not, make it */
             pr = get_pdns_record(dnshash, pi, domain_name);
-            
+
             /* Set the SRC flag: */
             //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
             dns_query_domains = ldns_pkt_question(dns_pkt);
@@ -316,7 +316,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         free(domain_name);
         return 0;
     }
-   
+
     for (j = 0; j < dns_answer_domain_cnt; j++)
     {
         int           offset = -1;
@@ -330,7 +330,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             case LDNS_RR_TYPE_AAAA:
                 if (config.dnsf & DNS_CHK_AAAA)
                     offset = 0;
-                break; 
+                break;
             case LDNS_RR_TYPE_A:
                 if (config.dnsf & DNS_CHK_A)
                     offset = 0;
@@ -935,7 +935,7 @@ void expire_dns_records()
     time_t expire_t;
     time_t oldest;
     expire_t = (config.tstamp.tv_sec - config.dnscachetimeout);
-    oldest = config.tstamp.tv_sec; 
+    oldest = config.tstamp.tv_sec;
 
     dlog("[D] Checking for DNS records to be expired\n");
 
@@ -961,9 +961,9 @@ void expire_dns_records()
                         pdnsr->next->prev = pdnsr->prev;
                     pdns_record *tmp = pdnsr;
                     pdns_record *tmp_prev = pdnsr->prev;
-    
+
                     pdnsr = pdnsr->next;
-    
+
                     delete_dns_record(tmp, &dbucket[iter]);
                     if (pdnsr == NULL && tmp_prev == NULL ) {
                         dbucket[iter] = NULL;
@@ -1038,7 +1038,7 @@ void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
     pdns_record *next  = pdnsr->next;    /* Newer DNS record */
     pdns_asset  *asset = pdnsr->passet;
     pdns_asset  *tmp_asset;
- 
+
     dlog("[D] Deleting domain record: %s\n", pdnsr->qname);
 
     /* Delete all domain assets */
@@ -1295,7 +1295,7 @@ void parse_dns_flags(char *args)
     int len = 0;
     uint8_t tmpf;
 
-    tmpf = config.dnsf; 
+    tmpf = config.dnsf;
     len = strlen(args);
 
     if (len == 0) {
@@ -1310,7 +1310,7 @@ void parse_dns_flags(char *args)
     for (i = 0; i < len; i++){
         switch(args[i]) {
             case '4': /* A */
-                config.dnsf |= DNS_CHK_A; 
+                config.dnsf |= DNS_CHK_A;
                 dlog("[D] Enabling flag: DNS_CHK_A\n");
                 ok++;
                 break;

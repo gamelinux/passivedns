@@ -85,7 +85,7 @@
 #define JSON_TTL           "ttl"
 #define JSON_COUNT         "count"
 
-/* To avoid spaming the logfile with duplicate dns info 
+/* To avoid spaming the logfile with duplicate dns info
  * we only print a dns record one time each 24H. This way
  * you will get a last seen timestamp update once a day
  * at least. If the record changes, it will be classified
@@ -107,9 +107,9 @@
  */
 #define DNSCACHETIMEOUT       43200    /* 12h=43200sec */
 
-/* HASH: 
+/* HASH:
  *     [DOMAIN_HASH_BUCKET]_
- *                          |__[Q-TYPE_BUCKET]_<--- PTR,MX,A... 
+ *                          |__[Q-TYPE_BUCKET]_<--- PTR,MX,A...
  *                                            |__[RESPONCE-NAME] <--- FOR PTR is the IPv4/IPv6
  */
 

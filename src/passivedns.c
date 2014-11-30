@@ -26,7 +26,7 @@
 #include <libgen.h>
 #include <string.h>
 #include <arpa/inet.h>
-#include <netinet/in.h> 
+#include <netinet/in.h>
 #include <signal.h>
 #include <pcap.h>
 //#include <resolv.h>
@@ -239,7 +239,7 @@ void parse_ip4(packetinfo *pi)
         case IP_PROTO_TCP:
             prepare_tcp(pi);
             parse_tcp(pi);
-            break;            
+            break;
         case IP_PROTO_UDP:
             prepare_udp(pi);
             parse_udp(pi);
@@ -732,7 +732,7 @@ void sig_alarm_handler()
     dlog("[D] Got SIG ALRM: %lu\n", now_t);
     /* Each time check for timed out sessions */
     set_end_sessions();
-    
+
     /* Only check for timed-out dns records each 10 minutes */
     if ((now_t - config.dnslastchk) >= 600) {
         set_end_dns_records();
