@@ -1288,9 +1288,9 @@ void parse_field_flags(char *args)
     }
 }
 
-void parse_dns_flags (char *args)
+void parse_dns_flags(char *args)
 {
-    int i   = 0;
+    int i;
     int ok  = 0;
     int len = 0;
     uint8_t tmpf;
@@ -1429,6 +1429,7 @@ void parse_dns_flags (char *args)
                break;
         }
     }
+
     if (ok == 0) {
         plog("[W] No valid flags parsed, continuing with defaults.\n");
         config.dnsf = tmpf;
