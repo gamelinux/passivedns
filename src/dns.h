@@ -51,10 +51,10 @@
 #define DNS_SE_CHK_NOTZONE  0x0200
 #define DNS_SE_CHK_ALL      0x8000
 
-// Flag for indicating an NXDOMAIN
+/* Flag for indicating an NXDOMAIN */
 #define DNS_NXDOMAIN       0x01
 
-/* Static values for print_passet_err() */
+/* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
 #define PASSET_ERR_COUNT   1
 
