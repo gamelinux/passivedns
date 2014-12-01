@@ -561,6 +561,16 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
 #ifdef HAVE_JSON
     json_t *jdata;
+    json_t *json_timestamp_s;
+    json_t *json_timestamp_ms;
+    json_t *json_client;
+    json_t *json_server;
+    json_t *json_class;
+    json_t *json_query;
+    json_t *json_type;
+    json_t *json_answer;
+    json_t *json_ttl;
+    json_t *json_count;
     size_t data_flags = 0;
 
     /* Print in the same order as inserted */
@@ -714,39 +724,103 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     if ((is_err_record && config.use_json_nxd) ||
         (!is_err_record && config.use_json)) {
         jdata = json_object();
-        if (config.fieldsf & FIELD_TIMESTAMP_S)
-            json_object_set_new(jdata, JSON_TIMESTAMP_S,  json_integer(l->last_seen.tv_sec));
-        if (config.fieldsf & FIELD_TIMESTAMP_MS)
-            json_object_set_new(jdata, JSON_TIMESTAMP_MS, json_integer(l->last_seen.tv_usec));
-        if (config.fieldsf & FIELD_CLIENT)
-            json_object_set_new(jdata, JSON_CLIENT,       json_string(ip_addr_c));
-        if (config.fieldsf & FIELD_SERVER)
-            json_object_set_new(jdata, JSON_SERVER,       json_string(ip_addr_s));
-        if (config.fieldsf & FIELD_CLASS)
-            json_object_set_new(jdata, JSON_CLASS,        json_string(rr_class));
-        if (config.fieldsf & FIELD_QUERY)
-            json_object_set_new(jdata, JSON_QUERY,        json_string((const char *)l->qname));
-        if (config.fieldsf & FIELD_TYPE)
-            json_object_set_new(jdata, JSON_TYPE,         json_string(rr_type));
+
+        /* Print timestamp(s) */
+        if (config.fieldsf & FIELD_TIMESTAMP_S) {
+            json_timestamp_s = json_integer(l->last_seen.tv_sec);
+            json_object_set(jdata, JSON_TIMESTAMP_S, json_timestamp_s);
+            json_decref(json_timestamp_s);
+        }
+
+        /* Print timestamp(ms) */
+        if (config.fieldsf & FIELD_TIMESTAMP_MS) {
+            json_timestamp_ms = json_integer(l->last_seen.tv_usec);
+            json_object_set(jdata, JSON_TIMESTAMP_MS, json_timestamp_ms);
+            json_decref(json_timestamp_ms);
+        }
+
+        /* Print client IP */
+        if (config.fieldsf & FIELD_CLIENT) {
+            json_client = json_string(ip_addr_c);
+            json_object_set(jdata, JSON_CLIENT, json_client);
+            json_decref(json_client);
+        }
+
+        /* Print server IP */
+        if (config.fieldsf & FIELD_SERVER) {
+            json_server = json_string(ip_addr_s);
+            json_object_set(jdata, JSON_SERVER, json_server);
+            json_decref(json_server);
+        }
+
+        /* Print class */
+        if (config.fieldsf & FIELD_CLASS) {
+            json_class = json_string(rr_class);
+            json_object_set(jdata, JSON_CLASS, json_class);
+            json_decref(json_class);
+        }
+
+        /* Print query */
+        if (config.fieldsf & FIELD_QUERY) {
+            json_query = json_string((const char *)l->qname);
+            json_object_set(jdata, JSON_QUERY, json_query);
+            json_decref(json_query);
+        }
+
+        /* Print type */
+        if (config.fieldsf & FIELD_TYPE) {
+            json_type = json_string(rr_type);
+            json_object_set(jdata, JSON_TYPE, json_type);
+            json_decref(json_type);
+        }
 
         if (is_err_record) {
-            if (config.fieldsf & FIELD_ANSWER)
-                json_object_set_new(jdata, JSON_ANSWER,   json_string(rr_rcode));
-            if (config.fieldsf & FIELD_TTL)
-                json_object_set_new(jdata, JSON_TTL,      json_integer(PASSET_ERR_TTL));
-            if (config.fieldsf & FIELD_COUNT)
-                json_object_set_new(jdata, JSON_COUNT,    json_integer(PASSET_ERR_COUNT));
+            /* Print answer */
+            if (config.fieldsf & FIELD_ANSWER) {
+                json_answer = json_string(rr_rcode);
+                json_object_set(jdata, JSON_ANSWER, json_answer);
+                json_decref(json_answer);
+            }
+
+            /* Print TTL */
+            if (config.fieldsf & FIELD_TTL) {
+                json_ttl = json_integer(PASSET_ERR_TTL);
+                json_object_set(jdata, JSON_TTL, json_ttl);
+                json_decref(json_ttl);
+            }
+
+            /* Print count */
+            if (config.fieldsf & FIELD_COUNT) {
+                json_count = json_integer(PASSET_ERR_COUNT);
+                json_object_set(jdata, JSON_COUNT, json_count);
+                json_decref(json_count);
+            }
         }
         else {
-            if (config.fieldsf & FIELD_ANSWER)
-                json_object_set_new(jdata, JSON_ANSWER,   json_string((const char *)p->answer));
-            if (config.fieldsf & FIELD_TTL)
-                json_object_set_new(jdata, JSON_TTL,      json_integer(p->rr->_ttl));
-            if (config.fieldsf & FIELD_COUNT)
-                json_object_set_new(jdata, JSON_COUNT,    json_integer(p->seen));
+            /* Print answer */
+            if (config.fieldsf & FIELD_ANSWER) {
+                json_answer = json_string((const char *)p->answer);
+                json_object_set(jdata, JSON_ANSWER, json_answer);
+                json_decref(json_answer);
+            }
+
+            /* Print TTL */
+            if (config.fieldsf & FIELD_TTL) {
+                json_ttl = json_integer(p->rr->_ttl);
+                json_object_set(jdata, JSON_TTL, json_ttl);
+                json_decref(json_ttl);
+            }
+
+            /* Print count */
+            if (config.fieldsf & FIELD_COUNT) {
+                json_count = json_integer(p->seen);
+                json_object_set(jdata, JSON_COUNT, json_count);
+                json_decref(json_count);
+            }
         }
 
         output = json_dumps(jdata, data_flags);
+        json_decref(jdata);
         if (output == NULL)
             return;
     }
@@ -871,6 +945,14 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         p->last_print = p->last_seen;
         p->seen = 0;
     }
+
+#ifdef HAVE_JSON
+    if ((is_err_record && config.use_json_nxd) ||
+        (!is_err_record && config.use_json)) {
+        /* json_dumps allocate memory that has to be freed */
+        free(output);
+    }
+#endif /* HAVE_JSON */
 
     free(rr_class);
     free(rr_type);
