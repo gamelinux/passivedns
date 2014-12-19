@@ -9,6 +9,9 @@
 
 # Quick and Dirty script by Eric Kollmann xnih13@gmail.com
 
+lock=/var/lock/subsys/passivedns
+prog=passivedns
+
 # Source function library.
 . /etc/rc.d/init.d/functions
 
@@ -67,33 +70,48 @@ fi
 
 ######################################
 
+RETVAL=0
+
+function start(){
+    daemon $prog -D $INTERFACE $PIDFILE $LOGFILE $NXDOMAINLOGFILE $BPF $SOFTMEM $DNSCACHE $DNSDUPE $DNSRRTYPES $USER $GROUP $DIRCHROOT
+    RETVAL=$?
+    echo
+    [ $RETVAL -eq 0 ] && touch $lock
+    return $RETVAL
+}
+
+stop(){
+    killproc $prog
+    RETVAL=$?
+    echo
+    [ $RETVAL -eq 0 ] && rm -f $lock
+    return $RETVAL
+}
+
 case "$1" in
   start)
-        echo -n "Starting passivedns: "
-                daemon passivedns -D $INTERFACE $PIDFILE $LOGFILE $NXDOMAINLOGFILE $BPF $SOFTMEM $DNSCACHE $DNSDUPE $DNSRRTYPES $USER $GROUP $DIRCHROOT
-        touch /var/lock/subsys/passivedns
-        echo
+	echo -n "Starting $prog: "
+	start
         ;;
   stop)
-        echo -n "Stopping passivedns: "
-        killproc passivedns
-        rm -f /var/lock/subsys/passivedns
-        echo 
+        echo -n "Stopping $prog: "
+	stop
         ;;
   restart)
-        $0 stop
-        $0 start
+        stop
+        start
         ;;
   condrestart)
-        [ -e /var/lock/subsys/passivedns ] && $0 restart
+        [ -e $lock ] && stop && start
         ;;
   status)
         status passivedns
+        RETVAL=$?
         ;;
 
   *)
         echo "Usage: $0 {start|stop|restart|condrestart|status}"
-        exit 2
+        RETVAL=2
 esac
 
-exit 0
+exit $RETVAL
