@@ -1158,6 +1158,7 @@ int main(int argc, char *argv[])
     signal(SIGALRM, sig_alarm_handler);
     signal(SIGHUP,  reopen_log_files);
     signal(SIGUSR1, print_pdns_stats);
+    signal(SIGUSR2, expire_all_dns_records);
 
 #define ARGS "i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
