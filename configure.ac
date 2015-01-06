@@ -119,7 +119,7 @@ AS_IF([test "x$enable_pfring" = "xyes"], [
         LDFLAGS="${LDFLAGS} -L${with_pfring_libraries}"
     fi
 
-    LDFLAGS="${LDFLAGS} -lnuma -lrt -lpfring"
+    LDFLAGS="${LDFLAGS} -lpfring -lnuma -lrt"
 
     # Checks for libnuma
     AC_CHECK_HEADER(numa.h,,LIBNUMA="no")
