@@ -18,6 +18,12 @@ LOGFILE=
 # Name of NXDOMAIN log?
 NXDOMAINLOGFILE=
 
+# Log to syslog? (set to "1" to enable)
+LOGSYSLOG=
+
+# Log NXDOMAIN to syslog? (set to "1" to enable)
+NXSYSLOG=
+
 # To add a BPF filter to the command line uncomment the following variable
 # syntax corresponds to tcpdump(8)
 # default is "port 53"
