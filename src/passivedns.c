@@ -1398,8 +1398,14 @@ int main(int argc, char *argv[])
         }
 
         if (strlen(config.errbuf) > 0) {
-            elog("[*] Error errbuf: %s \n", config.errbuf);
-            exit(1);
+            /* Fix to enable passivedns to run in an OpenVZ container */
+            if (strcmp(config.errbuf, "arptype 65535 not supported by libpcap - falling back to cooked socket") == 0) {
+                olog("[*] %s \n", config.errbuf);
+            }
+            else {
+                elog("[*] Error errbuf: %s \n", config.errbuf);
+                exit(1);
+            }
         }
 
         if (config.chroot_dir) {
