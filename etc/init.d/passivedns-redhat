@@ -33,6 +33,14 @@ if [ "$NXDOMAINLOGFILE" != "" ] ; then
         NXDOMAINLOGFILE="-L $NXDOMAINLOGFILE"
 fi
 
+if [ "$LOGSYSLOG" != "" ] ; then
+        LOGSYSLOG="-y"
+fi
+
+if [ "$NXSYSLOG" != "" ] ; then
+        NXSYSLOG="-Y"
+fi
+
 if [ "$BPF" != "" ] ; then
         BPF="-b \"$BPF\""
 fi
@@ -70,7 +78,7 @@ fi
 case "$1" in
   start)
         echo -n "Starting passivedns: "
-                daemon passivedns -D $INTERFACE $PIDFILE $LOGFILE $NXDOMAINLOGFILE $BPF $SOFTMEM $DNSCACHE $DNSDUPE $DNSRRTYPES $USER $GROUP $DIRCHROOT
+                daemon passivedns -D $INTERFACE $PIDFILE $LOGFILE $NXDOMAINLOGFILE $LOGSYSLOG $NXSYSLOG $BPF $SOFTMEM $DNSCACHE $DNSDUPE $DNSRRTYPES $USER $GROUP $DIRCHROOT
         touch /var/lock/subsys/passivedns
         echo
         ;;
