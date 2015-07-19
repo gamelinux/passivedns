@@ -22,7 +22,15 @@
 #ifndef DNS_H
 #define DNS_H
 
-#include <ldns/ldns.h>
+#ifdef HAVE_CONFIG_H
+# include <config.h>
+#endif
+
+#include <sysdep.h>
+
+#ifndef __SYSDEP_H__
+# error something is messed up
+#endif
 
 /* Default flags for types to handle */
 #define DNS_CHK_AAAA        0x0001

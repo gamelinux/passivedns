@@ -20,28 +20,6 @@
 */
 
 /*  I N C L U D E S  **********************************************************/
-#include "config.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <libgen.h>
-#include <string.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <signal.h>
-#include <pcap.h>
-//#include <resolv.h>
-#include <getopt.h>
-#include <time.h>
-#include <sys/types.h>
-#include <grp.h>
-#include <pwd.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <syslog.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <ctype.h>
 #include "passivedns.h"
 #include "dns.h"
 
@@ -130,7 +108,8 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
     pi->packet = packet;
     pi->pheader = pheader;
     set_pkt_end_ptr (pi);
-    config.tstamp = pi->pheader->ts; /* Global */
+    config.tstamp.tv_sec = pi->pheader->ts.tv_sec; /* Global */
+    config.tstamp.tv_usec = pi->pheader->ts.tv_usec; /* Global */
     if (config.intr_flag != 0) {
         check_interrupt();
     }

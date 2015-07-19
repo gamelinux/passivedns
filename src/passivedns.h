@@ -20,13 +20,26 @@
 */
 
 /*  I N C L U D E S  **********************************************************/
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+# include <config.h>
+#endif
+
+#include <sysdep.h>
+
+#ifndef __SYSDEP_H__
+# error something is messed up
+#endif
 
 #ifdef HAVE_PFRING
 #include <pfring.h>
 #endif /* HAVE_PFRING */
 
 /*  D E F I N E S  ************************************************************/
+#ifdef OPENBSD
+#define s6_addr8  __u6_addr.__u6_addr8
+#define s6_addr16 __u6_addr.__u6_addr16
+#define s6_addr32 __u6_addr.__u6_addr32
+#endif
 #define TIMEOUT                       60
 #define BUCKET_SIZE                   65537
 #define SNAPLENGTH                    1600

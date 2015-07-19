@@ -1,17 +1,3 @@
-#Makefile
-AUTOMAKE_OPTIONS = -Wno-portability
-
-OBJECTS=passivedns.o dns.o
-bin_PROGRAMS=passivedns
-
-all: $(bin_PROGRAMS)
-
-%.o: %.c
-	$(CC) -O3 $(CPPFLAGS) -c $< -o $@
-
-passivedns: $(OBJECTS)
-	$(CC) -o passivedns $(OBJECTS) $(LDFLAGS)
-
-clean:
-	-rm -v passivedns *.o 2>/dev/null || true
-
+bin_PROGRAMS = passivedns
+passivedns_SOURCES = passivedns.c passivedns.h dns.c dns.h ../include/sysdep.h ../include/config.h
+passivedns_LDADD = 

@@ -1,0 +1,161 @@
+.TH PASSIVEDNS 1  "17 July 2015" "passivedns @VERSION@" "passivedns @VERSION@"
+.SH NAME
+passivedns \- A network sniffer that logs all DNS server replies for use in a passive DNS setup..
+.SH SYNOPSIS
+.na
+.B passivedns
+[
+.B \-yYDVh
+] [
+.B \-i
+.I \<iface\>
+] [
+.B \-r
+.I \<file\>
+] [
+.B \-l
+.I \<file\>
+] [
+.B \-L
+.I \<file\>
+] [
+.B \-d
+.I \<delimiter\>
+] [
+.B \-f
+.I \<fields\>
+] [
+.B \-b
+.I \'BPF\'
+] [
+.B \-p
+.I \<file\>
+] [
+.B \-S
+.I \<mem\>
+] [
+.B \-C
+.I \<sec\>
+] [
+.B \-P
+.I \<sec\>
+] [
+.B \-X
+.I \<flags\>
+] [
+.B \-u
+.I \<uid\>
+] [
+.B \-g
+.I \<gid\>
+] [
+.B \-T
+.I \<dir\>
+]
+
+.SH DESCRIPTION
+.LP
+Log Templater(\fltmpltr\fP) is a small and fast log processor that provides simple artificial ignorance capabilities.  You use the tool to process past log data and store templates that represent normal log line structures.  You then run the tool against current or target logs and all normal patterns are automatically ignored.
+
+.SH OPTIONS
+Command line options are described below.
+.TP 5
+.B \-c
+Display template output showing non-variable arguments.
+.TP
+.B \-d
+Enable debug mode, the higher the \fllog\-level\fP, the more verbose the logging.
+.TP
+.B \-g
+Ignore double quotes and use greedy tokenization.
+.TP
+.B \-h
+Display help details.
+.TP
+.B \-t
+Load templates from a file.  Matching templates will be ignored.
+.TP
+.B \-v
+Show version information.
+.TP
+.B \-w
+Save templates to a file.
+.TP
+.B filename
+One or more files to process, us '\-' to read from stdin.
+
+.SH EXAMPLES
+.TP
+Process file using the fast parse and template code.
+.B tmpltr
+.I file
+.PP
+.TP
+Process file using the clustering parse and template code.
+.B tmpltr
+\-c
+.I file
+.PP
+.TP
+Process file and save all unique templates to outfile.
+.B tmpltr
+\-w 
+.I outfile
+.I file
+.PP
+.TP
+Read templates from infile and process file, ignoring templates found in infile.
+.B tmpltr
+\-t
+.I infile
+.I file
+.PP
+.TP
+Read templates from infile and process file, ignorming templated found in infile and writing all templates from infile and new to outfile.
+.br
+.B tmpltr
+\-t
+.I infile
+\-w
+.I outfile
+.I file
+
+.SH DIAGNOSTICS
+.B \fltmpltr\fP 
+returns 0 on normal program termination and 1 on error.  Additional diagnostic information is available through the \-d command line switch.
+
+.SH SIGNALS
+.TP
+SIGHUP will cause \fltmpltr\fP to quit gracefully.
+.TP
+SIGTERM will cause \fltmpltr\fP to shutdown.
+
+.SH COPYRIGHT
+.B tmpltr 
+is Copyright (c) 2012 Ron Dilley.
+
+This program is free software; you can redistribute it and/or modify 
+it under the terms of the GNU General Public License as published 
+by the Free Software Foundation; either version 2 of the License, 
+or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, 
+but WITHOUT ANY WARRANTY; without even the implied warranty of 
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License 
+along with this program; if not, write to the Free Software 
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+MA 02111-1307 USA.
+
+.SH BUGS
+Please send problems, bugs, questions, desirable enhancements, etc. to:
+tmpltr-workers@uberadmin.com
+
+Please send source code contributions, etc. to:
+tmpltr-patches@uberadmin.com
+
+There are no documented bugs at this time.
+.SH AUTHORS
+Ron Dilley e-mail: ron.dilley@uberadmin.com

@@ -19,21 +19,8 @@
 **
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <syslog.h>
-#include <pcap.h>
 #include "passivedns.h"
 #include "dns.h"
-
-#ifdef HAVE_JSON
-#include <jansson.h>
-#endif /* HAVE_JSON */
 
 globalconfig config;
 
@@ -116,7 +103,7 @@ void dns_parser(packetinfo *pi)
         }
         dlog("[D] DNS Answer\n");
         /* Check the DNS TID */
-        if ((pi->cxt->plid == ldns_pkt_id(dns_pkt))) {
+        if (pi->cxt->plid == ldns_pkt_id(dns_pkt)) {
             dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
         }
         else {
@@ -462,7 +449,8 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 /* We have this, update and if its over 24h since last print -
                    print it, then return */
                 passet->seen++;
-                passet->last_seen = pi->pheader->ts;
+                passet->last_seen.tv_sec = pi->pheader->ts.tv_sec;
+                passet->last_seen.tv_usec = pi->pheader->ts.tv_usec;
                 passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
                 passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
                 if (rr->_ttl > passet->rr->_ttl) {
@@ -508,8 +496,10 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     }
 
     /* Populate new values */
-    passet->first_seen = pi->pheader->ts;
-    passet->last_seen  = pi->pheader->ts;
+    passet->first_seen.tv_sec = pi->pheader->ts.tv_sec;
+    passet->first_seen.tv_usec = pi->pheader->ts.tv_usec;
+    passet->last_seen.tv_sec  = pi->pheader->ts.tv_sec;
+    passet->last_seen.tv_usec  = pi->pheader->ts.tv_usec;
     passet->af         = pi->cxt->af;
     passet->cip        = pi->cxt->s_ip; /* This should always be the client IP */
     passet->sip        = pi->cxt->d_ip; /* This should always be the server IP */
@@ -974,7 +964,8 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         if (strcmp((const char *)domain_name,
                    (const char *)pdnsr->qname) == 0) {
             /* match :) */
-            pdnsr->last_seen = pi->pheader->ts;
+            pdnsr->last_seen.tv_sec = pi->pheader->ts.tv_sec;
+            pdnsr->last_seen.tv_usec = pi->pheader->ts.tv_usec;
             pdnsr->cip       = pi->cxt->s_ip; /* This should always be the client IP */
             pdnsr->sip       = pi->cxt->d_ip; /* This should always be the server IP */
             return pdnsr;
@@ -993,8 +984,10 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         head->prev = pdnsr;
     }
     /* Populate new values */
-    pdnsr->first_seen = pi->pheader->ts;
-    pdnsr->last_seen  = pi->pheader->ts;
+    pdnsr->first_seen.tv_sec = pi->pheader->ts.tv_sec;
+    pdnsr->first_seen.tv_usec = pi->pheader->ts.tv_usec;
+    pdnsr->last_seen.tv_sec = pi->pheader->ts.tv_sec;
+    pdnsr->last_seen.tv_usec  = pi->pheader->ts.tv_usec;
     pdnsr->af         = pi->cxt->af;
     pdnsr->nxflag     = 0;
     pdnsr->cip        = pi->cxt->s_ip; /* This should always be the client IP */
