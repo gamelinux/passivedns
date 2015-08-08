@@ -55,84 +55,63 @@ passivedns \- A network sniffer that logs all DNS server replies for use in a pa
 
 .SH DESCRIPTION
 .LP
-Log Templater(\fltmpltr\fP) is a small and fast log processor that provides simple artificial ignorance capabilities.  You use the tool to process past log data and store templates that represent normal log line structures.  You then run the tool against current or target logs and all normal patterns are automatically ignored.
+Passive DNS Logger(\flpassivedns\fP) is a tool to collect DNS records passively to aid Incident handling, Network
+Security Monitoring (NSM) and general digital forensics.
 
 .SH OPTIONS
 Command line options are described below.
-.TP 5
-.B \-c
-Display template output showing non-variable arguments.
-.TP
-.B \-d
-Enable debug mode, the higher the \fllog\-level\fP, the more verbose the logging.
-.TP
-.B \-g
-Ignore double quotes and use greedy tokenization.
-.TP
-.B \-h
-Display help details.
-.TP
-.B \-t
-Load templates from a file.  Matching templates will be ignored.
-.TP
-.B \-v
-Show version information.
-.TP
-.B \-w
-Save templates to a file.
-.TP
-.B filename
-One or more files to process, us '\-' to read from stdin.
-
-.SH EXAMPLES
-.TP
-Process file using the fast parse and template code.
-.B tmpltr
-.I file
-.PP
-.TP
-Process file using the clustering parse and template code.
-.B tmpltr
-\-c
-.I file
-.PP
-.TP
-Process file and save all unique templates to outfile.
-.B tmpltr
-\-w 
-.I outfile
-.I file
-.PP
-.TP
-Read templates from infile and process file, ignoring templates found in infile.
-.B tmpltr
-\-t
-.I infile
-.I file
-.PP
-.TP
-Read templates from infile and process file, ignorming templated found in infile and writing all templates from infile and new to outfile.
-.br
-.B tmpltr
-\-t
-.I infile
-\-w
-.I outfile
-.I file
+.IP "-i <iface>"
+Network device \fl\<iface\>\fP (default: eth0).
+.IP "-r <file>"
+Read pcap \fl\<file\>\fP.
+.IP "-l <file>"
+Logfile normal queries (default: /var/log/passivedns.log).
+.IP "-L <file>"
+Logfile for SRC Error queries (default: /var/log/passivedns.log).
+.IP \-y
+Log to syslog (uses local7 syslog facility).
+.IP \-y
+Log NXDOMAIN to syslog.
+.IP "-d <delimiter>"
+Delimiter between fields in log file (default: ||).
+.IP "-f <fields>"
+Choose which fields to print (default: -f SMcsCQTAtn).
+.IP "-b \'BPF\'"
+Berkley Packet Filter (default: 'port 53').
+.IP "-p <file>"
+Name of pid file (default: /var/run/passivedns.pid).
+.IP "-s <mem>"
+Soft memory limit in MB (default: 256).
+.IP "-C <sec>"
+Seconds to cache DNS objects in memory (default: 43200).
+.IP "-P <sec>"
+Seconds between printing duplicate DNS info (default 86400).
+.IP "-X <flags>"
+Manually set DNS RR Types to care about (default: -X 46CDNPRS).
+.IP "-u <uid>"
+User ID to drop privileges to.
+.IP "-g <gid>"
+Group ID to drop privileges to.
+.IP "-T <dir>"
+Directory to chroot into.
+.IP \-D
+Run as daemon.
+.IP \-V
+Show version and exit.
+.IP \-h
+This help message.
 
 .SH DIAGNOSTICS
-.B \fltmpltr\fP 
-returns 0 on normal program termination and 1 on error.  Additional diagnostic information is available through the \-d command line switch.
+.B \flpassivedns\fP 
+returns 0 on normal program termination and 1 on error.
 
 .SH SIGNALS
 .TP
-SIGHUP will cause \fltmpltr\fP to quit gracefully.
-.TP
-SIGTERM will cause \fltmpltr\fP to shutdown.
+NONE
 
 .SH COPYRIGHT
-.B tmpltr 
-is Copyright (c) 2012 Ron Dilley.
+.B \flpassivedns\fP 
+is Copyright (c)2011-2012  -  Edward Bjarte Fjellskål.
 
 This program is free software; you can redistribute it and/or modify 
 it under the terms of the GNU General Public License as published 
@@ -151,11 +130,10 @@ MA 02111-1307 USA.
 
 .SH BUGS
 Please send problems, bugs, questions, desirable enhancements, etc. to:
-tmpltr-workers@uberadmin.com
+https://github.com/gamelinux/passivedns
 
 Please send source code contributions, etc. to:
-tmpltr-patches@uberadmin.com
+https://github.com/gamelinux/passivedns
 
-There are no documented bugs at this time.
 .SH AUTHORS
-Ron Dilley e-mail: ron.dilley@uberadmin.com
+Edward Bjarte Fjellskål URL: https://github.com/gamelinux/passivedns
