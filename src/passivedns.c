@@ -1069,8 +1069,8 @@ void usage()
     olog(" FLAGS:\n");
     olog("\n");
     olog(" * For Record Types:\n");
-    olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA\n");
-    olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS\n");
+    olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA  L:LOC\n");
+    olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS   d:DNSEC\n");
     olog("\n");
     olog(" * For Server Return Code (SRC) Errors:\n");
     olog("   f:FORMERR   s:SERVFAIL  x:NXDOMAIN  o:NOTIMPL  r:REFUSED\n");

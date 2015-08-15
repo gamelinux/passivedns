@@ -37,6 +37,8 @@
 #define DNS_CHK_SOA         0x0200
 #define DNS_CHK_MX          0x0400
 #define DNS_CHK_NS          0x0800
+#define DNS_CHK_DNSSEC      0x1000
+#define DNS_CHK_LOC         0x2000
 #define DNS_CHK_ALL         0x8000
 /* Default flags for Server Errors to handle */
 #define DNS_SE_CHK_FORMERR  0x0001
