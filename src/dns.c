@@ -326,7 +326,6 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         ldns_rdf      *rname;
         unsigned char *rdomain_name = 0, *tmp1=NULL, *tmp2=NULL;
 
-
         rr = ldns_rr_list_rr(dns_answer_domains, j);
 
         switch (ldns_rr_get_type(rr)) {
@@ -335,10 +334,22 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     offset = 0;
                 }
                 break;
+            case LDNS_RR_TYPE_GPOS:
+                if (config.dnsf & DNS_CHK_LOC) {
+                    offset = 0;
+                    to_offset = 3;
+                }
+                break;
             case LDNS_RR_TYPE_RRSIG:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
                     to_offset = 9;
+                }
+                break;
+            case LDNS_RR_TYPE_NSEC3PARAM:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 4;
                 }
                 break;
 
@@ -358,6 +369,12 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
                     to_offset = 4;
+                }
+                break;
+            case LDNS_RR_TYPE_SSHFP:
+                if (config.dnsf & DNS_CHK_SSHFP) {
+                    offset = 0;
+                    to_offset = 3;
                 }
                 break;
             case LDNS_RR_TYPE_AAAA:
@@ -383,6 +400,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             case LDNS_RR_TYPE_NAPTR:
                 if (config.dnsf & DNS_CHK_NAPTR)
                     offset = 0;
+                    to_offset = 6;
                 break;
             case LDNS_RR_TYPE_RP:
                 if (config.dnsf & DNS_CHK_RP)
@@ -394,6 +412,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 break;
             case LDNS_RR_TYPE_TXT:
                 if (config.dnsf & DNS_CHK_TXT)
+                    offset = 0;
+                break;
+            case LDNS_RR_TYPE_SPF:
+                if (config.dnsf & DNS_CHK_SPF)
                     offset = 0;
                 break;
             case LDNS_RR_TYPE_SOA:
@@ -432,6 +454,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
             ldns_rdf2buffer_str(buff, rname);
             rdomain_name = (unsigned char *) ldns_buffer2str(buff);
+            if (rdomain_name == NULL) continue;
             len = strlen(rdomain_name) + 5;
             if (tmp1 != NULL) len += strlen(tmp1);
             tmp2 = malloc(len);
@@ -453,7 +476,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             continue;
         }
 
-        if (rdomain_name == NULL) {
+        if (rdomain_name == NULL && offset <= 1) {
             dlog("[D] ldns_buffer2str returned: NULL\n");
             continue;
         }
@@ -664,7 +687,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     rr_class = malloc(10);
-    rr_type  = malloc(10);
+    rr_type  = malloc(12);
     rr_rcode = malloc(20);
 
     switch (ldns_rr_get_class(rr)) {
@@ -689,6 +712,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_SSHFP:
+            snprintf(rr_type, 10, "SSHFP");
+            break;
+        case LDNS_RR_TYPE_GPOS:
+            snprintf(rr_type, 10, "GPOS");
+            break;
         case LDNS_RR_TYPE_LOC:
             snprintf(rr_type, 10, "LOC");
             break;
@@ -696,7 +725,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             snprintf(rr_type, 10, "DNSKEY");
             break;
         case LDNS_RR_TYPE_NSEC3PARAM:
-            snprintf(rr_type, 10, "NSEC3PARAM");
+            snprintf(rr_type, 11, "NSEC3PARAM");
             break;
         case LDNS_RR_TYPE_NSEC3:
             snprintf(rr_type, 10, "NSEC3");
@@ -736,6 +765,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             break;
         case LDNS_RR_TYPE_TXT:
             snprintf(rr_type, 10, "TXT");
+            break;
+        case LDNS_RR_TYPE_SPF:
+            snprintf(rr_type, 10, "SPF");
             break;
         case LDNS_RR_TYPE_SOA:
             snprintf(rr_type, 10, "SOA");
@@ -1465,14 +1497,19 @@ void parse_dns_flags(char *args)
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
+            case 'H': /* LOC */
+                config.dnsf |= DNS_CHK_SSHFP;
+                dlog("[D] Enabling flag: DNS_CHK_SSHFP\n");
+                ok++;
+                break;
             case 'L': /* LOC */
                 config.dnsf |= DNS_CHK_LOC;
-                dlog("[D] Enabling flag: DNS_CHK_LOC");
+                dlog("[D] Enabling flag: DNS_CHK_LOC\n");
                 ok++;
                 break;
             case 'd': /* DNSSEC */
                 config.dnsf |= DNS_CHK_DNSSEC;
-                dlog("[D] Enabling flag: DNS_CHK_DNSSEC");
+                dlog("[D] Enabling flag: DNS_CHK_DNSSEC\n");
                 ok++;
                 break;
             case '4': /* A */
@@ -1515,6 +1552,10 @@ void parse_dns_flags(char *args)
                 dlog("[D] Enabling flag: DNS_CHK_SRV\n");
                 ok++;
                 break;
+            case 'F': /* SPF */
+                config.dnsf |= DNS_CHK_SPF;
+                dlog("[D] Enabling flag: DNS_CHK_SPF\n");
+                ok++;
             case 'T': /* TXT */
                 config.dnsf |= DNS_CHK_TXT;
                 dlog("[D] Enabling flag: DNS_CHK_TXT\n");

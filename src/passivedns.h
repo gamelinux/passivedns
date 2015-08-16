@@ -501,7 +501,7 @@ typedef struct _globalconfig {
     uint8_t             daemon_flag;       /* Flag for going daemon */
     uint8_t             logfile_all;       /* Log everything in the same log file */
     uint32_t            fieldsf;           /* flags for fields to print */
-    uint32_t            dnsf;              /* Flags for DNS RR Type checks to do */
+    uint64_t            dnsf;              /* Flags for DNS RR Type checks to do */
     uint32_t            dnsfe;             /* Flags for DNS Server Error Types to check */
     uint32_t            payload;           /* Dump how much of the payload ?  */
     uint32_t            curcxt;
@@ -543,7 +543,7 @@ typedef struct _globalconfig {
 
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 #define olog(fmt, ...) do{ if(!(ISSET_CONFIG_QUIET(config))) fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
-#define DEBUG 1
+//#define DEBUG 1
 #ifdef DEBUG
 #define dlog(fmt, ...) do { fprintf(stderr, ("[%s:%d(%s)] " fmt), __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__);} while(0)
 #define vlog(v, fmt, ...) do{ if(DEBUG == v) fprintf(stderr, ("[%s:%d(%s)] " fmt), __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__); }while(0)

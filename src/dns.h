@@ -25,21 +25,23 @@
 #include <ldns/ldns.h>
 
 /* Default flags for types to handle */
-#define DNS_CHK_AAAA        0x0001
-#define DNS_CHK_A           0x0002
-#define DNS_CHK_PTR         0x0004
-#define DNS_CHK_CNAME       0x0008
-#define DNS_CHK_DNAME       0x0010
-#define DNS_CHK_NAPTR       0x0020
-#define DNS_CHK_RP          0x0040
-#define DNS_CHK_SRV         0x0080
-#define DNS_CHK_TXT         0x0100
-#define DNS_CHK_SOA         0x0200
-#define DNS_CHK_MX          0x0400
-#define DNS_CHK_NS          0x0800
-#define DNS_CHK_DNSSEC      0x1000
-#define DNS_CHK_LOC         0x2000
-#define DNS_CHK_ALL         0x8000
+#define DNS_CHK_AAAA        0x00000001
+#define DNS_CHK_A           0x00000002
+#define DNS_CHK_PTR         0x00000004
+#define DNS_CHK_CNAME       0x00000008
+#define DNS_CHK_DNAME       0x00000010
+#define DNS_CHK_NAPTR       0x00000020
+#define DNS_CHK_RP          0x00000040
+#define DNS_CHK_SRV         0x00000080
+#define DNS_CHK_TXT         0x00000100
+#define DNS_CHK_SOA         0x00000200
+#define DNS_CHK_MX          0x00000400
+#define DNS_CHK_NS          0x00000800
+#define DNS_CHK_DNSSEC      0x00001000
+#define DNS_CHK_LOC         0x00002000
+#define DNS_CHK_SPF         0x00004000
+#define DNS_CHK_SSHFP       0x00008000
+#define DNS_CHK_ALL         0x80000000
 /* Default flags for Server Errors to handle */
 #define DNS_SE_CHK_FORMERR  0x0001
 #define DNS_SE_CHK_SERVFAIL 0x0002
