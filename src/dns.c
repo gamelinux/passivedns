@@ -346,19 +346,26 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 9;
                 }
                 break;
-            case LDNS_RR_TYPE_NSEC3PARAM:
+            case LDNS_RR_TYPE_DNSKEY:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
                     to_offset = 4;
                 }
                 break;
 
+            case LDNS_RR_TYPE_NSEC3PARAM:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
             case LDNS_RR_TYPE_NSEC3:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
-                    to_offset = 2;
+                    to_offset = 5;
                 }
                 break;
+            
             case LDNS_RR_TYPE_NSEC:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
