@@ -453,24 +453,29 @@ int connection_tracking(packetinfo *pi)
         if (af == AF_INET) {
             if (CMP_CXT4(cxt, IP4ADDR(ip_src), src_port, IP4ADDR(ip_dst), dst_port)) {
                 /* Client sends first packet (TCP/SYN - UDP?) hence this is a client */
+                dlog("[D] Found existing v4 client connection.\n");
                 return cxt_update_client(cxt, pi);
             }
             else if (CMP_CXT4(cxt, IP4ADDR(ip_dst), dst_port, IP4ADDR(ip_src), src_port)) {
                 /* This is a server (Maybe not when we start up but in the long run) */
+                dlog("[D] Found existing v4 server connection.\n");
                 return cxt_update_server(cxt, pi);
             }
         }
         else if (af == AF_INET6) {
             if (CMP_CXT6(cxt, ip_src, src_port, ip_dst, dst_port)) {
+                dlog("[D] Found existing v6 client connection.\n");
                 return cxt_update_client(cxt, pi);
             }
             else if (CMP_CXT6(cxt, ip_dst, dst_port, ip_src, src_port)) {
+                dlog("[D] Found existing v6 client connection.\n");
                 return cxt_update_server(cxt, pi);
             }
         }
         cxt = cxt->next;
     }
     /* Bucket turned upside down didn't yield anything. New connection */
+    dlog("[D] New connection.\n");
     cxt = cxt_new(pi);
 
     /* New connections are pushed on to the head of bucket[s_hash] */
