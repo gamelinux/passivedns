@@ -106,8 +106,13 @@ void dns_parser(packetinfo *pi)
 
     /* We only care about answers when we record data */
     if (ldns_pkt_qr(dns_pkt)) {
-        /* Answer must come from the server, and the client has to have sent a packet! */
-        if (pi->sc != SC_SERVER || pi->cxt->s_total_pkts == 0) {
+        /* In situations where the first packet seen is a server response, the
+        client/server determination is incorrectly marked as an SC_CLIENT session
+        prior to the parsing of the DNS payload.  In high bandwidth data centers
+        when running against millions of packet capture files, port resuse in the
+        span of a few minutes is not uncommon.  This results in all subsequent
+        responses on the reused port being thrown out as if they came from a client. */
+        if (pi->cxt->plid != ldns_pkt_id(dns_pkt) || pi->cxt->s_total_pkts == 0) {
             dlog("[D] DNS Answer without a Question?: Query TID = %d and Answer TID = %d\n",
                  pi->cxt->plid, ldns_pkt_id(dns_pkt));
             ldns_pkt_free(dns_pkt);
@@ -166,8 +171,8 @@ void dns_parser(packetinfo *pi)
          * DNS TID in the answer - to harden the implementation.
          */
 
-        /* Question must come from the client (and the server should not have sent a packet). */
-        if (pi->sc != SC_CLIENT) {
+        /* With the new SC_UNKNOWN state, only responses from an SC_SERVER should be ignored. */
+        if (pi->sc == SC_SERVER) {
             dlog("[D] DNS Query not from a client? Skipping!\n");
             ldns_pkt_free(dns_pkt);
             update_dns_stats(pi, ERROR);
