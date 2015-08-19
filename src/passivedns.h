@@ -366,7 +366,7 @@ typedef struct _packetinfo {
     const struct pcap_pkthdr *pheader; /* Libpcap packet header struct pointer */
     const uint8_t   *packet;           /* Unsigned char pointer to raw packet */
     /* Compute (all) these from packet */
-    uint32_t        eth_hlen;         /* Ethernet header lenght */
+    uint32_t        eth_hlen;         /* Ethernet header length */
     uint16_t        mvlan;            /* Metro vlan tag */
     uint16_t        vlan;             /* VLAN tag */
     uint16_t        eth_type;         /* Ethernet type (IPv4/IPv6/etc) */
@@ -375,7 +375,7 @@ typedef struct _packetinfo {
     ether_arp       *arph;            /* ARP header struct pointer */
     ip4_header      *ip4;             /* IPv4 header struct pointer */
     ip6_header      *ip6;             /* IPv6 header struct pointer */
-    uint16_t        packet_bytes;     /* Lenght of IP payload in packet */
+    uint16_t        packet_bytes;     /* Length of IP payload in packet */
     uint16_t        s_port;           /* Source port */
     uint16_t        d_port;           /* Destination port */
     uint8_t         proto;            /* IP protocol type */
