@@ -457,9 +457,16 @@ int connection_tracking(packetinfo *pi)
                 return cxt_update_client(cxt, pi);
             }
             else if (CMP_CXT4(cxt, IP4ADDR(ip_dst), dst_port, IP4ADDR(ip_src), src_port)) {
-                /* This is a server (Maybe not when we start up but in the long run) */
-                dlog("[D] Found existing v4 server connection.\n");
-                return cxt_update_server(cxt, pi);
+
+                if (pi->sc == SC_SERVER) {
+                    /* This is a server */
+                    dlog("[D] Found existing v4 server connection.\n");
+                    return cxt_update_server(cxt, pi);
+                } else {
+                    /* This is a client, where we saw a mid-stream DNS response first */
+                    dlog("[D] Found existing unknown v4 server connection.\n");
+                    return cxt_update_client(cxt, pi);
+                }
             }
         }
         else if (af == AF_INET6) {
@@ -486,7 +493,7 @@ int connection_tracking(packetinfo *pi)
     }
     bucket[hash] = cxt;
     pi->cxt = cxt;
-    return cxt_update_client(cxt, pi);
+    return cxt_update_unknown(cxt, pi);
 }
 
 /* Freshly smelling connection :d */
@@ -542,6 +549,23 @@ int cxt_update_client(connection *cxt, packetinfo *pi)
         return 0;   /* Don't Check! */
     }
     return SC_CLIENT;
+}
+
+int cxt_update_unknown(connection *cxt, packetinfo *pi)
+{
+    cxt->last_pkt_time = pi->pheader->ts.tv_sec;
+
+    if (pi->tcph) cxt->s_tcpFlags |= pi->tcph->t_flags;
+    cxt->s_total_bytes += pi->packet_bytes;
+    cxt->s_total_pkts += 1;
+
+    pi->cxt = cxt;
+    pi->sc = SC_UNKNOWN;
+    if (cxt->s_total_bytes > MAX_BYTE_CHECK ||
+        cxt->s_total_pkts  > MAX_PKT_CHECK) {
+        return 0;   /* Don't Check! */
+    }
+    return SC_UNKNOWN;
 }
 
 int cxt_update_server(connection *cxt, packetinfo *pi)

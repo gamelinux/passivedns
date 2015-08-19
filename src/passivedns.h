@@ -555,5 +555,6 @@ typedef struct _globalconfig {
 #endif
 
 int cxt_update_client(connection *cxt, packetinfo *pi);
+int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
 
