@@ -109,7 +109,7 @@ void dns_parser(packetinfo *pi)
         /* In situations where the first packet seen is a server response, the
         client/server determination is incorrectly marked as an SC_CLIENT session
         prior to the parsing of the DNS payload.  In high bandwidth data centers
-        when running against millions of packet capture files, port resuse in the
+        when running against millions of packet capture files, port reuse in the
         span of a few minutes is not uncommon.  This results in all subsequent
         responses on the reused port being thrown out as if they came from a client. */
         if (pi->sc == SC_UNKNOWN || pi->cxt->s_total_pkts == 0) {
