@@ -372,6 +372,12 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 2;
                 }
                 break;
+            case LDNS_RR_TYPE_HINFO:
+                if (config.dnsf & DNS_CHK_HINFO) {
+                    offset = 0;
+                    to_offset = 2;
+                }
+                break;
             case LDNS_RR_TYPE_DS:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
@@ -719,6 +725,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_HINFO:
+            snprintf(rr_type, 10, "HINFO");
+            break;
         case LDNS_RR_TYPE_SSHFP:
             snprintf(rr_type, 10, "SSHFP");
             break;
@@ -1504,7 +1513,12 @@ void parse_dns_flags(char *args)
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
-            case 'H': /* LOC */
+            case 'I': /* HINFO */
+                config.dnsf |= DNS_CHK_HINFO;
+                dlog("[D] Enabling flag: DNS_CHK_HINFO\n");
+                ok++;
+                break;
+            case 'H': /* SSHFP */
                 config.dnsf |= DNS_CHK_SSHFP;
                 dlog("[D] Enabling flag: DNS_CHK_SSHFP\n");
                 ok++;
