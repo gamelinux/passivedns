@@ -366,7 +366,7 @@ typedef struct _packetinfo {
     const struct pcap_pkthdr *pheader; /* Libpcap packet header struct pointer */
     const uint8_t   *packet;           /* Unsigned char pointer to raw packet */
     /* Compute (all) these from packet */
-    uint32_t        eth_hlen;         /* Ethernet header lenght */
+    uint32_t        eth_hlen;         /* Ethernet header length */
     uint16_t        mvlan;            /* Metro vlan tag */
     uint16_t        vlan;             /* VLAN tag */
     uint16_t        eth_type;         /* Ethernet type (IPv4/IPv6/etc) */
@@ -375,11 +375,11 @@ typedef struct _packetinfo {
     ether_arp       *arph;            /* ARP header struct pointer */
     ip4_header      *ip4;             /* IPv4 header struct pointer */
     ip6_header      *ip6;             /* IPv6 header struct pointer */
-    uint16_t        packet_bytes;     /* Lenght of IP payload in packet */
+    uint16_t        packet_bytes;     /* Length of IP payload in packet */
     uint16_t        s_port;           /* Source port */
     uint16_t        d_port;           /* Destination port */
     uint8_t         proto;            /* IP protocol type */
-    uint8_t         sc;               /* SC_SERVER or SC_CLIENT */
+    uint8_t         sc;               /* SC_SERVER, SC_CLIENT or SC_UNKNOWN */
     tcp_header      *tcph;            /* TCP header struct pointer */
     udp_header      *udph;            /* UDP header struct pointer */
     uint16_t        gre_hlen;         /* Length of dynamic GRE header length */
@@ -411,6 +411,7 @@ typedef struct _packetinfo {
 
 #define SC_CLIENT                 0x01  /* Pi for this session is client */
 #define SC_SERVER                 0x02  /* Pi for this session is server */
+#define SC_UNKNOWN                0x03  /* Pi for this session is not yet known */
 
 typedef struct _pdns_stat {
     uint32_t got_packets;    /* Number of packets received by program */
@@ -554,5 +555,6 @@ typedef struct _globalconfig {
 #endif
 
 int cxt_update_client(connection *cxt, packetinfo *pi);
+int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
 
