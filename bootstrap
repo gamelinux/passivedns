@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# $Id: bootstrap,v 1.5 2014/01/19 12:25:48 rdilley Exp $
+#
+# desc: simple script to run all auto commands
+#
+####
+
+#AUTOMAKE_VERSION=1.13;export AUTOMAKE_VERSION
+#AUTOCONF_VERSION=2.69;export AUTOCONF_VERSION
+
+aclocal
+automake --gnu --add-missing
+autoheader
+autoconf
+

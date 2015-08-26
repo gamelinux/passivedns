@@ -19,21 +19,8 @@
 **
 */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <syslog.h>
-#include <pcap.h>
 #include "passivedns.h"
 #include "dns.h"
-
-#ifdef HAVE_JSON
-#include <jansson.h>
-#endif /* HAVE_JSON */
 
 globalconfig config;
 
@@ -121,7 +108,7 @@ void dns_parser(packetinfo *pi)
         }
         dlog("[D] DNS Answer\n");
         /* Check the DNS TID */
-        if ((pi->cxt->plid == ldns_pkt_id(dns_pkt))) {
+        if (pi->cxt->plid == ldns_pkt_id(dns_pkt)) {
             dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
         }
         else {
@@ -325,13 +312,70 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
     for (j = 0; j < dns_answer_domain_cnt; j++)
     {
         int           offset = -1;
+        int           to_offset = -1;
+        int           len;
         ldns_rr       *rr;
         ldns_rdf      *rname;
-        unsigned char *rdomain_name = 0;
+        unsigned char *rdomain_name = 0, *tmp1=NULL, *tmp2=NULL;
 
         rr = ldns_rr_list_rr(dns_answer_domains, j);
 
         switch (ldns_rr_get_type(rr)) {
+            case LDNS_RR_TYPE_LOC:
+                if (config.dnsf & DNS_CHK_LOC) {
+                    offset = 0;
+                }
+                break;
+            case LDNS_RR_TYPE_GPOS:
+                if (config.dnsf & DNS_CHK_LOC) {
+                    offset = 0;
+                    to_offset = 3;
+                }
+                break;
+            case LDNS_RR_TYPE_RRSIG:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 9;
+                }
+                break;
+            case LDNS_RR_TYPE_DNSKEY:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
+
+            case LDNS_RR_TYPE_NSEC3PARAM:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
+            case LDNS_RR_TYPE_NSEC3:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 5;
+                }
+                break;
+            
+            case LDNS_RR_TYPE_NSEC:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 2;
+                }
+                break;
+            case LDNS_RR_TYPE_DS:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
+            case LDNS_RR_TYPE_SSHFP:
+                if (config.dnsf & DNS_CHK_SSHFP) {
+                    offset = 0;
+                    to_offset = 3;
+                }
+                break;
             case LDNS_RR_TYPE_AAAA:
                 if (config.dnsf & DNS_CHK_AAAA)
                     offset = 0;
@@ -355,6 +399,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             case LDNS_RR_TYPE_NAPTR:
                 if (config.dnsf & DNS_CHK_NAPTR)
                     offset = 0;
+                    to_offset = 6;
                 break;
             case LDNS_RR_TYPE_RP:
                 if (config.dnsf & DNS_CHK_RP)
@@ -366,6 +411,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 break;
             case LDNS_RR_TYPE_TXT:
                 if (config.dnsf & DNS_CHK_TXT)
+                    offset = 0;
+                break;
+            case LDNS_RR_TYPE_SPF:
+                if (config.dnsf & DNS_CHK_SPF)
                     offset = 0;
                 break;
             case LDNS_RR_TYPE_SOA:
@@ -392,20 +441,41 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             //data_offset = 0;
             continue;
         }
+        do {
+            /* Get the rdf data from the rr */
+            ldns_buffer_clear(buff);
+            rname = ldns_rr_rdf(rr, offset);
 
-        /* Get the rdf data from the rr */
-        rname = ldns_rr_rdf(rr, offset);
+            if (rname == NULL) {
+                dlog("[D] ldns_rr_rdf returned: NULL\n");
+                break;;
+            }
 
+            ldns_rdf2buffer_str(buff, rname);
+            rdomain_name = (unsigned char *) ldns_buffer2str(buff);
+            if (rdomain_name == NULL) continue;
+            len = strlen(rdomain_name) + 5;
+            if (tmp1 != NULL) len += strlen(tmp1);
+            tmp2 = malloc(len);
+            if (tmp1 != NULL) {
+                tmp2 = strcpy(tmp2, tmp1);
+                tmp2 = strcat(tmp2, " ");
+            }
+            else {
+                tmp2 = strcpy(tmp2, "");
+            }
+            free(tmp1);
+            tmp2 = strcat(tmp2, rdomain_name);
+            tmp1 = tmp2;
+            free(rdomain_name);
+            offset ++;
+        } while (offset < to_offset);
+        rdomain_name = tmp1;
         if (rname == NULL) {
-            dlog("[D] ldns_rr_rdf returned: NULL\n");
             continue;
         }
 
-        ldns_buffer_clear(buff);
-        ldns_rdf2buffer_str(buff, rname);
-        rdomain_name = (unsigned char *) ldns_buffer2str(buff);
-
-        if (rdomain_name == NULL) {
+        if (rdomain_name == NULL && offset <= 1) {
             dlog("[D] ldns_buffer2str returned: NULL\n");
             continue;
         }
@@ -467,7 +537,8 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 /* We have this, update and if its over 24h since last print -
                    print it, then return */
                 passet->seen++;
-                passet->last_seen = pi->pheader->ts;
+                passet->last_seen.tv_sec = pi->pheader->ts.tv_sec;
+                passet->last_seen.tv_usec = pi->pheader->ts.tv_usec;
                 passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
                 passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
                 if (rr->_ttl > passet->rr->_ttl) {
@@ -513,8 +584,10 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     }
 
     /* Populate new values */
-    passet->first_seen = pi->pheader->ts;
-    passet->last_seen  = pi->pheader->ts;
+    passet->first_seen.tv_sec = pi->pheader->ts.tv_sec;
+    passet->first_seen.tv_usec = pi->pheader->ts.tv_usec;
+    passet->last_seen.tv_sec  = pi->pheader->ts.tv_sec;
+    passet->last_seen.tv_usec  = pi->pheader->ts.tv_usec;
     passet->af         = pi->cxt->af;
     passet->cip        = pi->cxt->s_ip; /* This should always be the client IP */
     passet->sip        = pi->cxt->d_ip; /* This should always be the server IP */
@@ -616,7 +689,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     rr_class = malloc(10);
-    rr_type  = malloc(10);
+    rr_type  = malloc(12);
     rr_rcode = malloc(20);
 
     switch (ldns_rr_get_class(rr)) {
@@ -641,6 +714,33 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_SSHFP:
+            snprintf(rr_type, 10, "SSHFP");
+            break;
+        case LDNS_RR_TYPE_GPOS:
+            snprintf(rr_type, 10, "GPOS");
+            break;
+        case LDNS_RR_TYPE_LOC:
+            snprintf(rr_type, 10, "LOC");
+            break;
+        case LDNS_RR_TYPE_DNSKEY:
+            snprintf(rr_type, 10, "DNSKEY");
+            break;
+        case LDNS_RR_TYPE_NSEC3PARAM:
+            snprintf(rr_type, 11, "NSEC3PARAM");
+            break;
+        case LDNS_RR_TYPE_NSEC3:
+            snprintf(rr_type, 10, "NSEC3");
+            break;
+        case LDNS_RR_TYPE_NSEC:
+            snprintf(rr_type, 10, "NSEC");
+            break;
+        case LDNS_RR_TYPE_RRSIG:
+            snprintf(rr_type, 10, "RRSIG");
+            break;
+        case LDNS_RR_TYPE_DS:
+            snprintf(rr_type, 10, "DS");
+            break;
         case LDNS_RR_TYPE_PTR:
             snprintf(rr_type, 10, "PTR");
             break;
@@ -667,6 +767,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             break;
         case LDNS_RR_TYPE_TXT:
             snprintf(rr_type, 10, "TXT");
+            break;
+        case LDNS_RR_TYPE_SPF:
+            snprintf(rr_type, 10, "SPF");
             break;
         case LDNS_RR_TYPE_SOA:
             snprintf(rr_type, 10, "SOA");
@@ -979,7 +1082,8 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         if (strcmp((const char *)domain_name,
                    (const char *)pdnsr->qname) == 0) {
             /* match :) */
-            pdnsr->last_seen = pi->pheader->ts;
+            pdnsr->last_seen.tv_sec = pi->pheader->ts.tv_sec;
+            pdnsr->last_seen.tv_usec = pi->pheader->ts.tv_usec;
             pdnsr->cip       = pi->cxt->s_ip; /* This should always be the client IP */
             pdnsr->sip       = pi->cxt->d_ip; /* This should always be the server IP */
             return pdnsr;
@@ -998,8 +1102,10 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         head->prev = pdnsr;
     }
     /* Populate new values */
-    pdnsr->first_seen = pi->pheader->ts;
-    pdnsr->last_seen  = pi->pheader->ts;
+    pdnsr->first_seen.tv_sec = pi->pheader->ts.tv_sec;
+    pdnsr->first_seen.tv_usec = pi->pheader->ts.tv_usec;
+    pdnsr->last_seen.tv_sec = pi->pheader->ts.tv_sec;
+    pdnsr->last_seen.tv_usec  = pi->pheader->ts.tv_usec;
     pdnsr->af         = pi->cxt->af;
     pdnsr->nxflag     = 0;
     pdnsr->cip        = pi->cxt->s_ip; /* This should always be the client IP */
@@ -1396,6 +1502,21 @@ void parse_dns_flags(char *args)
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
+            case 'H': /* LOC */
+                config.dnsf |= DNS_CHK_SSHFP;
+                dlog("[D] Enabling flag: DNS_CHK_SSHFP\n");
+                ok++;
+                break;
+            case 'L': /* LOC */
+                config.dnsf |= DNS_CHK_LOC;
+                dlog("[D] Enabling flag: DNS_CHK_LOC\n");
+                ok++;
+                break;
+            case 'd': /* DNSSEC */
+                config.dnsf |= DNS_CHK_DNSSEC;
+                dlog("[D] Enabling flag: DNS_CHK_DNSSEC\n");
+                ok++;
+                break;
             case '4': /* A */
                 config.dnsf |= DNS_CHK_A;
                 dlog("[D] Enabling flag: DNS_CHK_A\n");
@@ -1436,6 +1557,10 @@ void parse_dns_flags(char *args)
                 dlog("[D] Enabling flag: DNS_CHK_SRV\n");
                 ok++;
                 break;
+            case 'F': /* SPF */
+                config.dnsf |= DNS_CHK_SPF;
+                dlog("[D] Enabling flag: DNS_CHK_SPF\n");
+                ok++;
             case 'T': /* TXT */
                 config.dnsf |= DNS_CHK_TXT;
                 dlog("[D] Enabling flag: DNS_CHK_TXT\n");

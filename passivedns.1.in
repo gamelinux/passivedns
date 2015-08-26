@@ -1,0 +1,139 @@
+.TH PASSIVEDNS 1  "17 July 2015" "passivedns @VERSION@" "passivedns @VERSION@"
+.SH NAME
+passivedns \- A network sniffer that logs all DNS server replies for use in a passive DNS setup..
+.SH SYNOPSIS
+.na
+.B passivedns
+[
+.B \-yYDVh
+] [
+.B \-i
+.I \<iface\>
+] [
+.B \-r
+.I \<file\>
+] [
+.B \-l
+.I \<file\>
+] [
+.B \-L
+.I \<file\>
+] [
+.B \-d
+.I \<delimiter\>
+] [
+.B \-f
+.I \<fields\>
+] [
+.B \-b
+.I \'BPF\'
+] [
+.B \-p
+.I \<file\>
+] [
+.B \-S
+.I \<mem\>
+] [
+.B \-C
+.I \<sec\>
+] [
+.B \-P
+.I \<sec\>
+] [
+.B \-X
+.I \<flags\>
+] [
+.B \-u
+.I \<uid\>
+] [
+.B \-g
+.I \<gid\>
+] [
+.B \-T
+.I \<dir\>
+]
+
+.SH DESCRIPTION
+.LP
+Passive DNS Logger(\flpassivedns\fP) is a tool to collect DNS records passively to aid Incident handling, Network
+Security Monitoring (NSM) and general digital forensics.
+
+.SH OPTIONS
+Command line options are described below.
+.IP "-i <iface>"
+Network device \fl\<iface\>\fP (default: eth0).
+.IP "-r <file>"
+Read pcap \fl\<file\>\fP.
+.IP "-l <file>"
+Logfile normal queries (default: /var/log/passivedns.log).
+.IP "-L <file>"
+Logfile for SRC Error queries (default: /var/log/passivedns.log).
+.IP \-y
+Log to syslog (uses local7 syslog facility).
+.IP \-y
+Log NXDOMAIN to syslog.
+.IP "-d <delimiter>"
+Delimiter between fields in log file (default: ||).
+.IP "-f <fields>"
+Choose which fields to print (default: -f SMcsCQTAtn).
+.IP "-b \'BPF\'"
+Berkley Packet Filter (default: 'port 53').
+.IP "-p <file>"
+Name of pid file (default: /var/run/passivedns.pid).
+.IP "-s <mem>"
+Soft memory limit in MB (default: 256).
+.IP "-C <sec>"
+Seconds to cache DNS objects in memory (default: 43200).
+.IP "-P <sec>"
+Seconds between printing duplicate DNS info (default 86400).
+.IP "-X <flags>"
+Manually set DNS RR Types to care about (default: -X 46CDNPRS).
+.IP "-u <uid>"
+User ID to drop privileges to.
+.IP "-g <gid>"
+Group ID to drop privileges to.
+.IP "-T <dir>"
+Directory to chroot into.
+.IP \-D
+Run as daemon.
+.IP \-V
+Show version and exit.
+.IP \-h
+This help message.
+
+.SH DIAGNOSTICS
+.B \flpassivedns\fP 
+returns 0 on normal program termination and 1 on error.
+
+.SH SIGNALS
+.TP
+NONE
+
+.SH COPYRIGHT
+.B \flpassivedns\fP 
+is Copyright (c)2011-2012  -  Edward Bjarte Fjellskål.
+
+This program is free software; you can redistribute it and/or modify 
+it under the terms of the GNU General Public License as published 
+by the Free Software Foundation; either version 2 of the License, 
+or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, 
+but WITHOUT ANY WARRANTY; without even the implied warranty of 
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the 
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License 
+along with this program; if not, write to the Free Software 
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, 
+MA 02111-1307 USA.
+
+.SH BUGS
+Please send problems, bugs, questions, desirable enhancements, etc. to:
+https://github.com/gamelinux/passivedns
+
+Please send source code contributions, etc. to:
+https://github.com/gamelinux/passivedns
+
+.SH AUTHORS
+Edward Bjarte Fjellskål URL: https://github.com/gamelinux/passivedns

@@ -20,13 +20,26 @@
 */
 
 /*  I N C L U D E S  **********************************************************/
-#include "config.h"
+#ifdef HAVE_CONFIG_H
+# include <config.h>
+#endif
+
+#include <sysdep.h>
+
+#ifndef __SYSDEP_H__
+# error something is messed up
+#endif
 
 #ifdef HAVE_PFRING
 #include <pfring.h>
 #endif /* HAVE_PFRING */
 
 /*  D E F I N E S  ************************************************************/
+#ifdef OPENBSD
+#define s6_addr8  __u6_addr.__u6_addr8
+#define s6_addr16 __u6_addr.__u6_addr16
+#define s6_addr32 __u6_addr.__u6_addr32
+#endif
 #define TIMEOUT                       60
 #define BUCKET_SIZE                   65537
 #define SNAPLENGTH                    1600
@@ -502,7 +515,7 @@ typedef struct _globalconfig {
     uint8_t             daemon_flag;       /* Flag for going daemon */
     uint8_t             logfile_all;       /* Log everything in the same log file */
     uint32_t            fieldsf;           /* flags for fields to print */
-    uint32_t            dnsf;              /* Flags for DNS RR Type checks to do */
+    uint64_t            dnsf;              /* Flags for DNS RR Type checks to do */
     uint32_t            dnsfe;             /* Flags for DNS Server Error Types to check */
     uint32_t            payload;           /* Dump how much of the payload ?  */
     uint32_t            curcxt;
@@ -544,6 +557,7 @@ typedef struct _globalconfig {
 
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 #define olog(fmt, ...) do{ if(!(ISSET_CONFIG_QUIET(config))) fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
+//#define DEBUG 1
 #ifdef DEBUG
 #define dlog(fmt, ...) do { fprintf(stderr, ("[%s:%d(%s)] " fmt), __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__);} while(0)
 #define vlog(v, fmt, ...) do{ if(DEBUG == v) fprintf(stderr, ("[%s:%d(%s)] " fmt), __FILE__, __LINE__, __PRETTY_FUNCTION__, ##__VA_ARGS__); }while(0)
