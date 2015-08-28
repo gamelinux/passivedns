@@ -2,7 +2,6 @@
 # Example file for skiplist, whitelist and blacklist to be read from pdns2db.pl 
 # Lines starting with # are not processed.
 
- 
 # Example 1: STATIC DOMAINS/IPs
 # work with: --skiplist, --whitelist or --blacklist
 # One domain on each line. The match has to be exact.
@@ -21,4 +20,18 @@ current.cvd.clamav.net
 \.twitter\.com$
 antivirus
 \.3322\.org$
-
+# blacklist type of services
+\.mailserveren\.com$
+\.sorbs\.net$
+\.spamcop\.net$
+\.list\.dnswl\.org$
+\.(zen|sbl|dbl)\.spamhaus\.org$
+\.bb\.barracudacentral\.org$
+\.mailspike\.net$
+\.score\.senderscore\.com$
+\.bondedsender\.org$
+\.surbl\.org$
+\.uribl\.com$
+\.habeas\.com$
+\.support-intelligence\.net$
+\.in-addr\.arpa$

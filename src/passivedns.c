@@ -453,24 +453,36 @@ int connection_tracking(packetinfo *pi)
         if (af == AF_INET) {
             if (CMP_CXT4(cxt, IP4ADDR(ip_src), src_port, IP4ADDR(ip_dst), dst_port)) {
                 /* Client sends first packet (TCP/SYN - UDP?) hence this is a client */
+                dlog("[D] Found existing v4 client connection.\n");
                 return cxt_update_client(cxt, pi);
             }
             else if (CMP_CXT4(cxt, IP4ADDR(ip_dst), dst_port, IP4ADDR(ip_src), src_port)) {
-                /* This is a server (Maybe not when we start up but in the long run) */
-                return cxt_update_server(cxt, pi);
+
+                if (pi->sc == SC_SERVER) {
+                    /* This is a server */
+                    dlog("[D] Found existing v4 server connection.\n");
+                    return cxt_update_server(cxt, pi);
+                } else {
+                    /* This is a client, where we saw a mid-stream DNS response first */
+                    dlog("[D] Found existing unknown v4 server connection.\n");
+                    return cxt_update_client(cxt, pi);
+                }
             }
         }
         else if (af == AF_INET6) {
             if (CMP_CXT6(cxt, ip_src, src_port, ip_dst, dst_port)) {
+                dlog("[D] Found existing v6 client connection.\n");
                 return cxt_update_client(cxt, pi);
             }
             else if (CMP_CXT6(cxt, ip_dst, dst_port, ip_src, src_port)) {
+                dlog("[D] Found existing v6 client connection.\n");
                 return cxt_update_server(cxt, pi);
             }
         }
         cxt = cxt->next;
     }
     /* Bucket turned upside down didn't yield anything. New connection */
+    dlog("[D] New connection.\n");
     cxt = cxt_new(pi);
 
     /* New connections are pushed on to the head of bucket[s_hash] */
@@ -481,7 +493,7 @@ int connection_tracking(packetinfo *pi)
     }
     bucket[hash] = cxt;
     pi->cxt = cxt;
-    return cxt_update_client(cxt, pi);
+    return cxt_update_unknown(cxt, pi);
 }
 
 /* Freshly smelling connection :d */
@@ -537,6 +549,23 @@ int cxt_update_client(connection *cxt, packetinfo *pi)
         return 0;   /* Don't Check! */
     }
     return SC_CLIENT;
+}
+
+int cxt_update_unknown(connection *cxt, packetinfo *pi)
+{
+    cxt->last_pkt_time = pi->pheader->ts.tv_sec;
+
+    if (pi->tcph) cxt->s_tcpFlags |= pi->tcph->t_flags;
+    cxt->s_total_bytes += pi->packet_bytes;
+    cxt->s_total_pkts += 1;
+
+    pi->cxt = cxt;
+    pi->sc = SC_UNKNOWN;
+    if (cxt->s_total_bytes > MAX_BYTE_CHECK ||
+        cxt->s_total_pkts  > MAX_PKT_CHECK) {
+        return 0;   /* Don't Check! */
+    }
+    return SC_UNKNOWN;
 }
 
 int cxt_update_server(connection *cxt, packetinfo *pi)
@@ -1069,10 +1098,10 @@ void usage()
     olog(" FLAGS:\n");
     olog("\n");
     olog(" * For Record Types:\n");
-    olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA  L:LOC   F:SPF   H:HINFO\n");
+    olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA  L:LOC   F:SPF   I:HINFO\n");
     olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS   d:DNSEC H:SSHFP\n");
     olog("   L also enables GPOS\n");
-    olog("   d enables DS, DNSKEY, NSEC, NSEC3. NSEC3PARAM, RRSIG\n");
+    olog("   d enables DS, DNSKEY, NSEC, NSEC3, NSEC3PARAM, RRSIG\n");
 
     olog("\n");
     olog(" * For Server Return Code (SRC) Errors:\n");
