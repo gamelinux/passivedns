@@ -380,7 +380,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             case LDNS_RR_TYPE_CAA:
                 if (config.dnsf & DNS_CHK_CAA) {
                     offset = 0;
-                    to_offset = 2;
+                    to_offset = 3;
                 }
                 break;
             case LDNS_RR_TYPE_TLSA:
@@ -1536,7 +1536,7 @@ void parse_dns_flags(char *args)
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
-            case 'A': /* TLSA */
+            case 'A': /* CAA */
                 config.dnsf |= DNS_CHK_CAA;
                 dlog("[D] Enabling flag: DNS_CHK_CAA\n");
                 ok++;
