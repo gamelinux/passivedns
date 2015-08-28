@@ -377,6 +377,18 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 2;
                 }
                 break;
+            case LDNS_RR_TYPE_CAA:
+                if (config.dnsf & DNS_CHK_CAA) {
+                    offset = 0;
+                    to_offset = 2;
+                }
+                break;
+            case LDNS_RR_TYPE_TLSA:
+                if (config.dnsf & DNS_CHK_TLSA) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
             case LDNS_RR_TYPE_HINFO:
                 if (config.dnsf & DNS_CHK_HINFO) {
                     offset = 0;
@@ -730,6 +742,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_TLSA:
+            snprintf(rr_type, 10, "TLSA");
+            break;
+        case LDNS_RR_TYPE_CAA:
+            snprintf(rr_type, 10, "CAA");
+            break;
         case LDNS_RR_TYPE_HINFO:
             snprintf(rr_type, 10, "HINFO");
             break;
@@ -1518,6 +1536,16 @@ void parse_dns_flags(char *args)
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
+            case 'A': /* TLSA */
+                config.dnsf |= DNS_CHK_CAA;
+                dlog("[D] Enabling flag: DNS_CHK_CAA\n");
+                ok++;
+                break;
+            case 'l': /* TLSA */
+                config.dnsf |= DNS_CHK_TLSA;
+                dlog("[D] Enabling flag: DNS_CHK_TLSA\n");
+                ok++;
+                break;
             case 'I': /* HINFO */
                 config.dnsf |= DNS_CHK_HINFO;
                 dlog("[D] Enabling flag: DNS_CHK_HINFO\n");
