@@ -342,7 +342,6 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             case LDNS_RR_TYPE_IPSECKEY:
                 if (config.dnsf & DNS_CHK_IPSECKEY) {
                     offset = 0;
-               //     to_offset = 3;
                 }
                 break;
             case LDNS_RR_TYPE_CERT:
@@ -428,6 +427,12 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 4;
                 }
                 break;
+            case LDNS_RR_TYPE_CDS:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 1;
+                }
+                break;
             case LDNS_RR_TYPE_SSHFP:
                 if (config.dnsf & DNS_CHK_SSHFP) {
                     offset = 0;
@@ -439,8 +444,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     offset = 0;
                 break;
             case LDNS_RR_TYPE_A:
-                if (config.dnsf & DNS_CHK_A)
+                if (config.dnsf & DNS_CHK_A) {
                     offset = 0;
+                    to_offset = 3;
+                }
                 break;
             case LDNS_RR_TYPE_PTR:
                 if (config.dnsf & DNS_CHK_PTR)
@@ -506,34 +513,42 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
             if (rname == NULL) {
                 dlog("[D] ldns_rr_rdf returned: NULL\n");
-                break;;
+                break;
             }
 
             ldns_rdf2buffer_str(buff, rname);
             rdomain_name = (unsigned char *) ldns_buffer2str(buff);
-            if (rdomain_name == NULL) continue;
-            len = strlen(rdomain_name) + 5;
-            if (tmp1 != NULL) len += strlen(tmp1);
+            if (rdomain_name == NULL) {
+                dlog("[D] ldns_buffer2str returned: NULL\n");
+                continue;
+            }
+
+            len = strlen(rdomain_name) + 5; // need some extra space here for the spaces and the \0; just be to be sure, add 5
+            if (tmp1 != NULL) { 
+                len += strlen(tmp1);
+            }
             tmp2 = malloc(len);
             if (tmp1 != NULL) {
                 tmp2 = strcpy(tmp2, tmp1);
                 tmp2 = strcat(tmp2, " ");
-            }
-            else {
+            } else {
                 tmp2 = strcpy(tmp2, "");
             }
             free(tmp1);
+            // we just concat everything together
             tmp2 = strcat(tmp2, rdomain_name);
             tmp1 = tmp2;
             free(rdomain_name);
-            offset ++;
+            offset++;
+            dlog("[D] tmp1 %s: NULL (%d)\n", tmp1, offset);
         } while (offset < to_offset);
         rdomain_name = tmp1;
-        if (rname == NULL) {
+       /* if (rname == NULL && to_offset < 1) {
+            dlog("[D] ldns_rr_rdf returned: NULL (%d)\n", offset);
             continue;
-        }
-
+        }*/
         if (rdomain_name == NULL && offset <= 1) {
+        // we have found no suitable answer in the  packet
             dlog("[D] ldns_buffer2str returned: NULL\n");
             continue;
         }
@@ -816,6 +831,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             break;
         case LDNS_RR_TYPE_RRSIG:
             snprintf(rr_type, 10, "RRSIG");
+            break;
+        case LDNS_RR_TYPE_CDS:
+            snprintf(rr_type, 10, "CDS");
             break;
         case LDNS_RR_TYPE_DS:
             snprintf(rr_type, 10, "DS");

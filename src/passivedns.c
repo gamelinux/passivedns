@@ -1102,7 +1102,7 @@ void usage()
     olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS   d:DNSEC  I:HINFO\n");
     olog("   l:TLSA   A:CAA   H:SSHFP  h:DHCID  E:CERT   K:KX   p:IPSECKEY\n");
     olog("   L also enables GPOS\n");
-    olog("   d enables DS, DNSKEY, NSEC, NSEC3, NSEC3PARAM, RRSIG, DLV\n");
+    olog("   d enables DS, DNSKEY, NSEC, NSEC3, NSEC3PARAM, RRSIG, DLV, CDS\n");
 
     olog("\n");
     olog(" * For Server Return Code (SRC) Errors:\n");
