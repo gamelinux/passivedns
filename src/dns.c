@@ -334,6 +334,29 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         rr = ldns_rr_list_rr(dns_answer_domains, j);
 
         switch (ldns_rr_get_type(rr)) {
+            case LDNS_RR_TYPE_KX:
+                if (config.dnsf & DNS_CHK_KX) {
+                    offset = 1;
+                }
+                break;
+            case LDNS_RR_TYPE_IPSECKEY:
+                if (config.dnsf & DNS_CHK_IPSECKEY) {
+                    offset = 0;
+               //     to_offset = 3;
+                }
+                break;
+            case LDNS_RR_TYPE_CERT:
+                if (config.dnsf & DNS_CHK_CERT) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
+            case LDNS_RR_TYPE_DLV:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
             case LDNS_RR_TYPE_LOC:
                 if (config.dnsf & DNS_CHK_LOC) {
                     offset = 0;
@@ -370,11 +393,15 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 5;
                 }
                 break;
-            
             case LDNS_RR_TYPE_NSEC:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
                     to_offset = 2;
+                }
+                break;
+            case LDNS_RR_TYPE_DHCID:
+                if (config.dnsf & DNS_CHK_DHCID) {
+                    offset = 0;
                 }
                 break;
             case LDNS_RR_TYPE_CAA:
@@ -742,8 +769,23 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_DLV:
+            snprintf(rr_type, 10, "DLV");
+            break;
+        case LDNS_RR_TYPE_KX:
+            snprintf(rr_type, 10, "KX");
+            break;
+        case LDNS_RR_TYPE_IPSECKEY:
+            snprintf(rr_type, 10, "IPSECKEY");
+            break;
+        case LDNS_RR_TYPE_CERT:
+            snprintf(rr_type, 10, "CERT");
+            break;
         case LDNS_RR_TYPE_TLSA:
             snprintf(rr_type, 10, "TLSA");
+            break;
+        case LDNS_RR_TYPE_DHCID:
+            snprintf(rr_type, 10, "DHCID");
             break;
         case LDNS_RR_TYPE_CAA:
             snprintf(rr_type, 10, "CAA");
@@ -1536,6 +1578,26 @@ void parse_dns_flags(char *args)
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
+            case 'E': /* CERT */
+                config.dnsf |= DNS_CHK_CERT;
+                dlog("[D] Enabling flag: DNS_CHK_CERT\n");
+                ok++;
+                break;
+            case 'p': /* IPSECKEY */
+                config.dnsf |= DNS_CHK_IPSECKEY;
+                dlog("[D] Enabling flag: DNS_CHK_IPSECKEY\n");
+                ok++;
+                break;
+            case 'K': /* KX */
+                config.dnsf |= DNS_CHK_KX;
+                dlog("[D] Enabling flag: DNS_CHK_KX\n");
+                ok++;
+                break;
+            case 'h': /* DHCID */
+                config.dnsf |= DNS_CHK_DHCID;
+                dlog("[D] Enabling flag: DNS_CHK_DHCID\n");
+                ok++;
+                break;
             case 'A': /* CAA */
                 config.dnsf |= DNS_CHK_CAA;
                 dlog("[D] Enabling flag: DNS_CHK_CAA\n");

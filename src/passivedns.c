@@ -1100,9 +1100,9 @@ void usage()
     olog(" * For Record Types:\n");
     olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA  L:LOC    F:SPF\n");
     olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS   d:DNSEC  I:HINFO\n");
-    olog("   l:TLSA   A:CAA   H:SSHFP\n");
+    olog("   l:TLSA   A:CAA   H:SSHFP  h:DHCID  E:CERT   K:KX   p:IPSECKEY\n");
     olog("   L also enables GPOS\n");
-    olog("   d enables DS, DNSKEY, NSEC, NSEC3, NSEC3PARAM, RRSIG\n");
+    olog("   d enables DS, DNSKEY, NSEC, NSEC3, NSEC3PARAM, RRSIG, DLV\n");
 
     olog("\n");
     olog(" * For Server Return Code (SRC) Errors:\n");
