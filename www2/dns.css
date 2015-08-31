@@ -1,6 +1,7 @@
 html , body
 {
     background: #282828;
+    background-image: url(tno_logo.gif);
     background-attachment:fixed;
     background-position:center; 
     background-repeat:no-repeat;

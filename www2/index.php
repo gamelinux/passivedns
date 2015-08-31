@@ -32,20 +32,20 @@ $type = getVar("type"); if (empty($type)) $type = "";
 if (strtolower($type) == 'basic' || $type == '') {
     $qtype = "and (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
     $type = 'basic';
-} else if (!in_array(strtolower($type), array('a', 'aaaa', 'ptr', 'cname', 'dname', 'mx', 'naptr', 'ns', 'rp', 'soa', 'srv', 'txt', 'loc', 'rrsig', 'dnskey', 'nsec', 'nsec3', 'ds', 'nsec3param', 'sshfp', 'gpos', 'hinfo'))) {
+} else if (!in_array(strtolower($type), array('a', 'aaaa', 'caa', 'cds', 'cert', 'cname', 'dhcid', 'dlv', 'dname', 'dnskey', 'ds', 'gpos', 'hinfo', 'ipseckey', 'kx', 'loc', 'mx', 'naptr', 'ns', 'nsec', 'nsec3', 'nsec3param', 'ptr', 'rp', 'rrsig', 'soa', 'spf', 'srv', 'sshfp','tlsa', 'txt'))) {
     $qtype = '';
     $type= 'any';
 } else {
     $qtype = "and MAPTYPE = '$type'";
 }
-
+ 
 $sort = getVar("sort"); if (empty($sort)) $sort = "";
 $dir = getVar("dir"); if (empty($dir)) $dir = "desc";
 if(!in_array(strtoupper($dir), array('DESC', 'ASC'))) {
     $qdir = $dir = "desc";
 } else {
     $qdir = $dir;
-    if(!in_array(strtolower($sort), array('first_seen', 'last_seen', 'maptype', 'ttl', 'query', 'answer', 'count', 'asn'))) {
+    if (!in_array(strtolower($sort), array('first_seen', 'last_seen', 'maptype', 'ttl', 'query', 'answer', 'count', 'asn'))) {
         $qsort = $sort = '';
     } else {
         $qsort = "ORDER BY $sort $qdir";
@@ -59,9 +59,9 @@ if(!is_numeric($ttl) || $ttl < 0) {
 } else {
     $qttl = ceil($ttl);
     $qcompare = '';
-    if ($compare == 'eq') { $qcompare = '=';$qttl = " AND ttl $qcompare $qttl";}
-    elseif ($compare == 'ge') { $qcompare = '>=';$qttl = " AND ttl $qcompare $qttl";}
-    elseif ($compare == 'le') { $qcompare = '<=';$qttl = " AND ttl $qcompare $qttl";}
+    if ($compare == 'eq') { $qcompare = '=';$qttl = " AND ttl $qcompare $qttl"; }
+    elseif ($compare == 'ge') { $qcompare = '>=';$qttl = " AND ttl $qcompare $qttl"; }
+    elseif ($compare == 'le') { $qcompare = '<=';$qttl = " AND ttl $qcompare $qttl"; }
     else { $qttl = $ttl = ''; }  
     if ($qttl != '' && $query == '') $query = '%';
 }
@@ -95,17 +95,21 @@ if ($query || $qttl != '') {
     if($stmt->rowCount() == 0){
         echo "<b>No records found...</b><br><br>";
     } else {
-        echo "<table cellpadding='2'><tr><td>#</td><td><b>First Seen</b></td><td><b>Last Seen</b></td><td><b>Type</b></td><td><b>TTL</b></td><td><b>Query</b></td><td><b>Answer</b></td><td><b>ASN</b></td><td><b>Count</b></td></tr>";
+        echo "<table cellpadding='2'><tr><td>#</td><td><b>First Seen</b></td><td><b>Last Seen</b></td><td><b>Type</b></td></td><td><b>Query</b></td><td><b>Answer</b></td><td><b>TTL</b><td><b>ASN</b></td><td><b>Count</b></td></tr>";
         echo '
             ';
+        $href = "?type=". urlencode($type)."&amp;compare=". urlencode($compare)  ."&amp;ttl=". urlencode($ttl) . "&amp;sort=" .  urlencode($sort) . "&amp;dir=" .  urlencode($dir);
         while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $a = strtolower($r['ANSWER']);
+            $q = strtolower($r['QUERY']);
+            $q = ($q == '') ? '.' : $q;
             echo "<tr>";
-            echo "<td>". $cnt.".</td>";
+            echo "<td>$cnt</td>";
             echo "<td>". str_replace(' ', '&nbsp;', $r['FIRST_SEEN']) ."</td>";
             echo "<td>". str_replace(' ', '&nbsp;', $r['LAST_SEEN']) ."</td>";
             echo "<td>". $r['MAPTYPE'] ."</td>";
-            echo "<td><div style='word-break:break-all;'><a href='?query=". urlencode($r['QUERY']) ."&amp;type=". urlencode($type)."&amp;compare=". urlencode($compare)  ."&amp;ttl=". urlencode($ttl) . "&amp;sort=" .  urlencode($sort) . "&amp;dir=" .  urlencode($dir). "'>". strtolower(($r['QUERY'] == '') ? '.' : $r['QUERY'] ) ."</a></div></td>";
-            echo "<td><div style='word-break:break-all;'><a href='?query=". urlencode($r['ANSWER']) . "&amp;type=". urlencode($type)."&amp;compare=". urlencode($compare)  ."&amp;ttl=". urlencode($ttl) . "&amp;sort=" .  urlencode($sort) . "&amp;dir=" .  urlencode($dir). "'>". strtolower($r['ANSWER']) ."</a></div></td>";
+            echo "<td><div" . ((strlen($q) < 40) ? "style='word-break:break-none;'" : "style='word-break:break-none;'") ."><a href='$href&amp;query=". urlencode($r['QUERY']) . "'>$q</a></div></td>";
+            echo "<td><div style='word-break:break-all;'><a href='$href&amp;query=". urlencode($r['ANSWER']). "' >$a</a></div></td>";
             echo "<td>". $r['TTL'] ."</td>";
             echo "<td><a href='?query=". urlencode($r['asn'])."&amp;type=". urlencode($type)."&amp;compare=". urlencode($compare)  ."&amp;ttl=". urlencode($ttl) . "&amp;sort=" .  urlencode($sort) . "&amp;dir=" .  urlencode($dir). "'>". $r['asn'] ."</a></td>";
             echo "<td>". $r['COUNT'] ."</td>";
@@ -161,12 +165,19 @@ function print_search_body($query, $type, $compare, $sort, $dir, $ttl)
                 'any'=> 'any', 
                 'a'=> 'a',
                 'aaaa'=>'aaaa',
+                'caa'=>'caa',
+                'cds'=>'cds',
+                'cert'=>'cert',
                 'cname'=>'cname',
+                'dhcid'=> 'dhcid',
+                'dlv'=> 'dlv',
                 'dname'=> 'dname',
                 'dnskey'=>'dnskey', 
                 'ds'=> 'ds', 
                 'gpos'=> 'gpos',
                 'hinfo'=> 'hinfo',
+                'ipseckey'=> 'ipseckey',
+                'kx'=>'kx',
                 'loc'=> 'loc',
                 'mx'=>'mx',
                 'naptr'=>'naptr',
@@ -178,10 +189,12 @@ function print_search_body($query, $type, $compare, $sort, $dir, $ttl)
                 'rp'=>'rp', 
                 'rrsig'=>'rrsig',
                 'soa'=>'soa',
+                'spf'=>'spf',
                 'srv'=>'srv',
                 'sshfp'=>'sshfp',
+                'tlsa'=>'tlsa',
                 'txt'=>'txt',
-                    ), 'Type', $type);
+            ), 'Type', $type);
     echo '<input type="text" maxlength="10" size=4 name="ttl" placeholder="TTL" value="'. $ttl .'">&nbsp;';
     print_select('compare', array('eq'=>'==', 'le'=>'&lt;=', 'ge'=> '&gt;='), 'Compare', $compare);
     print_select('sort', array(''=> '', 'FIRST_SEEN' =>'first seen', 'LAST_SEEN' =>'last seen', 'MAPTYPE' =>'type', 'TTL' =>'ttl', 'QUERY' =>'query', 'ANSWER' =>'answer', 'COUNT' =>'count', 'asn'=>'ASN'), 'Sort', $sort);

@@ -27,7 +27,7 @@ if ($type == 'tld') {
     $perc = false;
     if ($subtype == 'perc') { $perc = true; }
     $title = 'Top level domains';
-    $sql = "SELECT count(*) as cnt, substring_index(query, '.', -1) as tld from (select distinct query from pdns) as foo group by tld order by $sort $limit";
+    $sql = "SELECT count(*) as cnt, substring_index(query, '.', -1) as tld from (select query from pdns group by query, maptype) as foo group by tld order by $sort $limit";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     if($stmt->rowCount()==0) die("empty");
@@ -42,7 +42,7 @@ if ($type == 'tld') {
     }
 } elseif ($type == 'sld') {
     $title = 'Second level domains';
-    $withtld = false;
+    $withtld =  false;
     if ($subtype == 'withtld') { $withtld = true;}
 
     $domains = load_domains_with_tld($pdo, $withtld); 
@@ -59,17 +59,23 @@ if ($type == 'tld') {
        $labels[] = $k;
    }
 } elseif ($type == 'length') {
+    $perc=false;
     if ($sort == 'len') { $sort = 'len asc';}
     else {$sort = 'cnt desc';}
+    if ($subtype == 'perc') { $perc = true;}
     $title = 'Domain name length';
-    $sql = "SELECT count(*) AS cnt, length(query) AS len FROM pdns WHERE maptype != 'PTR' GROUP BY length(query) ORDER BY $sort LIMIT $TOPLIMIT";
+    $sql = "SELECT count(*) AS cnt, length(query) AS len FROM (select distinct query from pdns WHERE maptype != 'PTR') AS foo GROUP BY length(query) ORDER BY $sort LIMIT $TOPLIMIT";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     if($stmt->rowCount()==0) die("empty");
     $data = array();
     while ( $r = $stmt->fetch(PDO::FETCH_ASSOC) ) {
         if ($r['len'] == '') continue;
-        $data[] = $r['cnt'];
+        if ($perc) {
+            $data[] = round(100* ($r['cnt'] / $distinct_count), 2);
+        } else {
+            $data[] = $r['cnt'];
+        }
         $labels[] = $r['len'];
     }
 } elseif ($type == 'asn') {
@@ -111,7 +117,6 @@ if ($type == 'tld') {
         $data[$r['maptype']][$r['hours']] = array($r['hours'], $r['cnt'], $r['maptype']);
     }
     $temp = array(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
-    $map = array('a'=>0, 'aaaa'=>1, 'cname'=>2, 'dname'=> 3,  'mx'=>4, 'naptr'=>5, 'ns'=>6, 'ptr'=>7, 'rp'=>8, 'soa'=>9, 'srv'=>10, 'txt'=>11);
     $data2 = array();
     foreach ($data as $mapt=>$values) {
         $t = $temp;
