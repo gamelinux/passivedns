@@ -954,8 +954,20 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     else {
 #endif /* HAVE_JSON */
         /* Print timestamp */
-        if ((config.fieldsf & FIELD_TIMESTAMP_S) &&
-            (config.fieldsf & FIELD_TIMESTAMP_MS)) {
+        if ((config.fieldsf & FIELD_TIMESTAMP_YMDHMS)) {
+            struct tm *tmpTime;
+            char timestr[200];
+            tmpTime = localtime(&l->last_seen.tv_sec);
+            strftime(timestr, sizeof(timestr), "%Y-%m-%d %H:%M:%S", tmpTime);
+            if (is_err_record) {
+                offset += snprintf(output, sizeof(buffer) - offset, "%s.%06lu",
+                                   timestr, l->last_seen.tv_usec);
+            } else {
+                offset += snprintf(output, sizeof(buffer) - offset, "%s.%06lu",
+                                   timestr, p->last_seen.tv_usec);
+            }
+        } else if ((config.fieldsf & FIELD_TIMESTAMP_S) &&
+                   (config.fieldsf & FIELD_TIMESTAMP_MS)) {
             if (is_err_record) {
                 offset += snprintf(output, sizeof(buffer) - offset, "%lu.%06lu",
                                    l->last_seen.tv_sec, l->last_seen.tv_usec);
@@ -1435,6 +1447,11 @@ void parse_field_flags(char *args)
     for (i = 0; i < len; i++)
     {
         switch(args[i]) {
+            case 'H': /* Timestamp(YMDHMS) */
+                config.fieldsf |= FIELD_TIMESTAMP_YMDHMS;
+                dlog("[D] Enabling field: FIELD_TIMESTAMP_YMDHMS\n");
+                ok++;
+                break;
             case 'S': /* Timestamp(s) */
                 config.fieldsf |= FIELD_TIMESTAMP_S;
                 dlog("[D] Enabling field: FIELD_TIMESTAMP_S\n");

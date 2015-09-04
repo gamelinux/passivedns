@@ -1091,9 +1091,9 @@ void usage()
     olog(" -h              This help message.\n\n");
     olog(" FIELDS:\n");
     olog("\n");
-    olog("   S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  s: Server IP\n");
-    olog("   C: Class         Q: Query          T: Type       A: Answer\n");
-    olog("   t: TTL           n: Count\n");
+    olog("   H: YMD-HMS Stamp S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  \n");
+    olog("   s: Server IP     C: Class         Q: Query          T: Type       \n");
+    olog("   A: Answer        t: TTL           n: Count\n");
     olog("\n");
     olog(" FLAGS:\n");
     olog("\n");
@@ -1162,6 +1162,7 @@ int main(int argc, char *argv[])
     config.dnsf = 0;
     config.log_delimiter = "||";
     config.fieldsf = 0;
+    /* config.fieldsf |= FIELD_TIMESTAMP_YMDHMS; /* not on by default  */
     config.fieldsf |= FIELD_TIMESTAMP_S;
     config.fieldsf |= FIELD_TIMESTAMP_MS;
     config.fieldsf |= FIELD_CLIENT;

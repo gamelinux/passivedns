@@ -47,6 +47,13 @@ DNSCACHE=
 #Seconds between printing duplicate DNS info
 DNSDUPE=
 
+#Manually set the values to log:
+# FIELDS:
+#  H: YMD-HMS Stamp S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  
+#  s: Server IP     C: Class         Q: Query          T: Type       
+#  A: Answer        t: TTL           n: Count
+LOGFIELDS=SMcsCQTAtn
+
 #Manually set DNS RR Types to care about
 # FLAGS:
 #  4:A    6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA
