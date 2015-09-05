@@ -73,8 +73,8 @@ echo <<<TTT
 <td>STD TTL</td><td>$std_ttl</td></tr>
 <tr><td>Distinct ASNs</td><td>$asn_cnt</td>
 <td>Distinct TLDs</td><td>$tld_cnt</td></tr>
-<tr><td>SLDs without TLD</td><td>$sld_cnt1</td>
-<td>SLDs with TLD</td><td>$sld_cnt2</td></tr>
+<tr><td>Different SLDs without TLD</td><td>$sld_cnt1</td>
+<td>Different SLDs with TLD</td><td>$sld_cnt2</td></tr>
 <tr><td>Min Days</td><td>$min_days</td>
 <td>Max Days</td><td>$max_days</td></tr>
 <tr><td>Average Days</td><td>$avg_days</td>

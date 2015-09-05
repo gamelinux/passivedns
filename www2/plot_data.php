@@ -10,6 +10,7 @@ $DBPASSWD = "pdns";
 $pdo = new PDO("mysql:host=$DATABASE;dbname=$DBTABLE", $DBUSER, $DBPASSWD);
 $type = getVar('type');
 $subtype = getVar('subtype');
+$source = getVar('source');
 $sql = "select count(*) as cnt, count(distinct query) as cnt_d from pdns";
 $stmt = $pdo->prepare($sql);
 $stmt->execute();
@@ -17,7 +18,7 @@ $row = $stmt->fetch(PDO::FETCH_ASSOC);
 $total_count = $row['cnt'];
 $distinct_count = $row['cnt_d'];
 
-$labels = $data2 = $data = array();
+$labels = $data2 = $data = $options = array();
 $legend = '';
 $sort = getVar('sort');
 if ($type == 'tld') {
@@ -40,6 +41,10 @@ if ($type == 'tld') {
         }
         $labels[] = $r['tld'];
     }
+    $options = array(
+            'sort' => array( 'cnt'=>'count', 'tld'=>'TLD'),
+            'subtype' => array('tld'=>'TLD','perc'=>'Percentage' )
+    );
 } elseif ($type == 'sld') {
     $title = 'Second level domains';
     $withtld =  false;
@@ -58,6 +63,9 @@ if ($type == 'tld') {
        $data[] = $r;
        $labels[] = $k;
    }
+    $options = array(
+            'subtype' => array('withtld'=>'With TLD','notld'=>'Without TLD' )
+    );
 } elseif ($type == 'length') {
     $perc=false;
     if ($sort == 'len') { $sort = 'len asc';}
@@ -78,6 +86,10 @@ if ($type == 'tld') {
         }
         $labels[] = $r['len'];
     }
+    $options = array(
+            'sort' => array( 'cnt'=>'count', 'len'=>'Length'),
+            'subtype' => array('len'=>'Length','perc'=>'Percentage' )
+    );
 } elseif ($type == 'asn') {
     if ($sort == 'asn') { $sort = 'asn asc';}
     else {$sort = 'cnt desc';}
@@ -93,6 +105,9 @@ if ($type == 'tld') {
         $labels[] = $r['asn'];
     }
 
+    $options = array(
+            'sort' => array( 'cnt'=>'count', 'asn'=>'ASN'),
+    );
 } elseif ($type == 'asn_answer') {
     $title = 'ASNs per domain name';
     $sql = "select count(distinct asn) as cnt, QUERY from pdns where not asn is null group by query order by cnt desc limit $TOPLIMIT";
@@ -104,13 +119,21 @@ if ($type == 'tld') {
         $data[] = $r['cnt'];
         $labels[] = ($r['QUERY']==''?'.':$r['QUERY']);
     }
-    //$plot->SetXScaleType('log');
 } else if ($type == 'hour') { 
     $title = 'Queries per hour';
-    if ($subtype == 'last') { $col = 'last_seen';} else {$col = 'first_seen';}
-    $sql = "select count(*) as cnt, hour($col) as hours, maptype from pdns group by hour($col), maptype order by maptype, hours desc";
+    $where = '';
+    $input_arr =array();
+    if ($source == 'last') { $col = 'last_seen';} else {$col = 'first_seen';}
+    if ($subtype == 'basic') {
+        $where = "AND (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
+    } elseif ($subtype != '' && $subtype != 'any') { 
+        $input_arr[':subtype'] = $subtype;
+        $where = "AND maptype = :subtype";
+    }
+    $sql = "select count(*) as cnt, hour($col) as hours, maptype from pdns WHERE 1=1  $where group by hour($col), maptype order by maptype, hours desc";
+//    echo $sql;
     $stmt = $pdo->prepare($sql);
-    $stmt->execute();
+    $stmt->execute($input_arr);
     if($stmt->rowCount()==0) die("empty");
     $data = array();
     while ( $r = $stmt->fetch(PDO::FETCH_ASSOC) ) {
@@ -130,14 +153,20 @@ if ($type == 'tld') {
     $legend = $foo['legend'];
     $data = $foo['data'];
 
-    $labels = range(0,23);
+    $labels = range(0, 23);
+    $options = array(
+            'source' => array('last'=>'Last seen','first'=>'First seen' ),
+            'subtype' => $rr_types
+    );
 } else if ($type == 'ttl') {
     $title = 'TTL values';
     if ($sort == 'ttl') { $sort = 'nttl asc';}
     else {$sort = 'cnt desc';}
     $where = '';
     $input_arr = array();
-    if ($subtype != '') { 
+    if ($subtype == 'basic') {
+        $where = "AND (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
+    } elseif ($subtype != '' && $subtype != 'any') { 
         $input_arr[':subtype'] = $subtype;
         $where = "AND maptype = :subtype";
     }
@@ -151,11 +180,17 @@ if ($type == 'tld') {
         $data[] = $r['cnt'];
         $labels[] = $r['nttl'];
     }
+    $options = array(
+            'sort' => array('ttl'=>'TTL', 'cnt'=>'count', ),
+            'subtype' => $rr_types
+    );
 } else if ($type == 'days') {
     $title = 'Days active';
     $where = '';
     $input_arr = array();
-    if ($subtype != '') {
+    if ($subtype == 'basic') {
+        $where = "AND (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
+    } elseif ($subtype != '' && $subtype != 'any') { 
         $input_arr[':subtype'] = $subtype;
         $where = "WHERE maptype = :subtype";
     }
@@ -170,11 +205,16 @@ if ($type == 'tld') {
         $data[] = $r['cnt'];
         $labels[] = $r['days'];
     }
+    $options = array(
+            'subtype' => $rr_types
+    );
 } else if ($type == 'first_seen') {
     $title = 'Days since first seen';
     $where = '';
     $input_arr = array();
-    if ($subtype != '') { 
+    if ($subtype == 'basic') {
+        $where = "AND (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
+    } elseif ($subtype != '' && $subtype != 'any') { 
         $input_arr[':subtype'] = $subtype;
         $where = "WHERE maptype = :subtype";
     }
@@ -188,11 +228,16 @@ if ($type == 'tld') {
         $data[] = $r['cnt'];
         $labels[] = $r['days'];
     }
+    $options = array(
+            'subtype' => $rr_types
+    );
 } else if ($type == 'last_seen') {
     $title = 'Days since last seen';
     $where = '';
     $input_arr = array();
-    if ($subtype != '') { 
+    if ($subtype == 'basic') {
+        $where = "AND (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
+    } elseif ($subtype != '' && $subtype != 'any') { 
         $input_arr[':subtype'] = $subtype;
         $where = "WHERE maptype = :subtype";
     }
@@ -206,10 +251,13 @@ if ($type == 'tld') {
         $data[] = $r['cnt'];
         $labels[] = $r['days'];
     }
+    $options = array(
+            'subtype' => $rr_types
+    );
 } else if ($type == 'rrtype') {
     $title = 'Resource records';
     if ($sort == 'rrtype') { $sort = 'maptype asc';}
-    else {$sort = 'cnt asc';}
+    else {$sort = 'cnt desc';}
     $sql = "SELECT count(*) as cnt, maptype from pdns group by maptype order by $sort";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
@@ -217,9 +265,16 @@ if ($type == 'tld') {
     $data = array();
     $labels = array();
     while ( $r = $stmt->fetch(PDO::FETCH_ASSOC) ) {
-        $data[] = $r['cnt'];
+        if ($subtype == 'perc') {
+            $data[] = round(($r['cnt']/$total_count) * 100, 1);
+        } else {
+            $data[] = $r['cnt'];
+        }
         $labels[] = $r['maptype'];
     }
+    $options = array(
+            'sort' => array( 'cnt'=>'Count', 'rrtype'=>'RR Type'),
+    );
 } else if ($type == 'top_request') { 
     $title = "$TOPLIMIT frequestly requests domains";
     $sql = "SELECT max(count) as mx,sum(COUNT) as cnt, QUERY, round(sum(count)/(abs(unix_timestamp(min(first_seen))- unix_timestamp(max(last_seen)))/(24*3600))/count(*)) AS avg from pdns group by QUERY order by cnt desc limit $TOPLIMIT";
@@ -271,7 +326,7 @@ if ($type == 'tld') {
     die ("Unknown type");
 }
 
-$vars = array('labels' => $labels, 'data'=>$data, "title" =>$title, 'legend'=> $legend);
+$vars = array('labels' => $labels, 'data'=>$data, "title" =>$title, 'legend'=> $legend, 'options' => $options, 'type'=> $type);
 if ($data2 != array()) {
     $vars['data2'] = $data2;
 }

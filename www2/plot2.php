@@ -17,16 +17,16 @@ echo <<<HTML
 <script src="chart.js"></script>
 <script src="Chart.StackedBar.js"></script>
 <script src="jquery-2.1.4.min.js"></script>
-<span id="title"></span><br/>
+<div id="titlebar">
+<span id="title" class="title"></span>
+<span id="options" class="options"></span>
+</div>
 <canvas id="myChart"></canvas>
-<script >
+
+<script>
 
 var ctx = $("#myChart").get(0).getContext("2d");
-var width = $(document).width() - 10;
-var height = $(document).height() - 10;
-var posy = $("#myChart").position().top;
-$("#myChart").width(width);
-$("#myChart").height(height - posy);
+
 var url = 'plot_data.php';
 var data = {};
 var options = {
@@ -44,18 +44,40 @@ $.post(url, data).done(function(html) {
     $('#ttag').text('Passive DNS - ' + x.title);
 
     var colors = [ 
-    "0,160,200",
+    "0,200,240",
+    "0,200,220",
+    "0,200,200",
+    "0,200, 180",
     "0,200, 160",
-    "0,120, 200",
+    "0,200, 140",
     "0,200, 120",
-    "200, 0, 160",
-    "200, 0, 120",
-    "200, 160, 0",
-    "200, 120, 0",
-    "200, 120, 160",
-    "200, 160, 160",
-    "200, 120, 120",
-    "200, 160, 120",
+    "0,200, 100",
+    "0,200, 80",
+    "0,200, 60",
+    "0,200, 40",
+    "0,100,240",
+    "0,100,220",
+    "0,100,200",
+    "0,100, 180",
+    "0,100, 160",
+    "0,100, 140",
+    "0,100, 120",
+    "0,180, 100",
+    "0,100, 80",
+    "0,40, 60",
+    "0,40, 40",
+    "0,40,240",
+    "0,40,220",
+    "0,40,200",
+    "0,40, 180",
+    "0,40, 160",
+    "0,40, 140",
+    "0,40, 120",
+    "0,40, 100",
+    "0,40, 80",
+    "0,40, 60",
+    "0,40, 40",
+
     ];
 
     data = {
@@ -88,6 +110,31 @@ $.post(url, data).done(function(html) {
             i = (i + 1) % colors.length;
         } );
     }
+    if (x.options !== undefined && !$.isEmptyObject(x.options)) {
+        var s= '<form action="plot2.php" method="get">Options: ';
+        console.log(x.options);
+
+        for (var idx in x.options) {
+            s = s + '<select id="'+ idx +'" name="' + idx + '"> ' ;
+            s = s + '<option value="" disabled selected>' + idx + '</option>';
+            for (var i in x.options[idx]) {
+                s = s + '<option value="'+ [i] + '">' + x.options[idx][i] + '</option>';
+            };
+            s = s + "<input type='hidden' id='type' name='type' value='" + x.type+ "'>";
+            s = s + '</select>';
+        }
+        s = s + "<input type='submit' id='submit' value='submit'>";
+        s = s + '<form>';
+        $('#options').html(s);
+
+    }
+    var width = $(document).width() - 20;
+    var height = $(document).height() - 5;
+    console.log(width, height);
+    var posy = $("#myChart").position().top;
+    var posy2 = $("#titlebar").position().top;
+    $("#myChart").width(width);
+    $("#myChart").height(height - (posy+posy2) );
     var myBarChart;
     if (stacked) {
         myBarChart = new Chart(ctx).StackedBar(data, options);
