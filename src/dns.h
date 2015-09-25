@@ -70,6 +70,7 @@
 #define FIELD_ANSWER       0x0080
 #define FIELD_TTL          0x0100
 #define FIELD_COUNT        0x0200
+#define FIELD_TIMESTAMP_YMDHMS 0x0400
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
