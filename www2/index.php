@@ -27,8 +27,24 @@ $DBPASSWD = "pdns";
 $DBLIMIT  = 1000;
 # Configure End
 $o_query = getVar('query');
-$query = sanitize("query"); if (empty($query)) $query = "";
-$type = getVar("type"); if (empty($type)) $type = "";
+$o_fromdate = getVar('fromdate');
+$o_todate = (getVar('todate'));
+$todate = strtotime($o_todate);
+$fromdate = strtotime($o_fromdate);
+if ($fromdate <= 0) {
+    $o_fromdate = $fromdate = '';
+} else {
+    $fromdate = "AND FIRST_SEEN >= '" .strftime("%F %H:%M:%S", $fromdate) . "'";
+}
+if ($todate <= 0) { 
+    $o_todate = $todate = '';
+} else {
+    $todate = "AND FIRST_SEEN <= '" . strftime("%F %H:%M:%S", $todate) . "'";
+}
+$query = sanitize("query"); 
+if (empty($query)) $query = "";
+$type = getVar("type"); 
+if (empty($type)) $type = "";
 if (strtolower($type) == 'basic' || $type == '') {
     $qtype = "and (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
     $type = 'basic';
@@ -67,7 +83,7 @@ if(!is_numeric($ttl) || $ttl < 0) {
 }
 
 print_header();
-print_search_body($o_query, $type, $compare, $sort, $dir, $ttl);
+print_search_body($o_query, $type, $compare, $sort, $dir, $ttl, $o_fromdate, $o_todate);
 $cnt = 0;
 if ($query || $qttl != '') {
     echo "<center>";
@@ -78,20 +94,23 @@ if ($query || $qttl != '') {
             || preg_match('/^[a-f0-9]{1,4}:((\*|([a-f0-9]{0,4}):){1,6}(\*|([a-f0-9]{1,4})))$/i', $query)) {
         $t_query = str_replace('*', '%', $query);
         $input_arr[':query'] = $t_query;
-        $sql = "SELECT * FROM pdns WHERE answer LIKE :query $qtype  $qttl $qsort LIMIT $DBLIMIT";
+        $sql = "SELECT * FROM pdns WHERE answer LIKE :query $qtype  $qttl $fromdate $todate $qsort LIMIT $DBLIMIT";
         echo "<b>Passive DNS Records for IP:  $query </b><br><br>";
     } elseif (is_numeric($query)) {
         echo "<b>Passive DNS Records for ASN: $query </b> <br><br>";
-        $sql = "SELECT * FROM pdns WHERE (asn= :query) $qtype $qttl $qsort LIMIT $DBLIMIT";
+        $sql = "SELECT * FROM pdns WHERE (asn= :query) $qtype $qttl $fromdate $todate $qsort LIMIT $DBLIMIT";
         $input_arr[':query'] = $query;
     } else {
         echo "<b>Passive DNS Records for Domain: $query </b> <br><br>";
-        $sql = "SELECT * FROM pdns WHERE (query LIKE :query OR query LIKE :query1) $qtype $qttl $qsort LIMIT $DBLIMIT";
-        $input_arr[':query'] = $query;
-        $input_arr[':query1'] = "%$query";
+        $q_str = prepare_query($query, $input_arr);
+        $sql = "SELECT * FROM pdns WHERE ($q_str) $qtype $qttl $fromdate $todate $qsort LIMIT $DBLIMIT";
+//        $input_arr[':query'] = $query;
+  //      $input_arr[':query1'] = "%$query";
     }
+
     $stmt = $pdo->prepare($sql);
     //echo $sql;
+    //var_dump($input_arr);
     $stmt->execute($input_arr);
     if($stmt->rowCount() == 0){
         echo '<b>No records found...</b><br><br>';
@@ -130,41 +149,62 @@ if ($query || $qttl != '') {
 print_tail();
 
 
-function sanitize($in) 
+function prepare_query($query, &$input_arr)
 {
-  $qvar =  strip_tags(addslashes(trim(getVar($in))));
-  if (preg_match('/(\w+\.)*\w{2,}\.\w{2,4}$/i', $qvar) ) {
-    /* Might be a domain */
-    return $qvar;
-  } else if (preg_match('/^([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)$/', $qvar) ) {
-    /* Might be a IPv4 */
-    return $qvar;
-  } else if (preg_match('/^[a-f0-9]{1,4}:((\*|([a-f0-9]{0,4}):){1,6}(\*|([a-f0-9]{1,4})))$/i', $qvar)) {
-    /* FE80:0000:0000:0000:0202:B3FF:FE1E:8329 or FE80::0202:B3FF:FE1E:8329 */
-    /* or even 2001:db8::1 or 0:0:0:0:0:ffff:192.1.56.10  */
-    /* Might be a IPv6 */
-    return $qvar;
-  } elseif (is_numeric($qvar) ) {
-      return $qvar;
-  } elseif (strlen($qvar) > 2) {
-      $qvar = str_replace('%', '', $qvar);
-      if ($qvar[0] == '^') { 
-          $qvar = substr($qvar, 1);
-          return "$qvar%";
-      } else if (strrev($qvar)[0] == '$'){
-          $qvar = substr($qvar, 0, -1);
-          return "%$qvar";
-      } else {
-          return "%$qvar%";
-      }
-  } elseif ($qvar == '*') {
-      return '%';
-  } else {
-      return '';
-  }
+    $qstr = '1=1 ';
+    $words = explode(' ', $query) ;
+    $cnt = 0;
+    foreach ($words as $word) {
+        $cnt++;
+        $word = trim($word);
+        if ($word == '') continue;
+        if ($word == '%') {
+            $qstr .= " AND query LIKE :query_$cnt ";
+            $input_arr[":query_$cnt"] = "%";
+        } elseif ($word[0] == '^') { 
+            $word = substr($word, 1);
+            $qstr .= " AND query LIKE :query_$cnt ";
+            $input_arr[":query_$cnt"] = "$word%";
+        } elseif (strrev($word)[0] == '$'){
+            $word = substr($word, 0, -1);
+            $qstr .= " AND query LIKE :query_$cnt ";
+            $input_arr[":query_$cnt"] = "%$word";
+        } else {
+            $qstr .= " AND query LIKE :query_$cnt ";
+            $input_arr[":query_$cnt"] = "%$word%";
+        }
+    }
+    return $qstr;
 }
 
-function print_search_body($query, $type, $compare, $sort, $dir, $ttl) 
+
+
+function sanitize($in) 
+{
+    $qvar = strip_tags(addslashes(trim(getVar($in))));
+    if (preg_match('/(\w+\.)*\w{2,}\.\w{2,4}$/i', $qvar) ) {
+        /* Might be a domain */
+        return $qvar;
+    } else if (preg_match('/^([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)$/', $qvar) ) {
+        /* Might be a IPv4 */
+        return $qvar;
+    } else if (preg_match('/^[a-f0-9]{1,4}:((\*|([a-f0-9]{0,4}):){1,6}(\*|([a-f0-9]{1,4})))$/i', $qvar)) {
+        /* FE80:0000:0000:0000:0202:B3FF:FE1E:8329 or FE80::0202:B3FF:FE1E:8329 */
+        /* or even 2001:db8::1 or 0:0:0:0:0:ffff:192.1.56.10  */
+        /* Might be a IPv6 */
+        return $qvar;
+    } elseif (is_numeric($qvar) ) {
+        return $qvar;
+    } elseif (strlen($qvar) > 2) {
+        return $qvar;
+    } elseif ($qvar == '*') {
+        return '%';
+    } else {
+        return '';
+    }
+}
+
+function print_search_body($query, $type, $compare, $sort, $dir, $ttl, $fromdate, $todate) 
 {
     global $rr_types;
     echo '<table  cellpadding="2" cellspacing="0">';
@@ -176,6 +216,8 @@ function print_search_body($query, $type, $compare, $sort, $dir, $ttl)
     print_select('compare', array('eq'=>'==', 'le'=>'&lt;=', 'ge'=> '&gt;='), 'Compare', $compare);
     print_select('sort', array(''=> '', 'FIRST_SEEN' =>'first seen', 'LAST_SEEN' =>'last seen', 'MAPTYPE' =>'type', 'TTL' =>'ttl', 'QUERY' =>'query', 'ANSWER' =>'answer', 'COUNT' =>'count', 'asn'=>'ASN'), 'Sort', $sort);
     print_select('dir', array(''=> '', 'desc' =>'Desc', 'asc' =>'Asc'), 'Dir', $dir);
+    echo '<input type="text" maxlength="25" size=4 name="fromdate" placeholder="from" value="'. $fromdate .'">&nbsp;';
+    echo '<input type="text" maxlength="25" size=4 name="todate" placeholder="to" value="'. $todate .'">&nbsp;';
     echo '<input type="submit" value="Search"></form><center><br> ';
 }
 
