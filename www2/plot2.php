@@ -14,9 +14,10 @@ print_header();
 
 echo <<<HTML
 
-<script src="chart.js"></script>
-<script src="Chart.StackedBar.js"></script>
+<!--script src="chart.js"></script>
+<script src="Chart.StackedBar.js"></script-->
 <script src="jquery-2.1.4.min.js"></script>
+<script src="ChartNew.js"></script>
 <div id="titlebar">
 <span id="title" class="title"></span>
 <span id="options" class="options"></span>
@@ -33,12 +34,34 @@ var options = {
     scaleFontSize: 10,
     barValueSpacing : 2,
     scaleShowVerticalLines: false,
-    multiTooltipTemplate: "<%if (datasetLabel){%><%=datasetLabel%>: <%}%>: <%= value %>"
+   // annotateLabel: "<%=v1%> <%=v2%>: <%=v3%> (<%=v6%>%)", 
+    annotateLabel: annotateAllX,
+    annotateDisplay: true,
+    yAxisMinimumInterval: 1,
+   //annotateRelocate: true,
+    graphMin : 0,
+    //multiTooltipTemplate: "<%if (datasetLabel){%><%=datasetLabel%>: <%}%>: <%= value %>"
    };
 $data_str
 
+function annotateAllX(area,ctx,data,statData,posi,posj,othervars) {
+    var retstring = '';
+    if (data.datasets.length == 1) { 
+        retstring = statData[0][posj].v2 + ": "+statData[0][posj].v3 + "<br>";
+    } else {
+        retstring="<b>" + statData[posi][posj].v2 + '</b><br>';
+
+        for(var i=0;i<data.datasets.length;i++){
+            if(typeof statData[i][posj].v3 != "undefined" && data.datasets[i].type != "Line") {
+                retstring = retstring + statData[i][posj].v1 + ": " + statData[i][posj].v3 + "<br>";
+            }
+        }
+    }
+    return retstring;
+}
+
 $.post(url, data).done(function(html) {
-        console.log(html);
+    console.log(html);
     var x = $.parseJSON(html);
     $('#title').text(x.title);
     $('#ttag').text('Passive DNS - ' + x.title);
@@ -55,9 +78,9 @@ $.post(url, data).done(function(html) {
     "0,200, 80",
     "0,200, 60",
     "0,200, 40",
-    "0,100,240",
-    "0,100,220",
-    "0,100,200",
+    "0,100, 240",
+    "0,100, 220",
+    "0,100, 200",
     "0,100, 180",
     "0,100, 160",
     "0,100, 140",
@@ -65,10 +88,10 @@ $.post(url, data).done(function(html) {
     "0,180, 100",
     "0,100, 80",
     "0,40, 60",
-    "0,40, 40",
-    "0,40,240",
-    "0,40,220",
-    "0,40,200",
+   // "0,40, 40",
+    "0,40, 240",
+    "0,40, 220",
+    "0,40, 200",
     "0,40, 180",
     "0,40, 160",
     "0,40, 140",
@@ -130,12 +153,13 @@ $.post(url, data).done(function(html) {
     }
     var width = $(document).width() - 20;
     var height = $(document).height() - 5;
-    console.log(width, height);
     var posy = $("#myChart").position().top;
     var posy2 = $("#titlebar").position().top;
-    $("#myChart").width(width);
-    $("#myChart").height(height - (posy+posy2) );
+    $("#myChart").attr({ width: width});
+    $("#myChart").attr({height: height - (posy+posy2) });
     var myBarChart;
+    console.log(width, height);
+    console.log(data);
     if (stacked) {
         myBarChart = new Chart(ctx).StackedBar(data, options);
     } else {

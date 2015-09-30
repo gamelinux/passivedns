@@ -59,7 +59,7 @@ HDR1;
    <a href="index.php?query=*&amp;type=&amp;ttl=&amp;compare=eq&amp;sort=LAST_SEEN&amp;dir=desc">Latest</a>&nbsp;| 
    <a href="index.php?query=*&amp;type=&amp;ttl=&amp;compare=eq&amp;sort=FIRST_SEEN&amp;dir=desc">Newest</a> | 
    <a href="plot2.php?type=length">Domains&nbsp;length</a> |
-   <a href="plot2.php?type=tld&amp;sort=cnt">TLDs</a> | 
+   <a href="plot2.php?type=tld&amp;sort=cnt&amp;subtype=perc">TLDs</a> | 
    <a href="plot2.php?type=sld">SLDs</a> | 
    <a href="plot2.php?type=rrtype&amp;sort=rrtype">RRs</a> |
    <a href="plot2.php?type=ttl&amp;sort=ttl">TTLs</a> |

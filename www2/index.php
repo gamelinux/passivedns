@@ -133,8 +133,7 @@ print_tail();
 function sanitize($in) 
 {
   $qvar =  strip_tags(addslashes(trim(getVar($in))));
-  
-  if ( preg_match('/(\w+\.)*\w{2,}\.\w{2,4}$/i', $qvar) ) {
+  if (preg_match('/(\w+\.)*\w{2,}\.\w{2,4}$/i', $qvar) ) {
     /* Might be a domain */
     return $qvar;
   } else if (preg_match('/^([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5]|\*)$/', $qvar) ) {
@@ -149,7 +148,15 @@ function sanitize($in)
       return $qvar;
   } elseif (strlen($qvar) > 2) {
       $qvar = str_replace('%', '', $qvar);
-      return "%$qvar%";
+      if ($qvar[0] == '^') { 
+          $qvar = substr($qvar, 1);
+          return "$qvar%";
+      } else if (strrev($qvar)[0] == '$'){
+          $qvar = substr($qvar, 0, -1);
+          return "%$qvar";
+      } else {
+          return "%$qvar%";
+      }
   } elseif ($qvar == '*') {
       return '%';
   } else {

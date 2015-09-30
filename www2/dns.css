@@ -107,3 +107,15 @@ color: #dddddd;
 div.centered {
     text-align: center;
 }
+
+.title{
+    font-size: 11pt;
+    font-weight: bold;
+    font-family: verdana, Arial, Helvetica, Sans-Serif;
+    float: left;
+}
+.options {
+    font-family: verdana, Arial, Helvetica, Sans-Serif;
+    font-size: 11pt;
+    float: right;
+}

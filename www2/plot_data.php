@@ -24,11 +24,13 @@ $sort = getVar('sort');
 if ($type == 'tld') {
     $limit = '';
     if ($sort == 'tld') { $sort = 'tld asc'; }
+    elseif ($sort == 'first_seen') { $sort = 'MIN(FIRST_SEEN) DESC'; }
     else {$sort = 'cnt desc'; $limit = "LIMIT $TOPLIMIT"; }
     $perc = false;
     if ($subtype == 'perc') { $perc = true; }
     $title = 'Top level domains';
-    $sql = "SELECT count(*) as cnt, substring_index(query, '.', -1) as tld from (select query from pdns group by query, maptype) as foo group by tld order by $sort $limit";
+    $sql = "SELECT count(*) as cnt, substring_index(query, '.', -1) as tld from (select query, first_seen from pdns group by query, maptype) as foo group by tld order by $sort $limit";
+   // echo $sql;
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     if($stmt->rowCount()==0) die("empty");
@@ -42,7 +44,7 @@ if ($type == 'tld') {
         $labels[] = $r['tld'];
     }
     $options = array(
-            'sort' => array( 'cnt'=>'count', 'tld'=>'TLD'),
+            'sort' => array( 'cnt'=>'count', 'tld'=>'TLD', 'first_seen'=> 'First seen'),
             'subtype' => array('tld'=>'TLD','perc'=>'Percentage' )
     );
 } elseif ($type == 'sld') {
@@ -118,6 +120,7 @@ if ($type == 'tld') {
         if ($r['QUERY'] == '') continue;
         $data[] = $r['cnt'];
         $labels[] = ($r['QUERY']==''?'.':$r['QUERY']);
+        $legend[] = 'aoeua';
     }
 } else if ($type == 'hour') { 
     $title = 'Queries per hour';
@@ -229,7 +232,7 @@ if ($type == 'tld') {
         $labels[] = $r['days'];
     }
     $options = array(
-            'subtype' => $rr_types
+        'subtype' => $rr_types
     );
 } else if ($type == 'last_seen') {
     $title = 'Days since last seen';
@@ -252,7 +255,7 @@ if ($type == 'tld') {
         $labels[] = $r['days'];
     }
     $options = array(
-            'subtype' => $rr_types
+        'subtype' => $rr_types
     );
 } else if ($type == 'rrtype') {
     $title = 'Resource records';
@@ -285,7 +288,7 @@ if ($type == 'tld') {
     while ( $r = $stmt->fetch(PDO::FETCH_ASSOC) ) {
         $legend = 'total';
         $labels[] = ($r['QUERY']==''?'.':$r['QUERY']);
-        $data [] = $r['cnt'];
+        $data[] = $r['cnt'];
         $data2['data'][] =  $r['mx'];
         $data3['data'][] =  $r['avg'];
     }

@@ -4,7 +4,7 @@ $DBUSER   = "pdns";
 $DBTABLE  = "pdns";
 $DBPASSWD = "pdns";
 $pdo = new PDO("mysql:host=$DATABASE;dbname=$DBTABLE", $DBUSER, $DBPASSWD);
-
+$cnt = 0;
 while (!feof(STDIN)) {
     $line = fgets(STDIN);
     $arr = explode('|', $line);
@@ -16,6 +16,10 @@ while (!feof(STDIN)) {
     echo "Updating '$ip' with ASN: $as\n"; 
     $stmt = $pdo->prepare($sql_u);
     $stmt->execute(array(':as'=> $as, ':ip'=> $ip));
+    $cnt ++;
 }
+
+echo "\n";
+echo "Updated $cnt IP addresses\n\n";
 
 
