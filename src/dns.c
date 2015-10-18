@@ -1056,7 +1056,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             if (is_err_record)
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%d", PASSET_ERR_COUNT);
             else
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%lu", p->seen);
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%"PRIu64, p->seen);
         }
 #ifdef HAVE_JSON
     }
