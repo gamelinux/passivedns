@@ -9,7 +9,7 @@ all: $(bin_PROGRAMS)
 %.o: %.c
 	$(CC) -O3 $(CPPFLAGS) -c $< -o $@
 
-passivedns: $(OBJECTS)
+passivedns$(EXEEXT): $(OBJECTS)
 	$(CC) -o passivedns $(OBJECTS) $(LDFLAGS)
 
 clean:
