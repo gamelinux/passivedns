@@ -1,6 +1,5 @@
 <?php
 
-
 $rr_types = array(
     'basic'=>'basic',
     'any'=> 'any', 
@@ -37,9 +36,9 @@ $rr_types = array(
     'txt'=>'txt',
 );
 
-
-
+$BLACKLIST = 'blacklist.txt';
 $TOPLIMIT = 100;
+$BLACKLIST_DEFAULT = FALSE;
 function print_header() 
     
 {
@@ -79,7 +78,6 @@ HDR1;
 HDR2;
 }
 
-
 function print_select($name, $options, $placeholder = '', $selected='')
 {
     echo "<select name='$name' placeholder='$placeholder'>";
@@ -89,14 +87,14 @@ function print_select($name, $options, $placeholder = '', $selected='')
     echo "</select>&nbsp;\n";
 }
 
-function getVar($in) {
+function getVar($in, $default = NULL) {
 
     if (isset($_POST[$in])) {
         $out = $_POST[$in];
     } else if (isset($_GET[$in])){
         $out = $_GET[$in];
     } else 
-        $out = NULL;
+        $out = $default;
 
     if (get_magic_quotes_gpc()) {
         if (is_array($out)) {
@@ -119,7 +117,6 @@ function print_tail() {
 </html>';
 }
 
-
 function load_tlds($pdo)
 {
     $tlds = array();
@@ -134,12 +131,11 @@ function load_tlds($pdo)
     return $tlds;
 }
 
-
-function load_domains_with_tld($pdo, $withtld)
+function load_domains_with_tld($pdo, $withtld, $blacklist='')
 {
     $domains = array();
     $tlds = load_tlds($pdo);
-    $sql = "SELECT distinct query FROM pdns WHERE maptype != 'PTR'";
+    $sql = "SELECT distinct query FROM pdns WHERE maptype != 'PTR' $blacklist";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     while ( $r = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -157,9 +153,9 @@ function load_domains_with_tld($pdo, $withtld)
             $curr = array_shift($elems);
         }
         if ($withtld) {
-            $domains[] = array('name' => substr($name, 0, -strlen($tld)), 'tld' => $tld, 'sld' => $sld . '.' . $tld);
+            $domains[] = array(/*'name' => substr($name, 0, -strlen($tld)), 'tld' => $tld,*/ 'sld' => $sld . '.' . $tld);
         } else {
-            $domains[] = array('name' => substr($name, 0, -strlen($tld)), 'tld' => $tld, 'sld' => $sld);
+            $domains[] = array(/*'name' => substr($name, 0, -strlen($tld)), 'tld' => $tld,*/ 'sld' => $sld);
         }
     }
 
@@ -167,5 +163,22 @@ function load_domains_with_tld($pdo, $withtld)
 }
 
 
+function parse_black_list($file, $elem, $pdo)
+{
+    $blacklist_data = @file_get_contents($file);
+    if ($blacklist_data === FALSE) return '';
+    $blacklist_data = explode("\n", $blacklist_data);
+    $rv = ''; 
+    foreach($blacklist_data as $line) {
+        $line = trim($line);
+        if ($line == '@@end') break;
+        if ($line == '') continue;
+        $line = $pdo->quote($line);
+        $line = str_replace('*', '%', $line);
+        $rv .= " AND $elem NOT REGEXP $line " ;
+    }
+    if ($rv == '') return '';
+    return $rv ;
+}
 
 

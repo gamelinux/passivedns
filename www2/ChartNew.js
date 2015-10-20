@@ -362,7 +362,7 @@ if (typeof CanvasRenderingContext2D !== 'undefined') {
 	CanvasRenderingContext2D.prototype.measureTextMultiLine = function(text, lineHeight) {
 		var textWidth = 0;
 		var lg;
-		var lines = ("" + text).replace(/<BR>/g, "\n").split("\n");
+		var lines = ("" + text).replace(/<BR>/ig, "\n").split("\n");
 		var textHeight = lines.length * lineHeight;
 		// if its one line => in the middle 
 		// two lines one above the mid one below etc.	
@@ -894,6 +894,7 @@ function doMouseAction(config, ctx, event, data, action, funct) {
 					if(config.annotateRelocate===true) {
 						var relocateX, relocateY;
 						relocateX=0;relocateY=0;
+						
 					 	if(x+fromLeft+textMsr.textWidth > window.innerWidth-rect.left-fromLeft)relocateX=-textMsr.textWidth;
 					 	if(y+fromTop+textMsr.textHeight > 1*window.innerHeight-1*rect.top+fromTop)relocateY-=(textMsr.textHeight+2*fromTop);
 					 	oCursor.moveIt(Math.max(8-rect.left,x + fromLeft+relocateX), Math.max(8-rect.top,y + fromTop + relocateY));
@@ -2303,6 +2304,8 @@ window.Chart = function(context) {
 			else if (!isNaN(config.graphMax)) upperValue = config.graphMax;
 			var maxSteps = Math.floor((scaleHeight / (labelHeight * 0.66)));
 			var minSteps = Math.floor((scaleHeight / labelHeight * 0.5));
+			if(upperValue<lowerValue){lowerValue=upperValue-1;}
+
 			return {
 				maxValue: upperValue,
 				minValue: lowerValue,
@@ -2629,6 +2632,7 @@ window.Chart = function(context) {
 			else if (!isNaN(config.graphMax)) upperValue = config.graphMax;
 			var maxSteps = Math.floor((scaleHeight / (labelHeight * 0.66)));
 			var minSteps = Math.floor((scaleHeight / labelHeight * 0.5));
+			if(upperValue<lowerValue){lowerValue=upperValue-1;}
 			return {
 				maxValue: upperValue,
 				minValue: lowerValue,
@@ -3148,6 +3152,8 @@ window.Chart = function(context) {
 			scaleHeight = msr.availableHeight;
 			var maxSteps = Math.floor((scaleHeight / (labelHeight * 0.66)));
 			var minSteps = Math.floor((scaleHeight / labelHeight * 0.5));
+			if(upperValue<lowerValue){lowerValue=upperValue-1;}
+			if(upperValue2<lowerValue2){lowerValue2=upperValue2-1;}
 			return {
 				maxValue: upperValue,
 				minValue: lowerValue,
@@ -3504,6 +3510,8 @@ window.Chart = function(context) {
 			scaleHeight = msr.availableHeight;
 			var maxSteps = Math.floor((scaleHeight / (labelHeight * 0.66)));
 			var minSteps = Math.floor((scaleHeight / labelHeight * 0.5));
+			if(upperValue<lowerValue){lowerValue=upperValue-1;}
+
 			return {
 				maxValue: upperValue,
 				minValue: lowerValue,
@@ -3875,6 +3883,7 @@ window.Chart = function(context) {
 			scaleHeight = msr.availableHeight;
 			var maxSteps = Math.floor((scaleHeight / (labelHeight * 0.66)));
 			var minSteps = Math.floor((scaleHeight / labelHeight * 0.5));
+			if(upperValue<lowerValue){lowerValue=upperValue-1;}
 			return {
 				maxValue: upperValue,
 				minValue: lowerValue,
@@ -4329,6 +4338,8 @@ window.Chart = function(context) {
 			scaleHeight = msr.availableHeight;
 			var maxSteps = Math.floor((scaleHeight / (labelHeight * 0.66)));
 			var minSteps = Math.floor((scaleHeight / labelHeight * 0.5));
+			if(upperValue<lowerValue){lowerValue=upperValue-1;}
+			if(upperValue2<lowerValue2){lowerValue2=upperValue2-1;}
 			return {
 				maxValue: upperValue,
 				minValue: lowerValue,
@@ -4641,6 +4652,7 @@ window.Chart = function(context) {
 
 			var maxSteps = Math.floor((scaleHeight / (labelHeight * 0.66)));
 			var minSteps = Math.floor((scaleHeight / labelHeight * 0.5));
+			if(upperValue<lowerValue){lowerValue=upperValue-1;}
 			return {
 				maxValue: upperValue,
 				minValue: lowerValue,

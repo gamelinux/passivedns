@@ -26,6 +26,9 @@ echo <<<HTML
 
 <script>
 
+var width = $(document).width() - 20;
+var height = $(document).height() - 5;
+var shorten_height = (height > 640 ? 20 : 12);
 var ctx = $("#myChart").get(0).getContext("2d");
 
 var url = 'plot_data.php';
@@ -37,6 +40,7 @@ var options = {
    // annotateLabel: "<%=v1%> <%=v2%>: <%=v3%> (<%=v6%>%)", 
     annotateLabel: annotateAllX,
     annotateDisplay: true,
+    fmtXLabel: shorten_height,
     yAxisMinimumInterval: 1,
    //annotateRelocate: true,
     graphMin : 0,
@@ -47,21 +51,29 @@ $data_str
 function annotateAllX(area,ctx,data,statData,posi,posj,othervars) {
     var retstring = '';
     if (data.datasets.length == 1) { 
-        retstring = statData[0][posj].v2 + ": "+statData[0][posj].v3 + "<br>";
+        retstring = statData[0][posj].v2 + ": "+statData[0][posj].datavalue + "<br>";
     } else {
         retstring="<b>" + statData[posi][posj].v2 + '</b><br>';
 
         for(var i=0;i<data.datasets.length;i++){
             if(typeof statData[i][posj].v3 != "undefined" && data.datasets[i].type != "Line") {
-                retstring = retstring + statData[i][posj].v1 + ": " + statData[i][posj].v3 + "<br>";
+                retstring = retstring + statData[i][posj].v1 + ": " + statData[i][posj].datavalue + "<br>";
             }
         }
     }
     return retstring;
 }
 
+
+function fmtChartJSPerso(config, val, fmt)
+{
+    val = ""+val;
+    console.log(val, fmt);
+    return val.substr(-1 * fmt);
+}
+
 $.post(url, data).done(function(html) {
-    console.log(html);
+   // console.log(html);
     var x = $.parseJSON(html);
     $('#title').text(x.title);
     $('#ttag').text('Passive DNS - ' + x.title);
@@ -119,7 +131,7 @@ $.post(url, data).done(function(html) {
         stacked = true;
         var temp;
         var i=1;
-        console.log(x.data2);
+       // console.log(x.data2);
         x.data2.forEach( function (s) { 
             temp =  { 
                 label: s.legend,
@@ -135,7 +147,7 @@ $.post(url, data).done(function(html) {
     }
     if (x.options !== undefined && !$.isEmptyObject(x.options)) {
         var s= '<form action="plot2.php" method="get">Options: ';
-        console.log(x.options);
+        //console.log(x.options);
 
         for (var idx in x.options) {
             s = s + '<select id="'+ idx +'" name="' + idx + '"> ' ;
@@ -144,22 +156,20 @@ $.post(url, data).done(function(html) {
                 s = s + '<option value="'+ [i] + '">' + x.options[idx][i] + '</option>';
             };
             s = s + "<input type='hidden' id='type' name='type' value='" + x.type+ "'>";
-            s = s + '</select>';
+            s = s + '</select>&nbsp;';
         }
         s = s + "<input type='submit' id='submit' value='submit'>";
         s = s + '<form>';
         $('#options').html(s);
 
     }
-    var width = $(document).width() - 20;
-    var height = $(document).height() - 5;
     var posy = $("#myChart").position().top;
     var posy2 = $("#titlebar").position().top;
-    $("#myChart").attr({ width: width});
-    $("#myChart").attr({height: height - (posy+posy2) });
+    $("#myChart").attr({width: width});
+    $("#myChart").attr({height: height - (posy+posy2)});
     var myBarChart;
-    console.log(width, height);
-    console.log(data);
+   // console.log(width, height);
+    //console.log(data);
     if (stacked) {
         myBarChart = new Chart(ctx).StackedBar(data, options);
     } else {

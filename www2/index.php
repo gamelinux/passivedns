@@ -95,7 +95,7 @@ if ($query || $qttl != '') {
         $t_query = str_replace('*', '%', $query);
         $input_arr[':query'] = $t_query;
         $sql = "SELECT * FROM pdns WHERE answer LIKE :query $qtype  $qttl $fromdate $todate $qsort LIMIT $DBLIMIT";
-        echo "<b>Passive DNS Records for IP:  $query </b><br><br>";
+        echo "<b>Passive DNS Records for IP: $query </b><br><br>";
     } elseif (is_numeric($query)) {
         echo "<b>Passive DNS Records for ASN: $query </b> <br><br>";
         $sql = "SELECT * FROM pdns WHERE (asn= :query) $qtype $qttl $fromdate $todate $qsort LIMIT $DBLIMIT";
