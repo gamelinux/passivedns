@@ -1,0 +1,121 @@
+html , body
+{
+    background: #282828;
+    background-image: url(tno_logo.gif);
+    background-attachment:fixed;
+    background-position:center; 
+    background-repeat:no-repeat;
+    color: #bbb;
+    font-size: large;
+}
+#title 
+{
+   text-align: center;
+    font-weight: bold;
+}
+
+a 
+{ 
+    color: #fff;
+    text-decoration: none;
+}
+a:visited, a:active
+{
+   color: #ccc;
+
+}
+td, th
+{
+    font-size: large;
+}
+
+th
+{
+color: #649EC9;
+}
+
+.highlight {
+   text-align: center;
+   color: yellow;
+}
+
+.red {
+    color: red;
+    font-weight: bold;
+}
+
+.blue {
+    color: blue;
+}
+
+
+.buttonlike
+{
+    cursor: pointer;
+}
+
+.strike
+{
+    text-decoration: line-through;
+}
+
+#menudiv, #menudiv a
+{
+	width:100%;
+	background-color:#649EC9;
+	color: #fff;
+	font-weight:bold;
+}
+
+#copyright 
+{
+	color: #fff;
+	position: absolute;
+	right: 10px;
+	top:10px;
+}
+
+td,p,div.box {
+margin: 4px;
+padding: 4px;
+         font-family: verdana, arial, helvetica, sans-serif;
+         font-size: 13px;
+         font-weight: normal;
+          border-bottom: 1px none #BFE9FF;
+}
+tr.odd {
+          background-color: #E2F1FF;
+}
+table
+{ 
+  margin-left: auto;
+  margin-right: auto;
+}
+
+input, textarea, select {
+color: #dddddd;
+    background: #181818;
+    border: solid 1px;
+    border-color: #434343 #212121 #535353 #212121;
+    padding-bottom:0px;
+    padding-top:0px;
+    padding-left:1px;
+    padding-right:1px;
+    font-size:medium;
+}
+
+div.centered {
+    text-align: center;
+}
+
+.title{
+    font-size: 11pt;
+    font-weight: bold;
+    font-family: verdana, Arial, Helvetica, Sans-Serif;
+    float: left;
+}
+.options {
+    font-family: verdana, Arial, Helvetica, Sans-Serif;
+    font-size: 11pt;
+    float: right;
+}

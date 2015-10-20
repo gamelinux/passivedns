@@ -334,6 +334,28 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         rr = ldns_rr_list_rr(dns_answer_domains, j);
 
         switch (ldns_rr_get_type(rr)) {
+            case LDNS_RR_TYPE_KX:
+                if (config.dnsf & DNS_CHK_KX) {
+                    offset = 1;
+                }
+                break;
+            case LDNS_RR_TYPE_IPSECKEY:
+                if (config.dnsf & DNS_CHK_IPSECKEY) {
+                    offset = 0;
+                }
+                break;
+            case LDNS_RR_TYPE_CERT:
+                if (config.dnsf & DNS_CHK_CERT) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
+            case LDNS_RR_TYPE_DLV:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 4;
+                }
+                break;
             case LDNS_RR_TYPE_LOC:
                 if (config.dnsf & DNS_CHK_LOC) {
                     offset = 0;
@@ -370,11 +392,27 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 5;
                 }
                 break;
-            
             case LDNS_RR_TYPE_NSEC:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
                     to_offset = 2;
+                }
+                break;
+            case LDNS_RR_TYPE_DHCID:
+                if (config.dnsf & DNS_CHK_DHCID) {
+                    offset = 0;
+                }
+                break;
+            case LDNS_RR_TYPE_CAA:
+                if (config.dnsf & DNS_CHK_CAA) {
+                    offset = 0;
+                    to_offset = 3;
+                }
+                break;
+            case LDNS_RR_TYPE_TLSA:
+                if (config.dnsf & DNS_CHK_TLSA) {
+                    offset = 0;
+                    to_offset = 4;
                 }
                 break;
             case LDNS_RR_TYPE_HINFO:
@@ -389,6 +427,12 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 4;
                 }
                 break;
+            case LDNS_RR_TYPE_CDS:
+                if (config.dnsf & DNS_CHK_DNSSEC) {
+                    offset = 0;
+                    to_offset = 1;
+                }
+                break;
             case LDNS_RR_TYPE_SSHFP:
                 if (config.dnsf & DNS_CHK_SSHFP) {
                     offset = 0;
@@ -400,8 +444,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     offset = 0;
                 break;
             case LDNS_RR_TYPE_A:
-                if (config.dnsf & DNS_CHK_A)
+                if (config.dnsf & DNS_CHK_A) {
                     offset = 0;
+                    to_offset = 3;
+                }
                 break;
             case LDNS_RR_TYPE_PTR:
                 if (config.dnsf & DNS_CHK_PTR)
@@ -467,34 +513,42 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
             if (rname == NULL) {
                 dlog("[D] ldns_rr_rdf returned: NULL\n");
-                break;;
+                break;
             }
 
             ldns_rdf2buffer_str(buff, rname);
             rdomain_name = (unsigned char *) ldns_buffer2str(buff);
-            if (rdomain_name == NULL) continue;
-            len = strlen(rdomain_name) + 5;
-            if (tmp1 != NULL) len += strlen(tmp1);
+            if (rdomain_name == NULL) {
+                dlog("[D] ldns_buffer2str returned: NULL\n");
+                continue;
+            }
+
+            len = strlen(rdomain_name) + 5; // need some extra space here for the spaces and the \0; just be to be sure, add 5
+            if (tmp1 != NULL) { 
+                len += strlen(tmp1);
+            }
             tmp2 = malloc(len);
             if (tmp1 != NULL) {
                 tmp2 = strcpy(tmp2, tmp1);
                 tmp2 = strcat(tmp2, " ");
-            }
-            else {
+            } else {
                 tmp2 = strcpy(tmp2, "");
             }
             free(tmp1);
+            // we just concat everything together
             tmp2 = strcat(tmp2, rdomain_name);
             tmp1 = tmp2;
             free(rdomain_name);
-            offset ++;
+            offset++;
+            dlog("[D] tmp1 %s: NULL (%d)\n", tmp1, offset);
         } while (offset < to_offset);
         rdomain_name = tmp1;
-        if (rname == NULL) {
+       /* if (rname == NULL && to_offset < 1) {
+            dlog("[D] ldns_rr_rdf returned: NULL (%d)\n", offset);
             continue;
-        }
-
+        }*/
         if (rdomain_name == NULL && offset <= 1) {
+        // we have found no suitable answer in the  packet
             dlog("[D] ldns_buffer2str returned: NULL\n");
             continue;
         }
@@ -730,6 +784,27 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_DLV:
+            snprintf(rr_type, 10, "DLV");
+            break;
+        case LDNS_RR_TYPE_KX:
+            snprintf(rr_type, 10, "KX");
+            break;
+        case LDNS_RR_TYPE_IPSECKEY:
+            snprintf(rr_type, 10, "IPSECKEY");
+            break;
+        case LDNS_RR_TYPE_CERT:
+            snprintf(rr_type, 10, "CERT");
+            break;
+        case LDNS_RR_TYPE_TLSA:
+            snprintf(rr_type, 10, "TLSA");
+            break;
+        case LDNS_RR_TYPE_DHCID:
+            snprintf(rr_type, 10, "DHCID");
+            break;
+        case LDNS_RR_TYPE_CAA:
+            snprintf(rr_type, 10, "CAA");
+            break;
         case LDNS_RR_TYPE_HINFO:
             snprintf(rr_type, 10, "HINFO");
             break;
@@ -756,6 +831,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             break;
         case LDNS_RR_TYPE_RRSIG:
             snprintf(rr_type, 10, "RRSIG");
+            break;
+        case LDNS_RR_TYPE_CDS:
+            snprintf(rr_type, 10, "CDS");
             break;
         case LDNS_RR_TYPE_DS:
             snprintf(rr_type, 10, "DS");
@@ -1535,6 +1613,36 @@ void parse_dns_flags(char *args)
 
     for (i = 0; i < len; i++){
         switch(args[i]) {
+            case 'E': /* CERT */
+                config.dnsf |= DNS_CHK_CERT;
+                dlog("[D] Enabling flag: DNS_CHK_CERT\n");
+                ok++;
+                break;
+            case 'p': /* IPSECKEY */
+                config.dnsf |= DNS_CHK_IPSECKEY;
+                dlog("[D] Enabling flag: DNS_CHK_IPSECKEY\n");
+                ok++;
+                break;
+            case 'K': /* KX */
+                config.dnsf |= DNS_CHK_KX;
+                dlog("[D] Enabling flag: DNS_CHK_KX\n");
+                ok++;
+                break;
+            case 'h': /* DHCID */
+                config.dnsf |= DNS_CHK_DHCID;
+                dlog("[D] Enabling flag: DNS_CHK_DHCID\n");
+                ok++;
+                break;
+            case 'A': /* CAA */
+                config.dnsf |= DNS_CHK_CAA;
+                dlog("[D] Enabling flag: DNS_CHK_CAA\n");
+                ok++;
+                break;
+            case 'l': /* TLSA */
+                config.dnsf |= DNS_CHK_TLSA;
+                dlog("[D] Enabling flag: DNS_CHK_TLSA\n");
+                ok++;
+                break;
             case 'I': /* HINFO */
                 config.dnsf |= DNS_CHK_HINFO;
                 dlog("[D] Enabling flag: DNS_CHK_HINFO\n");
