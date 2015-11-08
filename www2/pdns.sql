@@ -33,6 +33,7 @@ CREATE TABLE `pdns` (
   `FIRST_SEEN` datetime NOT NULL,
   `LAST_SEEN` datetime NOT NULL,
   `asn` int(8) DEFAULT NULL,
+  `asn_owner` varchar(256) DEFAULT NULL,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `MARQ` (`MAPTYPE`,`ANSWER`,`RR`,`QUERY`),
   KEY `query_idx` (`QUERY`),

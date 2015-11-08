@@ -808,6 +808,8 @@ var annotatePrevShow=-1;
 function doMouseAction(config, ctx, event, data, action, funct) {
 
 	var onData = false;
+	var topY, bottomY;
+	var leftX, rightX;
 	var textMsr;
 	
 	if (action == "annotate") {
@@ -873,8 +875,19 @@ function doMouseAction(config, ctx, event, data, action, funct) {
 			}
 		} else if (jsGraphAnnotate[ctx.ChartNewId][i][0] == "RECT") {
 			myStatData=jsGraphAnnotate[ctx.ChartNewId][i][3][jsGraphAnnotate[ctx.ChartNewId][i][1]][jsGraphAnnotate[ctx.ChartNewId][i][2]];
-			
-			if (canvas_pos.x > Math.min(myStatData.xPosLeft,myStatData.xPosRight) && canvas_pos.x < Math.max(myStatData.xPosLeft,myStatData.xPosRight) && canvas_pos.y < Math.max(myStatData.yPosBottom,myStatData.yPosTop) && canvas_pos.y > Math.min(myStatData.yPosBottom,myStatData.yPosTop)) {
+			topY=Math.max(myStatData.yPosBottom,myStatData.yPosTop);
+			bottomY=Math.min(myStatData.yPosBottom,myStatData.yPosTop);
+			if (topY-bottomY <config.annotateBarMinimumDetectionHeight) {
+				topY=(topY+bottomY+config.annotateBarMinimumDetectionHeight)/2;
+			        bottomY=topY-config.annotateBarMinimumDetectionHeight;
+			}
+			leftX=Math.min(myStatData.xPosLeft,myStatData.xPosRight);
+			rightX=Math.max(myStatData.xPosLeft,myStatData.xPosRight);
+			if (rightX-leftX <config.annotateBarMinimumDetectionHeight) {
+				rightX=(rightX+leftX+config.annotateBarMinimumDetectionHeight)/2;
+			        leftX=rightX-config.annotateBarMinimumDetectionHeight;
+			}
+			if (canvas_pos.x > leftX && canvas_pos.x < rightX && canvas_pos.y < topY && canvas_pos.y > bottomY) {
 				myStatData.graphPosX = canvas_pos.x;
 				myStatData.graphPosY = canvas_pos.y;
 				onData = true;
@@ -953,7 +966,7 @@ function doMouseAction(config, ctx, event, data, action, funct) {
 			}
 		}
 		if (action == "annotate"  && jsGraphAnnotate[ctx.ChartNewId][i][4]) {
-			annotateDIV.style.display = show ? '' : 'none';
+			annotateDIV.style.display = show ? '' : 'none'; 
 			if(show && annotatePrevShow != i){
 				if(annotatePrevShow >=0 && typeof config.annotateFunctionOut=="function") {
 					if(jsGraphAnnotate[ctx.ChartNewId][annotatePrevShow][0] == "ARC") config.annotateFunctionOut("OUTANNOTATE",ctx,data,jsGraphAnnotate[ctx.ChartNewId][annotatePrevShow][3],jsGraphAnnotate[ctx.ChartNewId][annotatePrevShow][1],-1,null);
@@ -1412,6 +1425,7 @@ window.Chart = function(context) {
 	};
 	this.StackedBar = function(data, options) {
 		chart.StackedBar.defaults = {
+			annotateBarMinimumDetectionHeight : 0,
 			inGraphDataShow: false,
 			inGraphDataPaddingX: 0,
 			inGraphDataPaddingY: -3,
@@ -1484,6 +1498,7 @@ window.Chart = function(context) {
 	};
 	this.HorizontalStackedBar = function(data, options) {
 		chart.HorizontalStackedBar.defaults = {
+			annotateBarMinimumDetectionHeight : 0,
 			inGraphDataShow: false,
 			inGraphDataPaddingX: -3,
 			inGraphDataPaddingY: 0,
@@ -1549,6 +1564,7 @@ window.Chart = function(context) {
 	};
 	this.Bar = function(data, options) {
 		chart.Bar.defaults = {
+			annotateBarMinimumDetectionHeight : 0,
 			inGraphDataShow: false,
 			inGraphDataPaddingX: 0,
 			inGraphDataPaddingY: 3,
@@ -1628,6 +1644,7 @@ window.Chart = function(context) {
 	};
 	this.HorizontalBar = function(data, options) {
 		chart.HorizontalBar.defaults = {
+			annotateBarMinimumDetectionHeight : 0,
 			inGraphDataShow: false,
 			inGraphDataPaddingX: 3,
 			inGraphDataPaddingY: 0,
@@ -2846,7 +2863,7 @@ window.Chart = function(context) {
 		if (valueBounds.dbAxis) {
 			if (!config.scaleOverride2) {
 				if(valueBounds.maxSteps>0 && valueBounds.minSteps>0) {
-					calculatedScale2 = calculateScale(2, config, valueBounds.maxSteps, valueBounds.minSteps, valueBounds.maxValue2, valueBounds.minValue2, labelTemplateString);
+					calculatedScale2 = calculateScale(2, config, valueBounds.maxSteps, valueBounds.minSteps, valueBounds.maxValue2, valueBounds.minValue2, labelTemplateString2);
 				}
 			} else {
 				var scaleStartValue2= setOptionValue(1,"SCALESTARTVALUE2",ctx,data,statData,undefined,config.scaleStartValue2,-1,-1,{nullValue : true} );
@@ -3180,11 +3197,9 @@ window.Chart = function(context) {
 			if (data.datasets[i].type == "Line") { statData[i][0].tpchart="Line";nrOfBars--;}
 			else statData[i][0].tpchart="Bar";	
 		}                               
-
 		config.logarithmic = false;
 		msr = setMeasures(data, config, ctx, height, width, "nihil", [""], true, false, true, true, true, "StackedBar");
 		valueBounds = getValueBounds();
-
 		if(valueBounds.maxSteps>0 && valueBounds.minSteps>0) {
 			//Check and set the scale
 			labelTemplateString = (config.scaleShowLabels) ? config.scaleLabel : "";
@@ -3212,7 +3227,6 @@ window.Chart = function(context) {
 				}
 				msr = setMeasures(data, config, ctx, height, width, calculatedScale.labels, null, true, false, true, true, true, "StackedBar");
 			}
-       	
 			var prevHeight=msr.availableHeight;
        	
 			msr.availableHeight = msr.availableHeight - Math.ceil(ctx.chartLineScale*config.scaleTickSizeBottom) - Math.ceil(ctx.chartLineScale*config.scaleTickSizeTop);
@@ -3228,8 +3242,7 @@ window.Chart = function(context) {
        	
 			yAxisPosX = msr.leftNotUsableSize + Math.ceil(ctx.chartLineScale*config.scaleTickSizeLeft);
 			xAxisPosY = msr.topNotUsableSize + msr.availableHeight + Math.ceil(ctx.chartLineScale*config.scaleTickSizeTop);
-
-			barWidth = (valueHop - Math.ceil(ctx.chartLineScale*config.scaleGridLineWidth) * 2 - (Math.ceil(ctx.chartSpaceScale*config.barValueSpacing) * 2) - (Math.ceil(ctx.chartSpaceScale*config.barDatasetSpacing) * data.datasets.length - 1) - (Math.ceil(ctx.chartLineScale*config.barStrokeWidth) / 2) - 1);
+			barWidth = (valueHop - Math.ceil(ctx.chartLineScale*config.scaleGridLineWidth) * 2 - (Math.ceil(ctx.chartSpaceScale*config.barValueSpacing) * 2) - (Math.ceil(ctx.chartSpaceScale*config.barDatasetSpacing) * 1 - 1) - (Math.ceil(ctx.chartLineScale*config.barStrokeWidth) / 2) - 1);
 
 			if(barWidth>=0 && barWidth<=1)barWidth=1;
 			if(barWidth<0 && barWidth>=-1)barWidth=-1;
@@ -3242,8 +3255,7 @@ window.Chart = function(context) {
 			var zeroY = 0;
 			var zeroY2 = 0;
 			if (valueBounds.minValue < 0) 	zeroY = calculateOffset(false, 0, calculatedScale, scaleHop);
-			if (valueBounds.minValue2 < 0) zeroY2 = calculateOffset(config.logarithmic2, 0, calculatedScale2, scaleHop2);
-       	
+			if (valueBounds.minValue2 < 0) zeroY2 = calculateOffset(config.logarithmic2, 0, calculatedScale2, scaleHop2);       	
 			drawLabels();
 			initPassVariableData_part2(statData,data,config,ctx,{ 
 				msr: msr,
@@ -3473,10 +3485,10 @@ window.Chart = function(context) {
 						} else maxValp=Math.max(maxValp,1 * data.datasets[i].data[j]);
 						minValp=Math.min(minValp,1 * data.datasets[i].data[j]);
 						inp=1;
-					} else if(typeof (1 * data.datasets[i].data[j])=="number") {
+					} else if(typeof (1 * data.datasets[i].data[j])==="number" && typeof data.datasets[i].data[j]!="undefined") {
 						if(statData[i][0].tpchart=="Bar") {
 							if(typeof tempn[j] == "undefined") tempn[j]=0;
-							tempn[j] += 1 * data.datasets[0].data[j];
+							tempn[j] += (1 * data.datasets[i].data[j]);
 							minValn=Math.min(minValn,tempn[j]);
 						} else minValn=Math.min(minValn,1 * data.datasets[i].data[j]);
 						maxValn=Math.max(maxValn,1 * data.datasets[i].data[j]);
@@ -3592,7 +3604,7 @@ window.Chart = function(context) {
 			msr.availableHeight = (data.labels.length) * scaleHop;
 			yAxisPosX = msr.leftNotUsableSize + Math.ceil(ctx.chartLineScale*config.scaleTickSizeLeft);
 			xAxisPosY = msr.topNotUsableSize + msr.availableHeight + Math.ceil(ctx.chartLineScale*config.scaleTickSizeTop);
-			barWidth = (scaleHop - Math.ceil(ctx.chartLineScale*config.scaleGridLineWidth) * 2 - (Math.ceil(ctx.chartSpaceScale*config.barValueSpacing) * 2) - (Math.ceil(ctx.chartSpaceScale*config.barDatasetSpacing) * data.datasets.length - 1) - (Math.ceil(ctx.chartLineScale*config.barStrokeWidth) / 2) - 1);
+			barWidth = (scaleHop - Math.ceil(ctx.chartLineScale*config.scaleGridLineWidth) * 2 - (Math.ceil(ctx.chartSpaceScale*config.barValueSpacing) * 2) - (Math.ceil(ctx.chartSpaceScale*config.barDatasetSpacing) * 1 - 1) - (Math.ceil(ctx.chartLineScale*config.barStrokeWidth) / 2) - 1);
 			if(barWidth>=0 && barWidth<=1)barWidth=1;
 			if(barWidth<0 && barWidth>=-1)barWidth=-1;
 			var additionalSpaceBetweenBars;
@@ -3964,7 +3976,7 @@ window.Chart = function(context) {
 			}
 			if (valueBounds.dbAxis) {
 				if (!config.scaleOverride2) {
-					calculatedScale2 = calculateScale(2, config, valueBounds.maxSteps, valueBounds.minSteps, valueBounds.maxValue2, valueBounds.minValue2, labelTemplateString);
+					calculatedScale2 = calculateScale(2, config, valueBounds.maxSteps, valueBounds.minSteps, valueBounds.maxValue2, valueBounds.minValue2, labelTemplateString2);
 				} else {
 					var scaleStartValue2= setOptionValue(1,"SCALESTARTVALUE2",ctx,data,statData,undefined,config.scaleStartValue2,-1,-1,{nullValue : true} );
 					var scaleSteps2 =setOptionValue(1,"SCALESTEPS2",ctx,data,statData,undefined,config.scaleSteps2,-1,-1,{nullValue : true} );
@@ -4830,6 +4842,7 @@ window.Chart = function(context) {
 					stepValue *= 2;
 					numberOfSteps = Math.round(graphRange / stepValue);
 				}
+	
 			}
 
 			if (typeof yAxisMinimumInterval == "number") {
@@ -4846,6 +4859,8 @@ window.Chart = function(context) {
 						numberOfSteps = Math.ceil(graphRange / stepValue);
 					}
 				}
+
+
 			}
 			if(config.graphMaximized==true || config.graphMaximized=="bottom" || typeof config.graphMin!=="undefined") {
 				while (graphMin+stepValue < minValue && numberOfSteps>=3){graphMin+=stepValue;numberOfSteps--};

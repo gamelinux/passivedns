@@ -12,10 +12,12 @@ while (!feof(STDIN)) {
     if (!is_numeric($arr[0])) continue;
     $as = $arr[0];
     $ip = $arr[1];
-    $sql_u = "UPDATE pdns set asn = :as WHERE answer = :ip";
-    echo "Updating '$ip' with ASN: $as\n"; 
+    $owner = trim($arr[2]);
+    if ($owner == '') $owner = '?';
+    $sql_u = "UPDATE pdns set asn = :as, asn_owner = :owner WHERE answer = :ip";
+    echo "Updating '$ip' with ASN: $as ($owner)\n"; 
     $stmt = $pdo->prepare($sql_u);
-    $stmt->execute(array(':as'=> $as, ':ip'=> $ip));
+    $stmt->execute(array(':as'=> $as, ':ip'=> $ip, ':owner'=>$owner));
     $cnt ++;
 }
 

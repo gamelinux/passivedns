@@ -1,8 +1,6 @@
 <?php
 require "function.php";
 
-
-
 $DATABASE = "127.0.0.1";
 $DBUSER   = "pdns";
 $DBTABLE  = "pdns";
@@ -15,7 +13,7 @@ $use_blacklist = getVar('use_blacklist', $BLACKLIST_DEFAULT);
 if (in_array(strtolower($use_blacklist), array('true', '1', 'yes'))) {
     $use_blaclist = TRUE; 
 } else {
-    $user_blacklist = FALSE;
+    $use_blacklist = FALSE;
 }
 $blacklist = '';
 if ($use_blacklist) { 
@@ -28,7 +26,7 @@ $stmt->execute();
 $row = $stmt->fetch(PDO::FETCH_ASSOC);
 $total_count = $row['cnt'];
 $distinct_count = $row['cnt_d'];
-
+$plottype = 'bar';
 $labels = $data2 = $data = $options = array();
 $legend = '';
 $sort = getVar('sort');
@@ -41,7 +39,7 @@ if ($type == 'tld') {
     $perc = false;
     if ($subtype == 'perc') { $perc = true; }
     $title = 'Top level domains';
-    $sql = "SELECT count(*) as cnt, substring_index(query, '.', -1) as tld from (select query, first_seen from pdns group by query, maptype) AS foo WHERE 1=1 $blacklist GROUP BY tld ORDER BY $sort $limit";
+    $sql = "SELECT count(*) AS cnt, substring_index(query, '.', -1) AS tld FROM (SELECT query, first_seen FROM pdns GROUP BY query, maptype) AS foo WHERE 1=1 $blacklist GROUP BY tld ORDER BY $sort $limit";
     // echo $sql;
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
@@ -56,11 +54,49 @@ if ($type == 'tld') {
         $labels[] = $r['tld'];
     }
     $options = array(
-            'use_blacklist' => array('true'=>"Yes", 'false'=>"No"),
-            'sort' => array('cnt'=>'count', 'tld'=>'TLD', 'first_seen'=> 'First seen'),
-            'subtype' => array('tld'=>'TLD','perc'=>'Percentage' )
+        'use_blacklist' => array('true'=>"Yes", 'false'=>"No"),
+        'sort' => array('cnt'=>'count', 'tld'=>'TLD', 'first_seen'=> 'First seen'),
+        'subtype' => array('tld'=>'TLD','perc'=>'Percentage' )
+    );
+} elseif ($type == 'timeline') {
+    $title = 'Timeline ';
+    $limit = " LIMIT $TOPLIMIT";
+    $sort = 'FIRST_SEEN';
+    $plottype = 'timeline';
+    $domain =  getVar('domain');
+    $ip =  getVar('ip');
+    $input_arr = array();
+    if ($subtype != '') {
+        $input_arr[':subtype'] = $subtype;
+        $subtype = ' AND maptype LIKE :subtype ';
+    }
+    //var_dump($input_arr);
+    if ($domain != '') {
+        $input_arr[':domain'] =$domain;
+        $sql = "SELECT unix_timestamp(FIRST_SEEN) AS FIRST, unix_timestamp(LAST_SEEN) AS LAST, query, answer, maptype FROM pdns WHERE query like :domain $subtype ORDER BY $sort $limit";
+    } else if ($ip != '') {
+        $input_arr[':domain']= $ip;
+        $sql = "SELECT unix_timestamp(FIRST_SEEN) AS FIRST, unix_timestamp(LAST_SEEN) AS LAST, query, answer, maptype FROM pdns WHERE answer like :domain $subtype ORDER BY $sort $limit";
+    }
+    //echo $sql;
+    //var_dump($input_arr);
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($input_arr);
+    if($stmt->rowCount()==0) die("empty");
+    $cnt = 0;
+    $oldest = 0;
+    $youngest = time();
+    while ( $r = $stmt->fetch(PDO::FETCH_ASSOC) ) {
+        $data[$cnt] = array('cnt'=> $cnt, 'first'=>$r['FIRST'], 'last'=> $r['LAST'], 'query'=>$r['query'], 'answer'=>$r['answer'], 'maptype'=>$r['maptype']);
+        $cnt++;
+        $oldest = max($oldest, $r['LAST']);
+        $youngest = min($youngest, $r['FIRST']);
+    }
+    $options = array(
+        'youngest' => $youngest - 3600,
+        'oldest'=> $oldest +  3600
+    );
 
-            );
 } elseif ($type == 'sld') {
     $title = 'Second level domains';
     $withtld =  false;
@@ -89,10 +125,10 @@ if ($type == 'tld') {
     else {$sort = 'cnt desc';}
     if ($subtype == 'perc') { $perc = true;}
     $title = 'Domain name length';
-    $sql = "SELECT count(*) AS cnt, length(query) AS len FROM (select distinct query from pdns WHERE maptype != 'PTR') AS foo WHERE 1=1 $blacklist GROUP BY length(query) ORDER BY $sort LIMIT $TOPLIMIT";
+    $sql = "SELECT count(*) AS cnt, length(query) AS len FROM (SELECT DISTINCT query FROM pdns WHERE maptype != 'PTR') AS foo WHERE 1=1 $blacklist GROUP BY length(query) ORDER BY $sort LIMIT $TOPLIMIT";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
-    if($stmt->rowCount()==0) die("empty");
+    if($stmt->rowCount()==0) die('empty');
     $data = array();
     while ( $r = $stmt->fetch(PDO::FETCH_ASSOC) ) {
         if ($r['len'] == '') continue;
@@ -105,22 +141,22 @@ if ($type == 'tld') {
     }
     $options = array(
         'use_blacklist' => array('true'=>"Yes", 'false'=>"No"),
-            'sort' => array( 'cnt'=>'count', 'len'=>'Length'),
-            'subtype' => array('len'=>'Length','perc'=>'Percentage' )
+        'sort' => array( 'cnt'=>'count', 'len'=>'Length'),
+        'subtype' => array('len'=>'Length','perc'=>'Percentage' )
     );
 } elseif ($type == 'asn') {
     if ($sort == 'asn') { $sort = 'asn asc';}
     else {$sort = 'cnt desc';}
     $title = 'Domains per ASNs';
-    $sql = "SELECT count(*) as cnt, asn from pdns WHERE 1=1 $blacklist group by asn order by $sort limit $TOPLIMIT";
+    $sql = "SELECT count(*) AS cnt, asn, asn_owner FROM pdns WHERE 1=1 $blacklist GROUP BY asn ORDER BY $sort LIMIT $TOPLIMIT";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
-    if($stmt->rowCount()==0) die("empty");
+    if($stmt->rowCount() == 0) die("empty");
     $data = array();
     while ( $r = $stmt->fetch(PDO::FETCH_ASSOC) ) {
         if ($r['asn'] == '') continue;
         $data[] = $r['cnt'];
-        $labels[] = $r['asn'];
+        $labels[] = $r['asn_owner'] . ' -- ' . $r['asn'];
     }
 
     $options = array(
@@ -129,7 +165,7 @@ if ($type == 'tld') {
     );
 } elseif ($type == 'asn_answer') {
     $title = 'ASNs per domain name';
-    $sql = "select count(distinct (ifnull(asn, rand()))) as cnt, QUERY from pdns where maptype in ('A', 'AAAA') $blacklist group by query order by cnt desc limit $TOPLIMIT";
+    $sql = "SELECT count(distinct (ifnull(asn, rand()))) AS cnt, QUERY FROM pdns WHERE maptype IN ('A', 'AAAA') $blacklist GROUP BY query ORDER BY cnt desc LIMIT $TOPLIMIT";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     if($stmt->rowCount()==0) die("empty");
@@ -137,7 +173,6 @@ if ($type == 'tld') {
         if ($r['QUERY'] == '') continue;
         $data[] = $r['cnt'];
         $labels[] = ($r['QUERY']==''?'.':$r['QUERY']);
-        $legend[] = 'aoeua';
     }
     $options = array(
         'use_blacklist' => array('true'=>"Yes", 'false'=>"No"),
@@ -153,7 +188,7 @@ if ($type == 'tld') {
         $input_arr[':subtype'] = $subtype;
         $where = "AND maptype = :subtype";
     }
-    $sql = "select count(*) as cnt, hour($col) as hours, maptype from pdns WHERE 1=1 $where $blacklist group by hour($col), maptype order by maptype, hours desc";
+    $sql = "SELECT count(*) AS cnt, hour($col) AS hours, maptype FROM pdns WHERE 1=1 $where $blacklist GROUP BY hour($col), maptype ORDER BY maptype, hours desc";
 //    echo $sql;
     $stmt = $pdo->prepare($sql);
     $stmt->execute($input_arr);
@@ -189,17 +224,17 @@ if ($type == 'tld') {
     $where = '';
     $input_arr = array();
     if ($subtype == 'basic') {
-        $where = "AND (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
+        $where = "AND (MAPTYPE = 'A' OR MAPTYPE = 'AAAA' OR MAPTYPE = 'CNAME' OR MAPTYPE = 'MX' OR MAPTYPE = 'NS' OR MAPTYPE = 'SOA') ";
     } elseif ($subtype != '' && $subtype != 'any') { 
         $input_arr[':subtype'] = $subtype;
         $where = "AND maptype = :subtype";
     }
     $sql = "(
-            SELECT ttl as nttl, count(*) as cnt from pdns where ttl < 90 $where $blacklist group by ttl) 
-                union (
-            SELECT round((ttl/10))*10  as nttl, count(*) as cnt from pdns where ttl >=90 and ttl < 300 $where $blacklist group by round(ttl/10)) 
-                union (
-            SELECT round((ttl/100))*100 as nttl, count(*) as cnt from pdns where ttl >= 300 $where $blacklist group by round(ttl/100)
+            SELECT ttl as nttl, count(*) as cnt from pdns where ttl < 90 $where $blacklist GROUP BY ttl) 
+                UNION (
+            SELECT round((ttl/10))*10 AS nttl, count(*) AS cnt FROM pdns WHERE ttl >=90 AND ttl < 300 $where $blacklist GROUP BY round(ttl/10)) 
+                UNION (
+            SELECT round((ttl/100))*100 AS nttl, count(*) AS cnt FROM pdns WHERE ttl >= 300 $where $blacklist GROUP BY round(ttl/100)
             )
         ORDER BY $sort";
     $stmt = $pdo->prepare($sql);
@@ -226,16 +261,16 @@ if ($type == 'tld') {
         $input_arr[':subtype'] = $subtype;
         $where = "AND maptype = :subtype";
     }
-    $sql = "select to_days(max(last_seen)) - to_days(min(first_seen)) as len from pdns WHERE 1=1 $blacklist";
+    $sql = "SELECT to_days(max(last_seen)) - to_days(min(first_seen)) AS len FROM pdns WHERE 1=1 $blacklist";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     $r = $stmt->fetch(PDO::FETCH_ASSOC);
     $len = $r["len"];
     if ($len > $TOPLIMIT) {
         $t = round($len / $TOPLIMIT);
-        $sql = "select round(count(*)/$t) as cnt, (round(((to_days(last_seen) - to_days(first_seen)) / $t))*$t) as days from pdns $where $blacklist group by round(days/$t) order by days desc";
+        $sql = "SELECT round(count(*)/$t) AS cnt, (round(((to_days(last_seen) - to_days(first_seen)) / $t))*$t) AS days FROM pdns $where $blacklist GROUP BY round(days/$t) ORDER BY days desc";
     } else {
-        $sql = "select count(*) as cnt, to_days(last_seen) - to_days(first_seen) as days from pdns $where $blacklist group by days order by days desc";
+        $sql = "SELECT count(*) AS cnt, to_days(last_seen) - to_days(first_seen) AS days FROM pdns $where $blacklist GROUP BY days ORDER BY days desc";
     }
     $stmt = $pdo->prepare($sql);
     $stmt->execute($input_arr);
@@ -260,16 +295,16 @@ if ($type == 'tld') {
         $input_arr[':subtype'] = $subtype;
         $where = " and maptype = :subtype";
     }
-    $sql = "select to_days(max(last_seen)) - to_days(min(first_seen)) as len from pdns WHERE 1=1 $blacklist";
+    $sql = "SELECT to_days(max(last_seen)) - to_days(min(first_seen)) AS len FROM pdns WHERE 1=1 $blacklist";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     $r = $stmt->fetch(PDO::FETCH_ASSOC);
     $len = $r["len"];
     if ($len > $TOPLIMIT) {
         $t = round($len / $TOPLIMIT);
-        $sql = "select round(count(*)/$t) as cnt, (round(((to_days(now()) - to_days(first_seen)) / $t))*$t) as days from pdns $where $blacklist group by round(days/$t) order by days desc";
+        $sql = "SELECT round(count(*)/$t) AS cnt, (round(((to_days(now()) - to_days(first_seen)) / $t))*$t) AS days FROM pdns $where $blacklist GROUP BY round(days/$t) ORDER BY days desc";
     } else {
-        $sql = "select count(*) as cnt, to_days(now()) - to_days(first_seen) as days from pdns $where $blacklist group by days order by days desc";
+        $sql = "SELECT count(*) AS cnt, to_days(now()) - to_days(first_seen) AS days FROM pdns $where $blacklist GROUP BY days ORDER BY days desc";
     }
     $stmt = $pdo->prepare($sql);
     $stmt->execute($input_arr);
@@ -289,21 +324,21 @@ if ($type == 'tld') {
     $where = 'WHERE 1=1 ';
     $input_arr = array();
     if ($subtype == 'basic') {
-        $where = " AND (MAPTYPE = 'A' or MAPTYPE = 'AAAA' or MAPTYPE = 'CNAME' or MAPTYPE = 'MX' or MAPTYPE = 'NS' or MAPTYPE = 'SOA') ";
+        $where = " AND (MAPTYPE = 'A' OR MAPTYPE = 'AAAA' OR MAPTYPE = 'CNAME' OR MAPTYPE = 'MX' OR MAPTYPE = 'NS' OR MAPTYPE = 'SOA') ";
     } elseif ($subtype != '' && $subtype != 'any') { 
         $input_arr[':subtype'] = $subtype;
         $where = " AND maptype = :subtype";
     }
-    $sql = "select to_days(max(last_seen)) - to_days(min(first_seen)) as len from pdns";
+    $sql = "SELECT to_days(max(last_seen)) - to_days(min(first_seen)) AS len FROM pdns";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     $r = $stmt->fetch(PDO::FETCH_ASSOC);
     $len = $r["len"];
     if ($len > $TOPLIMIT) {
         $t = round($len / $TOPLIMIT);
-        $sql = "select round(count(*)/$t) as cnt, (round(((to_days(now()) - to_days(last_seen)) / $t))*$t) as days from pdns $where $blacklist group by round(days/$t) order by days desc";
+        $sql = "SELECT round(count(*)/$t) AS cnt, (round(((to_days(now()) - to_days(last_seen)) / $t))*$t) AS days FROM pdns $where $blacklist GROUP BY round(days/$t) ORDER BY days desc";
     } else {
-        $sql = "select count(*) as cnt, to_days(now()) - to_days(last_seen) as days from pdns $where $blacklist group by days order by days desc";
+        $sql = "SELECT count(*) AS cnt, to_days(now()) - to_days(last_seen) AS days FROM pdns $where $blacklist GROUP BY days ORDER BY days desc";
     }
     $stmt = $pdo->prepare($sql);
     $stmt->execute($input_arr);
@@ -322,7 +357,7 @@ if ($type == 'tld') {
     $title = 'Resource records';
     if ($sort == 'rrtype') { $sort = 'maptype asc';}
     else {$sort = 'cnt desc';}
-    $sql = "SELECT count(*) as cnt, maptype from pdns WHERE 1=1 $blacklist GROUP BY maptype oRDER BY $sort";
+    $sql = "SELECT count(*) AS cnt, maptype FROM pdns WHERE 1=1 $blacklist GROUP BY maptype ORDER BY $sort";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     if($stmt->rowCount()==0) die("empty");
@@ -338,11 +373,11 @@ if ($type == 'tld') {
     }
     $options = array(
         'use_blacklist' => array('true'=>"Yes", 'false'=>"No"),
-            'sort' => array( 'cnt'=>'Count', 'rrtype'=>'RR Type'),
+        'sort' => array( 'cnt'=>'Count', 'rrtype'=>'RR Type'),
     );
 } else if ($type == 'top_request') { 
     $title = "$TOPLIMIT frequestly requests domains";
-    $sql = "SELECT max(count) as mx,sum(COUNT) as cnt, QUERY, round(sum(count)/(abs(unix_timestamp(min(first_seen))- unix_timestamp(max(last_seen)))/(24*3600))/count(*)) AS avg from pdns where 1=1 $blacklist group by QUERY order by cnt desc limit $TOPLIMIT";
+    $sql = "SELECT max(count) AS mx,sum(COUNT) AS cnt, QUERY, round(sum(count)/(abs(unix_timestamp(min(first_seen))- unix_timestamp(max(last_seen)))/(24*3600))/count(*)) AS avg FROM pdns WHERE 1=1 $blacklist GROUP BY QUERY ORDER BY cnt desc LIMIT $TOPLIMIT";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
     if($stmt->rowCount()==0) die("empty");
@@ -363,7 +398,7 @@ if ($type == 'tld') {
 } else if ($type == 'top_domain') {
     $title = "Domain names with the most IP addresses";
 
-    $sql = "SELECT count(*) AS cnt, QUERY from pdns WHERE 1=1 $blacklist group by query order by cnt desc limit $TOPLIMIT";
+    $sql = "SELECT count(*) AS cnt, QUERY from pdns WHERE 1=1 $blacklist GROUP BY query ORDER BY cnt desc LIMIT $TOPLIMIT";
     //echo $sql;
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
@@ -379,13 +414,13 @@ if ($type == 'tld') {
 } else if ($type == 'top_ip') {
     if ($subtype == 'ipv4') {
         $title = "IPv4 addresses with the most domain names top $TOPLIMIT";
-        $sql = "SELECT count(*) as cnt, answer from pdns where maptype = 'a' $blacklist group by answer order by cnt desc limit $TOPLIMIT";
+        $sql = "SELECT count(*) as cnt, answer FROM pdns WHERE maptype = 'a' $blacklist GROUP BY answer ORDER BY cnt desc LIMIT $TOPLIMIT";
     } elseif ($subtype == 'ipv6') {
         $title = "IPv6 addresses with the most domain names top $TOPLIMIT";
-        $sql = "SELECT count(*) as cnt, answer from pdns where maptype = 'aaaa' $blacklist group by answer order by cnt desc limit $TOPLIMIT";
+        $sql = "SELECT count(*) as cnt, answer FROM pdns WHERE maptype = 'aaaa' $blacklist GROUP BY answer ORDER BY cnt desc LIMIT $TOPLIMIT";
     } else {
         $title = "IP addresses with the most domain names top $TOPLIMIT";
-        $sql = "SELECT count(*) as cnt, answer from pdns where maptype = 'a' or maptype = 'aaaa' $blacklist group by answer order by cnt desc limit $TOPLIMIT";
+        $sql = "SELECT count(*) as cnt, answer FROM pdns WHERE maptype = 'a' OR maptype = 'aaaa' $blacklist GROUP BY answer ORDER BY cnt desc LIMIT $TOPLIMIT";
     }
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
@@ -399,10 +434,10 @@ if ($type == 'tld') {
         'use_blacklist' => array('true'=>"Yes", 'false'=>"No"),
     );
 } else {
-    die ("Unknown type");
+    die ('Unknown type');
 }
 
-$vars = array('labels' => $labels, 'data'=>$data, "title" =>$title, 'legend'=> $legend, 'options' => $options, 'type'=> $type);
+$vars = array('labels' => $labels, 'data'=>$data, "title" =>$title, 'legend'=> $legend, 'options' => $options, 'type'=> $type, 'plottype' => $plottype);
 if ($data2 != array()) {
     $vars['data2'] = $data2;
 }

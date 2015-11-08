@@ -104,8 +104,6 @@ if ($query || $qttl != '') {
         echo "<b>Passive DNS Records for Domain: $query </b> <br><br>";
         $q_str = prepare_query($query, $input_arr);
         $sql = "SELECT * FROM pdns WHERE ($q_str) $qtype $qttl $fromdate $todate $qsort LIMIT $DBLIMIT";
-//        $input_arr[':query'] = $query;
-  //      $input_arr[':query1'] = "%$query";
     }
 
     $stmt = $pdo->prepare($sql);
@@ -134,10 +132,16 @@ if ($query || $qttl != '') {
                 echo "<td><div style='word-break:break-all;'>$a</div></td>";
             }
             echo "<td>". $r['TTL'] ."</td>";
-            echo "<td><a href='$href&amp;query=". urlencode($r['asn'])."'>". $r['asn'] .'</a></td>';
+            echo "<td><a href='$href&amp;query=". urlencode($r['asn'])."' title='{$r['asn_owner']}'>". $r['asn'] .'</a></td>';
             echo "<td>". $r['COUNT'] .'</td>';
             echo "<td><a target='_new' href='http://{$r['QUERY']}'><img src='link.png' title='go to site' alt='go to site'></a></td>";
             echo "<td><a target='_new' href='dig.php?query=" . urlencode($r['QUERY']) . "&amp;type=any'><img src='dig.png' title='dig site' alt='dig site'></a></td>";
+            echo "<td><a target='_new' href='plot2.php?type=timeline&amp;domain=" . urlencode($r['QUERY']). "&amp;subtype=" . urlencode($r['MAPTYPE']) . "' title='Timeline domain' alt='Timeline domain'>D</a></td>";
+            if (in_array($r['MAPTYPE'], array('A', 'AAAA'))) {
+                echo "<td><a target='_new' href='plot2.php?type=timeline&amp;subtype=" . urlencode($r['MAPTYPE']) . "&amp;ip=" . urlencode($r['ANSWER']). "' title='Timeline domain' alt='Timeline domain'>IP</a></td>";
+            } elseif (in_array($r['MAPTYPE'], array('CNAME', 'PTR', 'MX', 'NS'))) {
+                echo "<td><a target='_new' href='plot2.php?type=timeline&amp;subtype=" . urlencode($r['MAPTYPE']) . "&amp;domain=" . urlencode($r['ANSWER']). "' title='Timeline domain' alt='Timeline domain'>DN</a></td>";
+            }
             echo '</tr>';
             $cnt++;
         }
@@ -156,27 +160,31 @@ function prepare_query($query, &$input_arr)
     $cnt = 0;
     foreach ($words as $word) {
         $cnt++;
+        $not = '';
         $word = trim($word);
         if ($word == '') continue;
+        if ($word[0] == '!'){
+            $word = substr($word, 1);
+            $not = 'NOT';
+        }
         if ($word == '%') {
-            $qstr .= " AND query LIKE :query_$cnt ";
+            $qstr .= " AND query $not LIKE :query_$cnt ";
             $input_arr[":query_$cnt"] = "%";
         } elseif ($word[0] == '^') { 
             $word = substr($word, 1);
-            $qstr .= " AND query LIKE :query_$cnt ";
+            $qstr .= " AND query $not LIKE :query_$cnt ";
             $input_arr[":query_$cnt"] = "$word%";
         } elseif (strrev($word)[0] == '$'){
             $word = substr($word, 0, -1);
-            $qstr .= " AND query LIKE :query_$cnt ";
+            $qstr .= " AND query $not LIKE :query_$cnt ";
             $input_arr[":query_$cnt"] = "%$word";
         } else {
-            $qstr .= " AND query LIKE :query_$cnt ";
+            $qstr .= " AND query $not LIKE :query_$cnt ";
             $input_arr[":query_$cnt"] = "%$word%";
         }
     }
     return $qstr;
 }
-
 
 
 function sanitize($in) 
