@@ -60,17 +60,19 @@
 #define DNS_NXDOMAIN       0x01
 
 /* Flags for which fields to print */
-#define FIELD_TIMESTAMP_S  0x0001
-#define FIELD_TIMESTAMP_MS 0x0002
-#define FIELD_CLIENT       0x0004
-#define FIELD_SERVER       0x0008
-#define FIELD_CLASS        0x0010
-#define FIELD_QUERY        0x0020
-#define FIELD_TYPE         0x0040
-#define FIELD_ANSWER       0x0080
-#define FIELD_TTL          0x0100
-#define FIELD_COUNT        0x0200
-#define FIELD_TIMESTAMP_YMDHMS 0x0400
+#define FIELD_TIMESTAMP_FIRST_S  0x0001
+#define FIELD_TIMESTAMP_FIRST_MS 0x0002
+#define FIELD_TIMESTAMP_S        0x0004
+#define FIELD_TIMESTAMP_MS       0x0008
+#define FIELD_CLIENT             0x0010
+#define FIELD_SERVER             0x0020
+#define FIELD_CLASS              0x0040
+#define FIELD_QUERY              0x0080
+#define FIELD_TYPE               0x0100
+#define FIELD_ANSWER             0x0200
+#define FIELD_TTL                0x0400
+#define FIELD_COUNT              0x0800
+#define FIELD_TIMESTAMP_YMDHMS   0x0100
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
@@ -80,6 +82,8 @@
 #define PDNS_IDENT         "passivedns"
 
 /* JSON fields used when printing PDNS */
+#define JSON_TIMESTAMP_FIRST_S   "timestamp_first_s"
+#define JSON_TIMESTAMP_FIRST_MS   "timestamp_first_ms"
 #define JSON_TIMESTAMP_S   "timestamp_s"
 #define JSON_TIMESTAMP_MS  "timestamp_ms"
 #define JSON_CLIENT        "client"

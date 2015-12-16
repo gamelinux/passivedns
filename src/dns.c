@@ -657,6 +657,8 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
 #ifdef HAVE_JSON
     json_t *jdata;
+    json_t *json_timestamp_first_s;
+    json_t *json_timestamp_first_ms;
     json_t *json_timestamp_s;
     json_t *json_timestamp_ms;
     json_t *json_client;
@@ -855,6 +857,20 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     if ((is_err_record && config.use_json_nxd) ||
         (!is_err_record && config.use_json)) {
         jdata = json_object();
+
+        /* Print timestamp(s) */
+        if (config.fieldsf & FIELD_TIMESTAMP_FIRST_S) {
+            json_timestamp_first_s = json_integer(l->first_seen.tv_sec);
+            json_object_set(jdata, JSON_TIMESTAMP_FIRST_S, json_timestamp_first_s);
+            json_decref(json_timestamp_first_s);
+        }
+
+        /* Print timestamp(s) */
+        if (config.fieldsf & FIELD_TIMESTAMP_FIRST_MS) {
+            json_timestamp_first_ms = json_integer(l->first_seen.tv_usec);
+            json_object_set(jdata, JSON_TIMESTAMP_FIRST_MS, json_timestamp_first_ms);
+            json_decref(json_timestamp_first_ms);
+        }
 
         /* Print timestamp(s) */
         if (config.fieldsf & FIELD_TIMESTAMP_S) {
