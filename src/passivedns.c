@@ -60,7 +60,7 @@
 /*  G L O B A L S  *** (or candidates for refactoring, as we say)***********/
 globalconfig config;
 connection *bucket[BUCKET_SIZE];
-
+uint8_t signal_reopen_log_files = 0;
 
 /*  I N T E R N A L   P R O T O T Y P E S  ***********************************/
 static void usage();
@@ -92,6 +92,7 @@ connection *cxt_new(packetinfo *pi);
 void del_connection(connection *, connection **);
 void print_pdns_stats();
 void free_config();
+void reopen_log_files();
 //void dump_payload(const uint8_t* data,uint16_t dlen);
 void game_over ();
 void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
@@ -131,6 +132,10 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
     pi->pheader = pheader;
     set_pkt_end_ptr (pi);
     config.tstamp = pi->pheader->ts; /* Global */
+
+    if (signal_reopen_log_files)
+        reopen_log_files();
+
     if (config.intr_flag != 0) {
         check_interrupt();
     }
@@ -769,6 +774,11 @@ void sig_alarm_handler()
     alarm(TIMEOUT);
 }
 
+void sig_hup_handler()
+{
+    signal_reopen_log_files = 1;
+}
+
 void reopen_log_files()
 {
     if (config.output_log) {
@@ -787,6 +797,7 @@ void reopen_log_files()
             config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
         }
     }
+    signal_reopen_log_files = 0;
 }
 
 void set_end_dns_records()
@@ -1192,7 +1203,7 @@ int main(int argc, char *argv[])
     signal(SIGINT,  game_over);
     signal(SIGQUIT, game_over);
     signal(SIGALRM, sig_alarm_handler);
-    signal(SIGHUP,  reopen_log_files);
+    signal(SIGHUP,  sig_hup_handler);
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
