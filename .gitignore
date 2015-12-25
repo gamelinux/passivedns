@@ -8,6 +8,7 @@ src/passivedns
 *.swp
 aclocal.m4
 autom4te.cache/
+compile
 config.guess
 config.log
 config.sub
