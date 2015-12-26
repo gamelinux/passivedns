@@ -1175,7 +1175,6 @@ int main(int argc, char *argv[])
     config.dnsf = 0;
     config.log_delimiter = "||";
     config.fieldsf = 0;
-    /* config.fieldsf |= FIELD_TIMESTAMP_YMDHMS; /* not on by default  */
     config.fieldsf |= FIELD_TIMESTAMP_S;
     config.fieldsf |= FIELD_TIMESTAMP_MS;
     config.fieldsf |= FIELD_CLIENT;

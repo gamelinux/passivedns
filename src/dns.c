@@ -328,9 +328,9 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         int len;
         ldns_rr *rr;
         ldns_rdf *rname;
-        unsigned char *rdomain_name = 0;
-        unsigned char *tmp1 = NULL;
-        unsigned char *tmp2 = NULL;
+        char *rdomain_name = NULL;
+        char *tmp1 = NULL;
+        char *tmp2 = NULL;
 
         rr = ldns_rr_list_rr(dns_answer_domains, j);
 
@@ -472,7 +472,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             }
 
             ldns_rdf2buffer_str(buff, rname);
-            rdomain_name = (unsigned char *) ldns_buffer2str(buff);
+            rdomain_name = (char *) ldns_buffer2str(buff);
 
             if (rdomain_name == NULL)
                 continue;
@@ -515,7 +515,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         }
 
         /* Update the pdns record with the pdns asset */
-        update_pdns_record_asset(pi, pr, rr, rdomain_name);
+        update_pdns_record_asset(pi, pr, rr, (unsigned char*)rdomain_name);
 
         /* If CNAME, free domain_name, and cp rdomain_name to domain_name */
         if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_CNAME) {
