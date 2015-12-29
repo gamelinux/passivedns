@@ -16,7 +16,7 @@ FreeBSD Install
   $ gmake
 
 OS X (using Homebrew for dependencies)
-  $ brew install autoconf ldns jansson
+  $ brew install automake autoconf ldns jansson
   $ git clone git://github.com/gamelinux/passivedns.git
   $ cd passivedns/
   $ autoreconf --install
