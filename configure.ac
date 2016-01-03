@@ -61,6 +61,38 @@ if test "$LIBPCAP_L" = "no"; then
     exit 1
 fi
 
+# Checks for OpenSSL (newer versions of ldns require OpenSSL).
+AC_ARG_ENABLE(openssl,
+    AS_HELP_STRING([--disable-openssl],
+                   [Requires ldns library compiled without OpenSSL]),
+    [enable_openssl=no], [enable_openssl=yes])
+
+AC_ARG_WITH(openssl_includes,
+    [  --with-openssl-includes=DIR   OpenSSL include directory],
+    [with_openssl_includes="$withval"],[with_openssl_includes="no"])
+
+AC_ARG_WITH(openssl_libraries,
+    [  --with-openssl-libraries=DIR  OpenSSL library directory],
+    [with_openssl_libraries="$withval"],[with_openssl_libraries="no"])
+
+AS_IF([test "x$enable_openssl" = "xyes"], [
+    if test "$with_openssl_includes" != "no"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_openssl_includes}"
+    fi
+
+    if test "$with_openssl_libraries" != "no"; then
+        LDFLAGS="${LDFLAGS} -L${with_openssl_libraries}"
+    fi
+
+    # Check for OpenSSL headers
+    AC_CHECK_HEADER(openssl/ssl.h,,LIBOPENSSL_H="no")
+
+    if test "$LIBOPENSSL_H" = "no"; then
+        echo -e "\n  ERROR! OpenSSL headers not found\n"
+        exit 1
+    fi
+])
+
 # Checks for ldns.
 AC_ARG_WITH(ldns_includes,
     [  --with-ldns-includes=DIR      ldns include directory],
