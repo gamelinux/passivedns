@@ -71,6 +71,7 @@
 #define FIELD_TTL          0x0100
 #define FIELD_COUNT        0x0200
 #define FIELD_TIMESTAMP_YMDHMS 0x0400
+#define FIELD_PROTO        0x0800
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
@@ -84,6 +85,7 @@
 #define JSON_TIMESTAMP_MS  "timestamp_ms"
 #define JSON_CLIENT        "client"
 #define JSON_SERVER        "server"
+#define JSON_PROTO         "proto"
 #define JSON_CLASS         "class"
 #define JSON_QUERY         "query"
 #define JSON_TYPE          "type"
@@ -129,6 +131,7 @@ typedef struct _pdns_asset {
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
+    uint8_t                proto;      /* Protocol */
     struct _pdns_asset     *next;      /* Next dns asset */
     struct _pdns_asset     *prev;      /* Prev dns asset */
 } pdns_asset;

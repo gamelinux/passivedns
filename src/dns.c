@@ -610,6 +610,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     passet->af = pi->cxt->af;
     passet->cip = pi->cxt->s_ip; /* This should always be the client IP */
     passet->sip = pi->cxt->d_ip; /* This should always be the server IP */
+    passet->proto = pi->proto;
     passet->prev = NULL;
     len = strlen((char *)rdomain_name);
     passet->answer = calloc(1, (len + 1));
@@ -648,6 +649,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
     char *d = config.log_delimiter;
+    char *proto;
     char *rr_class;
     char *rr_type;
     char *rr_rcode;
@@ -662,6 +664,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     json_t *json_timestamp_ms;
     json_t *json_client;
     json_t *json_server;
+    json_t *json_proto;
     json_t *json_class;
     json_t *json_query;
     json_t *json_type;
@@ -695,7 +698,6 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         if (fd == NULL) return;
     }
 
-
     if (is_err_record) {
         u_ntop(l->sip, l->af, ip_addr_s);
         u_ntop(l->cip, l->af, ip_addr_c);
@@ -705,9 +707,22 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         u_ntop(p->cip, p->af, ip_addr_c);
     }
 
+    proto    = malloc(4);
     rr_class = malloc(10);
     rr_type  = malloc(12);
     rr_rcode = malloc(20);
+
+    switch (p->proto) {
+        case IP_PROTO_TCP:
+            snprintf(proto, 4, "tcp");
+            break;
+        case IP_PROTO_UDP:
+            snprintf(proto, 4, "udp");
+            break;
+        default:
+            snprintf(proto, 4, "%d", p->proto);
+            break;
+    }
 
     switch (ldns_rr_get_class(rr)) {
         case LDNS_RR_CLASS_IN:
@@ -881,6 +896,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             json_decref(json_server);
         }
 
+        /* Print protocol */
+        if (config.fieldsf & FIELD_PROTO) {
+            json_proto = json_string(proto);
+            json_object_set(jdata, JSON_PROTO, json_proto);
+            json_decref(json_proto);
+        }
+
         /* Print class */
         if (config.fieldsf & FIELD_CLASS) {
             json_class = json_string(rr_class);
@@ -1003,6 +1025,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_s);
         }
 
+        /* Print protocol */
+        if (config.fieldsf & FIELD_PROTO) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", proto);
+        }
+
         /* Print class */
         if (config.fieldsf & FIELD_CLASS) {
             if (offset != 0)
@@ -1088,6 +1117,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 #endif /* HAVE_JSON */
 
+    free(proto);
     free(rr_class);
     free(rr_type);
     free(rr_rcode);
@@ -1485,6 +1515,11 @@ void parse_field_flags(char *args)
             case 't': /* TTL */
                 config.fieldsf |= FIELD_TTL;
                 dlog("[D] Enabling field: FIELD_TTL\n");
+                ok++;
+                break;
+            case 'p': /* Protocol */
+                config.fieldsf |= FIELD_PROTO;
+                dlog("[D] Enabling field: FIELD_PROTO\n");
                 ok++;
                 break;
             case 'n': /* Count */
