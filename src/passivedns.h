@@ -350,7 +350,7 @@ typedef struct _connection {
   (dst)->s6_addr32[2] + (dst)->s6_addr32[3] + \
   sp + dp + pr ) % BUCKET_SIZE)
 #else
-#define CXT_HASH6(src,dest,sp,dp,pr) \
+#define CXT_HASH6(src,dst,sp,dp,pr) \
  (( \
   (src)->__u6_addr.__u6_addr32[0] + (src)->__u6_addr.__u6_addr32[1] + \
   (src)->__u6_addr.__u6_addr32[2] + (src)->__u6_addr.__u6_addr32[3] + \
