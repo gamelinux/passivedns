@@ -22,6 +22,10 @@
 /*  I N C L U D E S  **********************************************************/
 #include "config.h"
 
+#ifdef HAVE_LIBHIREDIS
+#include <hiredis.h>
+#endif /* HAVE_LIBHIREDIS */
+
 #ifdef HAVE_PFRING
 #include <pfring.h>
 #endif /* HAVE_PFRING */
@@ -558,4 +562,3 @@ typedef struct _globalconfig {
 int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
-
