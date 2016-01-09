@@ -372,7 +372,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 5;
                 }
                 break;
-            
+
             case LDNS_RR_TYPE_NSEC:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
@@ -1086,19 +1086,53 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 #endif /* HAVE_JSON */
 
-    /* Print to log file */
-    if (fd) {
-        fprintf(fd, "%s\n", output);
-        fflush(fd);
-    }
+#ifdef HAVE_LIBHIREDIS
+    if (config.output_log_redis == 1) {
+        redisReply *reply = redisCommand(
+            config.redis_context,
+            "PUBLISH %s %s",
+            config.redis_key,
+            output
+        )
 
-    /* Print to syslog */
-    if ((is_err_record && config.output_syslog_nxd) ||
-            (!is_err_record && config.output_syslog)) {
-        openlog(PDNS_IDENT, LOG_NDELAY, LOG_LOCAL7);
-        syslog(LOG_INFO, "%s", output);
-        closelog();
+        uint8_t error = 0;
+
+        switch (reply->type) {
+        case REDIS_REPLY_ERROR:
+            error = 1;
+            olog("Recived Redis error: %s\n", reply->str);
+            break;
+        case REDIS_REPLY_INTEGER:
+            dlog("Recived Redis reply: %lld\n", reply->integer);
+            break;
+        default:
+            error = 1;
+            olog("Recived default clause Redis reply type: %d\n", reply->type);
+            break;
+        }
+
+        freeReplyObject(reply);
+        if (error == 1) {
+            exit(1);
+        }
+    } else {
+#endif /* HAVE_LIBHIREDIS */
+        /* Print to log file */
+        if (fd) {
+            fprintf(fd, "%s\n", output);
+            fflush(fd);
+        }
+
+        /* Print to syslog */
+        if ((is_err_record && config.output_syslog_nxd) ||
+                (!is_err_record && config.output_syslog)) {
+            openlog(PDNS_IDENT, LOG_NDELAY, LOG_LOCAL7);
+            syslog(LOG_INFO, "%s", output);
+            closelog();
+        }
+#ifdef HAVE_LIBHIREDIS
     }
+#endif /* HAVE_LIBHIREDIS */
 
     if (is_err_record) {
         l->last_print = l->last_seen;
@@ -1753,4 +1787,3 @@ uint16_t pdns_chk_dnsfe(uint16_t rcode)
 
     return retcode;
 }
-

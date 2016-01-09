@@ -497,8 +497,10 @@ typedef struct _globalconfig {
     uint8_t             output_log_nxd;    /* Log NXDOMAIN to log file */
 #ifdef HAVE_LIBHIREDIS
     uint8_t             output_log_redis;  /* Log to Redis */
+    redisContext        *redis_context     /* The connection to Redis */
     uint16_t            redis_port;        /* Redis Port */
     char                *redis_server;     /* Redis Server */
+    char                *redis_key         /* Redis Channel Key */
 #endif /* HAVE_LIBHIREDIS */
     uint8_t             output_syslog;     /* Log to syslog */
     uint8_t             output_syslog_nxd; /* Log NXDOMAIN to syslog */

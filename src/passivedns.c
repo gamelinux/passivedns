@@ -1170,6 +1170,7 @@ int main(int argc, char *argv[])
     config.output_log_redis = 0;
     config.redis_port = REDIS_DEFAULT_PORT;
     config.redis_server = "127.0.0.1";
+    config.redis_key = "passivedns";
 #endif /* HAVE_LIBHIREDIS */
     config.output_syslog = 0;
     config.output_syslog_nxd = 0;
@@ -1210,7 +1211,7 @@ int main(int argc, char *argv[])
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
-#define ARGS "ke:K:i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define ARGS "ez:E:k:i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1230,12 +1231,14 @@ int main(int argc, char *argv[])
             break;
 #ifdef HAVE_LIBHIREDIS
         case 'k':
+            config.redis_key = optarg;
+        case 'e':
             config.output_log_redis = 1;
             break;
-        case 'e':
+        case 'z':
             config.redis_port = strtol(optarg, NULL, 0);
             break;
-        case 'K':
+        case 'E':
             config.redis_server = optarg;
             break;
 #endif /* HAVE_LIBHIREDIS */
@@ -1336,13 +1339,13 @@ int main(int argc, char *argv[])
 
     /* Open connection to Redis */
     if (config.output_log_redis == 1) {
-        redisContext *c = redisConnect(config.redis_server, config.redis_port);
-        
-        if (c == NULL) {
+        config.redis_context = redisConnect(config.redis_server, config.redis_port);
+
+        if (config.redis_context == NULL) {
             olog("[!] Error connecting to Redis: unkown error\n");
             exit(1);
-        } else if (c != NULL && c->err) {
-            olog("[!] Error connecting to Redis: %s\n", c->errstr);
+        } else if (config.redis_context != NULL && config.redis_context->err) {
+            olog("[!] Error connecting to Redis: %s\n", config.redis_context->errstr);
             exit(1);
         }
     } else {
