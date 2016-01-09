@@ -1316,6 +1316,14 @@ int main(int argc, char *argv[])
             elog("Did not recognize argument '%c'\n", ch);
     }
 
+    /* Fall back to log file if syslog is not used */
+    if (config.output_syslog == 0)
+        config.output_log = 1;
+
+    if (config.output_syslog_nxd == 0)
+        config.output_log_nxd = 1;
+
+#ifdef HAVE_LIBHIREDIS
     /* Fall back to log file if syslog and redis is not used */
     if (config.output_syslog == 0 && config.output_log_redis == 0) {
         config.output_log = 1;
@@ -1326,9 +1334,19 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    if (config.output_syslog_nxd == 0)
-        config.output_log_nxd = 1;
-
+    /* Open connection to Redis */
+    if (config.output_log_redis == 1) {
+        redisContext *c = redisConnect(config.redis_server, config.redis_port);
+        
+        if (c == NULL) {
+            olog("[!] Error connecting to Redis: unkown error\n");
+            exit(1);
+        } else if (c != NULL && c->err) {
+            olog("[!] Error connecting to Redis: %s\n", c->errstr);
+            exit(1);
+        }
+    } else {
+#endif /* HAVE_JSON */
     /* Open log file */
     if (config.output_log) {
         if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
@@ -1359,6 +1377,9 @@ int main(int argc, char *argv[])
             }
         }
     }
+#ifdef HAVE_LIBHIREDIS
+    }
+#endif /* HAVE_LIBHIREDIS */
 
     show_version();
 
