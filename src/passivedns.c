@@ -1166,6 +1166,11 @@ int main(int argc, char *argv[])
     config.pidfile = "/var/run/passivedns.pid";
     config.output_log = 0;
     config.output_log_nxd = 0;
+#ifdef HAVE_LIBHIREDIS
+    config.output_log_redis = 0;
+    config.redis_port = REDIS_DEFAULT_PORT;
+    config.redis_server = "127.0.0.1";
+#endif /* HAVE_LIBHIREDIS */
     config.output_syslog = 0;
     config.output_syslog_nxd = 0;
     /* Default memory limit: 256 MB */
@@ -1205,7 +1210,7 @@ int main(int argc, char *argv[])
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
-#define ARGS "i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define ARGS "ke:K:i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1223,6 +1228,17 @@ int main(int argc, char *argv[])
             config.output_log = 1;
             config.logfile = optarg;
             break;
+#ifdef HAVE_LIBHIREDIS
+        case 'k':
+            config.output_log_redis = 1;
+            break;
+        case 'e':
+            config.redis_port = strtol(optarg, NULL, 0);
+            break;
+        case 'K':
+            config.redis_server = optarg;
+            break;
+#endif /* HAVE_LIBHIREDIS */
         case 'y':
             config.output_syslog = 1;
             break;
@@ -1503,4 +1519,3 @@ int main(int argc, char *argv[])
     game_over();
     return 0;
 }
-

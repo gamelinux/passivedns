@@ -24,6 +24,7 @@
 
 #ifdef HAVE_LIBHIREDIS
 #include <hiredis.h>
+#define REDIS_DEFAULT_PORT           6379    /* Default Redis Port */
 #endif /* HAVE_LIBHIREDIS */
 
 #ifdef HAVE_PFRING
@@ -495,8 +496,9 @@ typedef struct _globalconfig {
     uint8_t             output_log;        /* Log to log file */
     uint8_t             output_log_nxd;    /* Log NXDOMAIN to log file */
 #ifdef HAVE_LIBHIREDIS
+    uint8_t             output_log_redis;  /* Log to Redis */
     uint16_t            redis_port;        /* Redis Port */
-    char                *server;           /* Redis Server */
+    char                *redis_server;     /* Redis Server */
 #endif /* HAVE_LIBHIREDIS */
     uint8_t             output_syslog;     /* Log to syslog */
     uint8_t             output_syslog_nxd; /* Log NXDOMAIN to syslog */
