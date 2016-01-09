@@ -171,4 +171,3 @@ void update_dns_stats(packetinfo *pi, uint8_t code);
 uint16_t pdns_chk_dnsfe(uint16_t rcode);
 
 #endif /* DNS_H */
-

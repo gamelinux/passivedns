@@ -35,6 +35,10 @@
 #include <jansson.h>
 #endif /* HAVE_JSON */
 
+#ifdef HAVE_LIBHIREDIS
+#include <hiredis/hiredis.h>
+#endif /* HAVE_LIBHIREDIS */
+
 globalconfig config;
 
 /* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
@@ -1087,13 +1091,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 #endif /* HAVE_JSON */
 
 #ifdef HAVE_LIBHIREDIS
-    if (config.output_log_redis == 1) {
+    if (config.use_redis == 1) {
         redisReply *reply = redisCommand(
             config.redis_context,
             "PUBLISH %s %s",
             config.redis_key,
             output
-        )
+        );
 
         uint8_t error = 0;
 

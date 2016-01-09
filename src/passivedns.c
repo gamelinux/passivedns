@@ -52,6 +52,10 @@
 #include <pfring.h>
 #endif /* HAVE_PFRING */
 
+#ifdef HAVE_LIBHIREDIS
+#include <hiredis/hiredis.h>
+#endif /* HAVE_LIBHIREDIS */
+
 #ifndef CONFDIR
 #define CONFDIR "/etc/passivedns/"
 #endif
@@ -1071,28 +1075,34 @@ void usage()
     olog("USAGE:\n");
     olog(" $ passivedns [options]\n\n");
     olog(" OPTIONS:\n\n");
-    olog(" -i <iface>      Network device <iface> (default: eth0).\n");
-    olog(" -r <file>       Read pcap <file>.\n");
+    olog(" -i <iface>      Network device <iface>                      (default: eth0).\n");
+    olog(" -r <file>       Read pcap <file>                            (default: None).\n");
+#ifdef HAVE_LIBHIREDIS
+    olog(" -k <redis_key>  Set Redis channel key                       (default: passivedns).\n");
+    olog(" -e              Use Redis Output                            (default: Off).\n");
+    olog(" -z <redis_port> Set Redis port                              (default: 6379).\n");
+    olog(" -E <redis_host> Set Redis host                              (default: 127.0.0.1).\n");
+#endif /* HAVE_LIBHIREDIS */
 #ifdef HAVE_PFRING
-    olog(" -n              Use PF_RING.\n");
-    olog(" -c <cluster_id> Set PF_RING cluster_id.\n");
+    olog(" -n              Use PF_RING                                 (default: Off).\n");
+    olog(" -c <cluster_id> Set PF_RING cluster_id                      (default: 0).\n");
 #endif /* HAVE_PFRING */
-    olog(" -l <file>       Logfile normal queries (default: /var/log/passivedns.log).\n");
-    olog(" -L <file>       Logfile for SRC Error queries (default: /var/log/passivedns.log).\n");
-    olog(" -y              Log to syslog (uses local7 syslog facility).\n");
-    olog(" -Y              Log NXDOMAIN to syslog.\n");
-    olog(" -d <delimiter>  Delimiter between fields in log file (default: ||).\n");
+    olog(" -l <file>       Logfile normal queries                      (default: /var/log/passivedns.log).\n");
+    olog(" -L <file>       Logfile for SRC Error queries               (default: /var/log/passivedns.log).\n");
+    olog(" -y              Log to syslog                               (default: uses local7 syslog facility).\n");
+    olog(" -Y              Log NXDOMAIN to syslog                      (default: Off).\n");
+    olog(" -d <delimiter>  Delimiter between fields in log file        (default: ||).\n");
 #ifdef HAVE_JSON
-    olog(" -j              Use JSON as output in log file.\n");
-    olog(" -J              Use JSON as output in NXDOMAIN log file.\n");
+    olog(" -j              Use JSON as output in log file              (default: Off).\n");
+    olog(" -J              Use JSON as output in NXDOMAIN log file     (default: Off).\n");
 #endif /* HAVE_JSON */
-    olog(" -f <fields>     Choose which fields to print (default: -f SMcsCQTAtn).\n");
-    olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
-    olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
-    olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
-    olog(" -C <sec>        Seconds to cache DNS objects in memory (default: %u).\n", DNSCACHETIMEOUT);
+    olog(" -f <fields>     Choose which fields to print                (default: -f SMcsCQTAtn).\n");
+    olog(" -b 'BPF'        Berkley Packet Filter                       (default: 'port 53').\n");
+    olog(" -p <file>       Name of pid file                            (default: /var/run/passivedns.pid).\n");
+    olog(" -S <mem>        Soft memory limit in MB                     (default: 256).\n");
+    olog(" -C <sec>        Seconds to cache DNS objects in memory      (default: %u).\n", DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n", DNSPRINTTIME);
-    olog(" -X <flags>      Manually set DNS RR Types to care about (default: -X 46CDNPRS).\n");
+    olog(" -X <flags>      Manually set DNS RR Types to care about     (default: -X 46CDNPRS).\n");
     olog(" -u <uid>        User ID to drop privileges to.\n");
     olog(" -g <gid>        Group ID to drop privileges to.\n");
     olog(" -T <dir>        Directory to chroot into.\n");
@@ -1148,6 +1158,12 @@ void show_version()
         olog("[*] Using jansson version %s\n", JANSSON_VERSION);
     }
 #endif /* HAVE_JSON */
+#ifdef HAVE_LIBHIREDIS
+    if (config.use_redis) {
+        olog("[*] Using hiredis version %d.%d.%d\n", HIREDIS_MAJOR,
+            HIREDIS_MINOR, HIREDIS_PATCH);
+    }
+#endif /* HAVE_LIBHIREDIS */
 }
 
 extern int optind, opterr, optopt; // getopt()
@@ -1167,7 +1183,7 @@ int main(int argc, char *argv[])
     config.output_log = 0;
     config.output_log_nxd = 0;
 #ifdef HAVE_LIBHIREDIS
-    config.output_log_redis = 0;
+    config.use_redis = 0;
     config.redis_port = REDIS_DEFAULT_PORT;
     config.redis_server = "127.0.0.1";
     config.redis_key = "passivedns";
@@ -1233,7 +1249,7 @@ int main(int argc, char *argv[])
         case 'k':
             config.redis_key = optarg;
         case 'e':
-            config.output_log_redis = 1;
+            config.use_redis = 1;
             break;
         case 'z':
             config.redis_port = strtol(optarg, NULL, 0);
@@ -1319,26 +1335,19 @@ int main(int argc, char *argv[])
             elog("Did not recognize argument '%c'\n", ch);
     }
 
-    /* Fall back to log file if syslog is not used */
-    if (config.output_syslog == 0)
-        config.output_log = 1;
-
-    if (config.output_syslog_nxd == 0)
-        config.output_log_nxd = 1;
-
 #ifdef HAVE_LIBHIREDIS
     /* Fall back to log file if syslog and redis is not used */
-    if (config.output_syslog == 0 && config.output_log_redis == 0) {
+    if (config.output_syslog == 0 && config.use_redis == 0) {
         config.output_log = 1;
 
     /* Fail if both redis and syslog is set */
-    } else if (config.output_log_redis == 1 && config.output_syslog == 1) {
+    } else if (config.use_redis == 1 && config.output_syslog == 1) {
         olog("[!] Cannot have both redis and syslog output\n");
         exit(1);
     }
 
     /* Open connection to Redis */
-    if (config.output_log_redis == 1) {
+    if (config.use_redis == 1) {
         config.redis_context = redisConnect(config.redis_server, config.redis_port);
 
         if (config.redis_context == NULL) {
@@ -1349,37 +1358,45 @@ int main(int argc, char *argv[])
             exit(1);
         }
     } else {
-#endif /* HAVE_JSON */
-    /* Open log file */
-    if (config.output_log) {
-        if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
-            config.logfile_fd = stdout;
-        }
-        else {
-            config.logfile_fd = fopen(config.logfile, "a");
-            if (config.logfile_fd == NULL) {
-                olog("[!] Error opening log file %s\n", config.logfile);
-                exit(1);
-            }
-        }
-    }
+#endif /* HAVE_LIBHIREDIS */
 
-    /* Open NXDOMAIN log file */
-    if (config.output_log_nxd) {
-        if (config.output_log && strcmp(config.logfile, config.logfile_nxd) == 0) {
-            config.logfile_all = 1;
-        }
-        else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
-            config.logfile_nxd_fd = stdout;
-        }
-        else {
-            config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
-            if (config.logfile_nxd_fd == NULL) {
-                olog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
-                exit(1);
+        /* Fall back to log file if syslog is not used */
+        if (config.output_syslog == 0)
+            config.output_log = 1;
+
+        if (config.output_syslog_nxd == 0)
+            config.output_log_nxd = 1;
+
+        /* Open log file */
+        if (config.output_log) {
+            if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
+                config.logfile_fd = stdout;
+            }
+            else {
+                config.logfile_fd = fopen(config.logfile, "a");
+                if (config.logfile_fd == NULL) {
+                    olog("[!] Error opening log file %s\n", config.logfile);
+                    exit(1);
+                }
             }
         }
-    }
+
+        /* Open NXDOMAIN log file */
+        if (config.output_log_nxd) {
+            if (config.output_log && strcmp(config.logfile, config.logfile_nxd) == 0) {
+                config.logfile_all = 1;
+            }
+            else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
+                config.logfile_nxd_fd = stdout;
+            }
+            else {
+                config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+                if (config.logfile_nxd_fd == NULL) {
+                    olog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
+                    exit(1);
+                }
+            }
+        }
 #ifdef HAVE_LIBHIREDIS
     }
 #endif /* HAVE_LIBHIREDIS */

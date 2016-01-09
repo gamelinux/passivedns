@@ -206,23 +206,23 @@ AS_IF([test "x$enable_hiredis" = "xyes"], [
     fi
 
     if test "$libhiredis_libraries" != "no"; then
-        LDFLAGS="${LDFLAGS} -L${libhiredis_libraries}"
+        LDFLAGS="${LDFLAGS} -L${with_libhiredis_libraries}"
     fi
 
     LDFLAGS="${LDFLAGS} -lhiredis"
 
     # Check for hiredis headers
-    AC_CHECK_HEADER("hiredis/hiredis.h",HIREDIS="yes",HIREDIS="no")
+    AC_CHECK_HEADER("hiredis/hiredis.h",,HIREDIS_H="no")
 
-    if test "$HIREDIS" = "no"; then
+    if test "$HIREDIS_H" = "no"; then
         echo -e "\n  ERROR! hiredis headers not found\n"
         exit 1
     fi
 
     # Check for hiredis library
-    AC_CHECK_LIB(hiredis,redisCommand,,HIREDIS="no")
+    AC_CHECK_LIB(hiredis,redisConnect,,HIREDIS_L="no")
 
-    if test "$HIREDIS" = "no"; then
+    if test "$HIREDIS_L" = "no"; then
         echo -e "\n  ERROR! hiredis library not found\n"
         exit 1
     fi
