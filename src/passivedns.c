@@ -1316,9 +1316,15 @@ int main(int argc, char *argv[])
             elog("Did not recognize argument '%c'\n", ch);
     }
 
-    /* Fall back to log file if syslog is not used */
-    if (config.output_syslog == 0)
+    /* Fall back to log file if syslog and redis is not used */
+    if (config.output_syslog == 0 && config.output_log_redis == 0) {
         config.output_log = 1;
+
+    /* Fail if both redis and syslog is set */
+    } else if (config.output_log_redis == 1 && config.output_syslog == 1) {
+        olog("[!] Cannot have both redis and syslog output\n");
+        exit(1);
+    }
 
     if (config.output_syslog_nxd == 0)
         config.output_log_nxd = 1;
