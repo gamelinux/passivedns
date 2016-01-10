@@ -96,7 +96,6 @@ void del_connection(connection *, connection **);
 void print_pdns_stats();
 void free_config();
 void reopen_log_files();
-void game_over ();
 void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
                 const u_char *packet);
 #ifdef HAVE_PFRING

@@ -1117,7 +1117,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
         freeReplyObject(reply);
         if (error == 1) {
-            exit(1);
+            game_over();
         }
     } else {
 #endif /* HAVE_LIBHIREDIS */
