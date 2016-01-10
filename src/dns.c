@@ -1091,33 +1091,74 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 #endif /* HAVE_JSON */
 
 #ifdef HAVE_LIBHIREDIS
-    if (config.use_redis == 1) {
-        redisReply *reply = redisCommand(
-            config.redis_context,
-            "PUBLISH %s %s",
-            config.redis_key,
-            output
-        );
+int sendRedisCommand(char *output) {
+    redisReply *reply = redisCommand(
+        config.redis_context,
+        "PUBLISH %s %s",
+        config.redis_key,
+        output
+    );
 
-        uint8_t error = 0;
+    int error = 0;
 
+    if (reply == NULL) {
+        error = 1;
+        dlog("[D] Reply from redis was NULL.\n");
+    } else {
         switch (reply->type) {
         case REDIS_REPLY_ERROR:
             error = 1;
-            olog("Recived Redis error: %s\n", reply->str);
+            olog("[D] Recived Redis error: %s\n", reply->str);
             break;
         case REDIS_REPLY_INTEGER:
-            dlog("Recived Redis reply: %lld\n", reply->integer);
+            dlog("[D] Recived Redis reply: %lld\n", reply->integer);
             break;
         default:
             error = 1;
-            olog("Recived default clause Redis reply type: %d\n", reply->type);
+            olog("[D] Recived default clause Redis reply type: %d\n", reply->type);
             break;
         }
-
         freeReplyObject(reply);
-        if (error == 1) {
-            game_over();
+    }
+    return error;
+}
+#endif /* HAVE_LIBHIREDIS */
+
+#ifdef HAVE_LIBHIREDIS
+    if (config.use_redis == 1) {
+        int send_error = sendRedisCommand(output);
+        if (send_error == 1) {
+            dlog("[D] Trying to reconnect to Redis.\n");
+
+            int retry_error = 0;
+            int connect_retval = connectRedis();
+            if (connect_retval == 1) {
+                retry_error = sendRedisCommand(output);
+                if (retry_error == 0) {
+                    dlog("[D] Reconnect to redis was successfull, data sent.\n");
+                }
+            }
+
+            if (connect_retval == 0 || retry_error == 1) {
+                dlog("[D] Reconnect to redis was not successfull.\n");
+                dlog("[D] Closing connection to Redis (%s:%d).\n",
+                    config.redis_server, config.redis_port);
+                redisFree(config.redis_context);
+
+                #ifdef HAVE_JSON
+                if ((is_err_record && config.use_json_nxd) ||
+                    (!is_err_record && config.use_json)) {
+                    /* json_dumps allocate memory that has to be freed */
+                    free(output);
+                }
+                #endif /* HAVE_JSON */
+
+                free(proto);
+                free(rr_class);
+                free(rr_type);
+                free(rr_rcode);
+                exit(1);
+            }
         }
     } else {
 #endif /* HAVE_LIBHIREDIS */
@@ -1159,7 +1200,6 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     free(rr_class);
     free(rr_type);
     free(rr_rcode);
-
 }
 
 pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,

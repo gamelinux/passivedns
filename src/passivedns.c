@@ -96,6 +96,7 @@ void del_connection(connection *, connection **);
 void print_pdns_stats();
 void free_config();
 void reopen_log_files();
+void game_over();
 void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
                 const u_char *packet);
 #ifdef HAVE_PFRING
@@ -981,6 +982,20 @@ int create_pid_file(const char *path)
     return SUCCESS;
 }
 
+#ifdef HAVE_LIBHIREDIS
+int connectRedis() {
+    config.redis_context = redisConnect(config.redis_server, config.redis_port);
+    if (config.redis_context == NULL) {
+        olog("[!] Error connecting to Redis: unkown error\n");
+        return 0;
+    } else if (config.redis_context != NULL && config.redis_context->err) {
+        olog("[!] Error connecting to Redis: %s\n", config.redis_context->errstr);
+        return 0;
+    }
+    return 1;
+}
+#endif /* HAVE_LIBHIREDIS */
+
 int daemonize()
 {
     pid_t pid;
@@ -1358,13 +1373,8 @@ int main(int argc, char *argv[])
 
     /* Open connection to Redis */
     if (config.use_redis == 1) {
-        config.redis_context = redisConnect(config.redis_server, config.redis_port);
-
-        if (config.redis_context == NULL) {
-            olog("[!] Error connecting to Redis: unkown error\n");
-            exit(1);
-        } else if (config.redis_context != NULL && config.redis_context->err) {
-            olog("[!] Error connecting to Redis: %s\n", config.redis_context->errstr);
+        int retval = connectRedis();
+        if (retval == 0) {
             exit(1);
         }
     } else {
