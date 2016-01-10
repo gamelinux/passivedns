@@ -1032,12 +1032,23 @@ void game_over()
 
         end_all_sessions();
 
-        if (config.logfile_fd != NULL && config.logfile_fd != stdout)
-            fclose(config.logfile_fd);
+#ifdef HAVE_LIBHIREDIS
+        if (config.use_redis == 1) {
+            dlog("[D] Closing connection to Redis (%s:%d).\n",
+                config.redis_server, config.redis_port);
+            redisFree(config.redis_context);
+        } else {
+#endif /* HAVE_LIBHIREDIS */
 
-        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
-            fclose(config.logfile_nxd_fd);
+            if (config.logfile_fd != NULL && config.logfile_fd != stdout)
+                fclose(config.logfile_fd);
 
+            if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
+                fclose(config.logfile_nxd_fd);
+
+#ifdef HAVE_LIBHIREDIS
+        }
+#endif /* HAVE_LIBHIREDIS */
         free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
