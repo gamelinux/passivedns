@@ -1093,6 +1093,7 @@ void usage()
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default: %u).\n", DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n", DNSPRINTTIME);
     olog(" -X <flags>      Manually set DNS RR Types to care about (default: -X 46CDNPRS).\n");
+    olog(" -N              Set interface to non promisc. mode.\n");
     olog(" -u <uid>        User ID to drop privileges to.\n");
     olog(" -g <gid>        Group ID to drop privileges to.\n");
     olog(" -T <dir>        Directory to chroot into.\n");
@@ -1164,6 +1165,7 @@ int main(int argc, char *argv[])
     config.logfile = "/var/log/passivedns.log";
     config.logfile_nxd = "/var/log/passivedns.log";
     config.pidfile = "/var/run/passivedns.pid";
+    config.promisc = 1;
     config.output_log = 0;
     config.output_log_nxd = 0;
     config.output_syslog = 0;
@@ -1205,7 +1207,7 @@ int main(int argc, char *argv[])
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
-#define ARGS "i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define ARGS "i:r:c:nyYNjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1275,6 +1277,9 @@ int main(int argc, char *argv[])
         case 'g':
             config.group_name = optarg;
             config.drop_privs_flag = 1;
+            break;
+        case 'N':
+            config.promisc = 0;
             break;
 #ifdef HAVE_PFRING
         case 'n':
@@ -1432,9 +1437,9 @@ int main(int argc, char *argv[])
         /* Look up an available device if non specified */
         if (config.dev == 0x0)
             config.dev = pcap_lookupdev(config.errbuf);
-        olog("[*] Device: %s\n", config.dev);
+        olog("[*] Device: %s (promisc: %d)\n", config.dev, config.promisc);
 
-        if ((config.handle = pcap_open_live(config.dev, SNAPLENGTH, 1, 500,
+        if ((config.handle = pcap_open_live(config.dev, SNAPLENGTH, config.promisc, 500,
              config.errbuf)) == NULL) {
             olog("[*] Error pcap_open_live: %s \n", config.errbuf);
             exit(1);

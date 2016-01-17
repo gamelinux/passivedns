@@ -497,6 +497,7 @@ typedef struct _globalconfig {
     uint8_t             use_json_nxd;      /* Use JSON as output in NXDOMAIN log */
 #endif /* HAVE_JSON */
     uint8_t             setfilter;
+    uint8_t             promisc;           /* set interface promisc mode */
     uint8_t             drop_privs_flag;   /* Flag marking to drop privs */
     uint8_t             chroot_flag;       /* Flag for going chroot */
     uint8_t             daemon_flag;       /* Flag for going daemon */
