@@ -564,6 +564,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                    print it, then return */
                 passet->seen++;
                 passet->last_seen = pi->pheader->ts;
+                passet->af        = pi->cxt->af;
                 passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
                 passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
                 if (rr->_ttl > passet->rr->_ttl)
@@ -1138,6 +1139,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
                 (const char *)pdnsr->qname) == 0) {
             /* match :) */
             pdnsr->last_seen = pi->pheader->ts;
+            pdnsr->af = pi->cxt->af;
             pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
             pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
             return pdnsr;
