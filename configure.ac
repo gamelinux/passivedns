@@ -186,6 +186,48 @@ AS_IF([test "x$enable_pfring" = "xyes"], [
     fi
 ])
 
+# Checks for libhiredis
+AC_ARG_ENABLE(hiredis,
+    AS_HELP_STRING([--enable-hiredis], [Enable Redis support]))
+
+AC_ARG_WITH(libhiredis_includes,
+    [  --with-libhiredis-includes=DIR  libhiredis include directory],
+    [with_libhiredis_includes="$withval"],[with_libhiredis_includes="no"])
+
+AC_ARG_WITH(libhiredis_libraries,
+    [  --with-libhiredis-libraries=DIR    libhiredis library directory],
+    [with_libhiredis_libraries="$withval"],[with_libhiredis_libraries="no"])
+
+AS_IF([test "x$enable_hiredis" = "xyes"], [
+    AC_DEFINE([HAVE_LIBHIREDIS],[1],[Redis support enabled])
+
+    if test "$with_libhiredis_includes" != "no"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_libhiredis_includes}"
+    fi
+
+    if test "$libhiredis_libraries" != "no"; then
+        LDFLAGS="${LDFLAGS} -L${with_libhiredis_libraries}"
+    fi
+
+    LDFLAGS="${LDFLAGS} -lhiredis"
+
+    # Check for hiredis headers
+    AC_CHECK_HEADER("hiredis/hiredis.h",,HIREDIS_H="no")
+
+    if test "$HIREDIS_H" = "no"; then
+        echo -e "\n  ERROR! hiredis headers not found\n"
+        exit 1
+    fi
+
+    # Check for hiredis library
+    AC_CHECK_LIB(hiredis,redisConnect,,HIREDIS_L="no")
+
+    if test "$HIREDIS_L" = "no"; then
+        echo -e "\n  ERROR! hiredis library not found\n"
+        exit 1
+    fi
+])
+
 # Checks for libjansson.
 AC_ARG_ENABLE(json,
     AS_HELP_STRING([--enable-json], [Enable JSON support]))
@@ -244,4 +286,3 @@ AC_FUNC_STRNLEN
 AC_CHECK_FUNCS([alarm dup2 endgrent endpwent ftruncate getcwd memset strdup strerror strtol strtoul])
 
 AC_OUTPUT(Makefile src/Makefile)
-

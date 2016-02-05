@@ -35,6 +35,10 @@
 #include <jansson.h>
 #endif /* HAVE_JSON */
 
+#ifdef HAVE_LIBHIREDIS
+#include <hiredis/hiredis.h>
+#endif /* HAVE_LIBHIREDIS */
+
 globalconfig config;
 
 /* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
@@ -372,7 +376,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 5;
                 }
                 break;
-            
+
             case LDNS_RR_TYPE_NSEC:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
@@ -1086,19 +1090,94 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 #endif /* HAVE_JSON */
 
-    /* Print to log file */
-    if (fd) {
-        fprintf(fd, "%s\n", output);
-        fflush(fd);
-    }
+#ifdef HAVE_LIBHIREDIS
+int sendRedisCommand(char *output) {
+    redisReply *reply = redisCommand(
+        config.redis_context,
+        "PUBLISH %s %s",
+        config.redis_key,
+        output
+    );
 
-    /* Print to syslog */
-    if ((is_err_record && config.output_syslog_nxd) ||
-            (!is_err_record && config.output_syslog)) {
-        openlog(PDNS_IDENT, LOG_NDELAY, LOG_LOCAL7);
-        syslog(LOG_INFO, "%s", output);
-        closelog();
+    int error = 0;
+
+    if (reply == NULL) {
+        error = 1;
+        dlog("[D] Reply from redis was NULL.\n");
+    } else {
+        switch (reply->type) {
+        case REDIS_REPLY_ERROR:
+            error = 1;
+            olog("[D] Recived Redis error: %s\n", reply->str);
+            break;
+        case REDIS_REPLY_INTEGER:
+            dlog("[D] Recived Redis reply: %lld\n", reply->integer);
+            break;
+        default:
+            error = 1;
+            olog("[D] Recived default clause Redis reply type: %d\n", reply->type);
+            break;
+        }
+        freeReplyObject(reply);
     }
+    return error;
+}
+#endif /* HAVE_LIBHIREDIS */
+
+#ifdef HAVE_LIBHIREDIS
+    if (config.use_redis == 1) {
+        int send_error = sendRedisCommand(output);
+        if (send_error == 1) {
+            dlog("[D] Trying to reconnect to Redis.\n");
+
+            int retry_error = 0;
+            int connect_retval = connectRedis();
+            if (connect_retval == 1) {
+                retry_error = sendRedisCommand(output);
+                if (retry_error == 0) {
+                    dlog("[D] Reconnect to redis was successfull, data sent.\n");
+                }
+            }
+
+            if (connect_retval == 0 || retry_error == 1) {
+                dlog("[D] Reconnect to redis was not successfull.\n");
+                dlog("[D] Closing connection to Redis (%s:%d).\n",
+                    config.redis_server, config.redis_port);
+                redisFree(config.redis_context);
+
+                #ifdef HAVE_JSON
+                if ((is_err_record && config.use_json_nxd) ||
+                    (!is_err_record && config.use_json)) {
+                    /* json_dumps allocate memory that has to be freed */
+                    free(output);
+                }
+                #endif /* HAVE_JSON */
+
+                free(proto);
+                free(rr_class);
+                free(rr_type);
+                free(rr_rcode);
+                exit(1);
+            }
+        }
+    } else {
+#endif /* HAVE_LIBHIREDIS */
+        /* Print to log file */
+        if (fd) {
+            fprintf(fd, "%s\n", output);
+            fflush(fd);
+        }
+
+        /* Print to syslog */
+        if ((is_err_record && config.output_syslog_nxd) ||
+                (!is_err_record && config.output_syslog)) {
+            openlog(PDNS_IDENT, LOG_NDELAY, LOG_LOCAL7);
+            syslog(LOG_INFO, "%s", output);
+            closelog();
+        }
+#ifdef HAVE_LIBHIREDIS
+    }
+#endif /* HAVE_LIBHIREDIS */
 
     if (is_err_record) {
         l->last_print = l->last_seen;
@@ -1121,7 +1200,6 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     free(rr_class);
     free(rr_type);
     free(rr_rcode);
-
 }
 
 pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
@@ -1755,4 +1833,3 @@ uint16_t pdns_chk_dnsfe(uint16_t rcode)
 
     return retcode;
 }
-

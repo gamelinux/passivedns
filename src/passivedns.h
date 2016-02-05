@@ -22,6 +22,11 @@
 /*  I N C L U D E S  **********************************************************/
 #include "config.h"
 
+#ifdef HAVE_LIBHIREDIS
+#include <hiredis/hiredis.h>
+#define REDIS_DEFAULT_PORT           6379    /* Default Redis Port */
+#endif /* HAVE_LIBHIREDIS */
+
 #ifdef HAVE_PFRING
 #include <pfring.h>
 #endif /* HAVE_PFRING */
@@ -490,6 +495,13 @@ typedef struct _globalconfig {
     uint8_t             print_updates;     /* Prints updates */
     uint8_t             output_log;        /* Log to log file */
     uint8_t             output_log_nxd;    /* Log NXDOMAIN to log file */
+#ifdef HAVE_LIBHIREDIS
+    uint8_t             use_redis;         /* Log to Redis */
+    redisContext        *redis_context;    /* The connection to Redis */
+    uint16_t            redis_port;        /* Redis Port */
+    char                *redis_server;     /* Redis Server */
+    char                *redis_key;        /* Redis Channel Key */
+#endif /* HAVE_LIBHIREDIS */
     uint8_t             output_syslog;     /* Log to syslog */
     uint8_t             output_syslog_nxd; /* Log NXDOMAIN to syslog */
 #ifdef HAVE_JSON
@@ -559,3 +571,6 @@ int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
 
+#ifdef HAVE_LIBHIREDIS
+int connectRedis();
+#endif /* HAVE_LIBHIREDIS */
