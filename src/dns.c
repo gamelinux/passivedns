@@ -335,13 +335,6 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
         dlog("[D] RR TYpe: %d\n",ldns_rr_get_type(rr));
         switch (ldns_rr_get_type(rr)) {
-            case LDNS_RR_TYPE_NULL:
-        dlog("[D] RR TYpe: %d\n",ldns_rr_get_type(rr));
-                if (config.dnsf & DNS_CHK_NULL) {
-                    offset = 0;
-                    to_offset = 4;
-                }
-                break;
             case LDNS_RR_TYPE_KX:
                 if (config.dnsf & DNS_CHK_KX) {
                     offset = 1;
@@ -798,9 +791,6 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     switch (ldns_rr_get_type(rr)) {
         case LDNS_RR_TYPE_AFSDB:
             snprintf(rr_type, 10, "AFSB");
-            break;
-        case LDNS_RR_TYPE_NULL:
-            snprintf(rr_type, 10, "NULL");
             break;
         case LDNS_RR_TYPE_DLV:
             snprintf(rr_type, 10, "DLV");
@@ -1664,10 +1654,6 @@ void parse_dns_flags(char *args)
                 dlog("[D] Enabling flag: DNS_CHK_DNSSEC\n");
                 ok++;
                 break;
-            case '0': /* NULL */
-                config.dnsf |= DNS_CHK_NULL;
-                dlog("[D] Enabling flag: DNS_CHK_NULL\n");
-                ok++;
             case '4': /* A */
                 config.dnsf |= DNS_CHK_A;
                 dlog("[D] Enabling flag: DNS_CHK_A\n");
