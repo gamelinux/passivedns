@@ -790,7 +790,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
     switch (ldns_rr_get_type(rr)) {
         case LDNS_RR_TYPE_AFSDB:
-            snprintf(rr_type, 10, "AFSB");
+            snprintf(rr_type, 10, "AFSDB");
             break;
         case LDNS_RR_TYPE_DLV:
             snprintf(rr_type, 10, "DLV");
@@ -1708,7 +1708,7 @@ void parse_dns_flags(char *args)
                 dlog("[D] Enabling flag: DNS_CHK_SOA\n");
                 ok++;
                 break;
-            case 'b': /* MX */
+            case 'b': /* AFSDB */
                config.dnsf |= DNS_CHK_AFSDB;
                dlog("[D] Enabling flag: DNS_CHK_AFSDB\n");
                ok++;
