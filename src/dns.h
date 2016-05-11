@@ -72,6 +72,7 @@
 #define FIELD_COUNT        0x0200
 #define FIELD_TIMESTAMP_YMDHMS 0x0400
 #define FIELD_PROTO        0x0800
+#define FIELD_HOSTNAME     0x1000
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
@@ -92,6 +93,7 @@
 #define JSON_ANSWER        "answer"
 #define JSON_TTL           "ttl"
 #define JSON_COUNT         "count"
+#define JSON_HOSTNAME      "hostname"
 
 /* To avoid spaming the logfile with duplicate dns info
  * we only print a dns record one time each 24H. This way

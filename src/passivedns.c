@@ -41,6 +41,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
+#include <limits.h>
 #include "passivedns.h"
 #include "dns.h"
 
@@ -1019,6 +1020,9 @@ void game_over()
 
         config.handle = NULL;
 
+        if (config.hostname != NULL)
+            free(config.hostname);
+
 #ifdef HAVE_PFRING
         if (config.use_pfring && config.pfhandle != NULL) {
             pfring_breakloop(config.pfhandle);
@@ -1105,6 +1109,7 @@ void usage()
     olog("   H: YMD-HMS Stamp S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  \n");
     olog("   s: Server IP     C: Class         Q: Query          T: Type       \n");
     olog("   A: Answer        t: TTL           p: Protocol       n: Count\n");
+    olog("   h: hostname\n");
     olog("\n");
     olog(" FLAGS:\n");
     olog("\n");
@@ -1207,12 +1212,15 @@ int main(int argc, char *argv[])
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
-#define ARGS "i:r:c:nyYNjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define ARGS "i:H:r:c:nyYNjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
         case 'i':
             config.dev = optarg;
+            break;
+        case 'H':
+            config.hostname = strdup(optarg);
             break;
         case 'r':
             config.pcap_file = optarg;
@@ -1303,6 +1311,14 @@ int main(int argc, char *argv[])
             break;
         default:
             elog("Did not recognize argument '%c'\n", ch);
+    }
+
+    /* Get hostname if not specified by commandline */
+    if (config.fieldsf & FIELD_HOSTNAME) {
+        if (config.hostname == NULL) {
+            config.hostname = malloc(HOST_NAME_MAX + 1);
+            gethostname(config.hostname, HOST_NAME_MAX);
+        }
     }
 
     /* Fall back to log file if syslog is not used */

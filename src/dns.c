@@ -662,6 +662,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     json_t *jdata;
     json_t *json_timestamp_s;
     json_t *json_timestamp_ms;
+    json_t *json_hostname;
     json_t *json_client;
     json_t *json_server;
     json_t *json_proto;
@@ -882,6 +883,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             json_decref(json_timestamp_ms);
         }
 
+        /* Print hostname */
+        if (config.fieldsf & FIELD_HOSTNAME) {
+            json_hostname = json_string(config.hostname);
+            json_object_set(jdata, JSON_HOSTNAME, json_hostname);
+            json_decref(json_hostname);
+        }
+
         /* Print client IP */
         if (config.fieldsf & FIELD_CLIENT) {
             json_client = json_string(ip_addr_c);
@@ -1009,6 +1017,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                 offset += snprintf(output, sizeof(buffer) - offset, "%06lu", l->last_seen.tv_usec);
             else
                 offset += snprintf(output, sizeof(buffer) - offset, "%06lu", p->last_seen.tv_usec);
+        }
+
+        /* Print hostname */
+        if (config.fieldsf & FIELD_HOSTNAME) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", config.hostname);
         }
 
         /* Print client IP */
@@ -1527,6 +1542,11 @@ void parse_field_flags(char *args)
             case 'n': /* Count */
                 config.fieldsf |= FIELD_COUNT;
                 dlog("[D] Enabling field: FIELD_COUNT\n");
+                ok++;
+                break;
+            case 'h': /* Hostname */
+                config.fieldsf |= FIELD_HOSTNAME;
+                dlog("[D] Enabling field: FIELD_HOSTNAME\n");
                 ok++;
                 break;
             default:

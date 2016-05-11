@@ -514,6 +514,7 @@ typedef struct _globalconfig {
     uint32_t            dns_assets;        /* Total number of DNS assets in memory */
     uint64_t            cxtrackerid;       /* cxtracker ID counter */
     char                errbuf[PCAP_ERRBUF_SIZE];
+    char                *hostname;
     char                *bpff;
     char                *user_filter;
     char                *net_ip_string;
