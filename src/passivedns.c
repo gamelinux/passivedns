@@ -1077,6 +1077,7 @@ void usage()
     olog(" OPTIONS:\n\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
     olog(" -r <file>       Read pcap <file>.\n");
+    olog(" -H <hostname>   Choose hostname to print in record.\n");
 #ifdef HAVE_PFRING
     olog(" -n              Use PF_RING.\n");
     olog(" -c <cluster_id> Set PF_RING cluster_id.\n");
