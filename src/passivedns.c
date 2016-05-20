@@ -45,6 +45,13 @@
 #include "passivedns.h"
 #include "dns.h"
 
+/* hiredis */
+
+#include <hiredis/hiredis.h>
+#include <hiredis/async.h>
+#include <hiredis/adapters/libevent.h>
+#include "redis-conn.c"
+
 #ifdef HAVE_JSON
 #include <jansson.h>
 #endif /* HAVE_JSON */
