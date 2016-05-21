@@ -1106,6 +1106,11 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         fprintf(fd, "%s\n", output);
         fflush(fd);
     }
+ 
+    /* Print to Redis */
+        reply = redisCommand(cc,"LPUSH passivedns query-%s", output);
+        freeReplyObject(reply); 
+
 
     /* Print to syslog */
     if ((is_err_record && config.output_syslog_nxd) ||

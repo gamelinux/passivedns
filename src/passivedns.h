@@ -26,6 +26,12 @@
 #include <pfring.h>
 #endif /* HAVE_PFRING */
 
+/* hiredis */
+#include <hiredis/hiredis.h>
+//#include <hiredis/async.h>
+//#include <hiredis/adapters/libevent.h>
+//#include "redis-conn.h"
+
 /*  D E F I N E S  ************************************************************/
 #define TIMEOUT                       60
 #define BUCKET_SIZE                   65537
@@ -560,4 +566,11 @@ typedef struct _globalconfig {
 int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
+
+/* Hiredis*/
+//struct event_base *base; //= event_base_new();
+//redisAsyncContext *c;    //= redisAsyncConnect("127.0.0.1", 6379);
+redisContext *cc;
+redisReply *reply;
+
 
