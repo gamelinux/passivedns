@@ -1,0 +1,4 @@
+1 - Install hiredis lib system wide, from https://github.com/redis/hiredis.git
+2 - autoreconf --install
+3 - ./configure
+4 - make
