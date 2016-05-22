@@ -1,4 +1,5 @@
 1 - Install hiredis lib system wide, from https://github.com/redis/hiredis.git
+2 - sudo apt-get install binutils-dev libldns1 libldns-dev libpcap-dev 
 2 - autoreconf --install
 3 - ./configure
 4 - make
