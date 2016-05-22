@@ -1108,7 +1108,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
  
     /* Print to Redis */
-        reply = redisCommand(cc,"LPUSH passivedns query-%s", output);
+        reply = redisCommand(cc,"LPUSH passivedns %s", output);
         freeReplyObject(reply); 
 
 

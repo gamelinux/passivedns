@@ -1177,54 +1177,6 @@ struct timeval timeout = { 1, 500000 }; // 1.5 seconds
 
 int main(int argc, char *argv[])
 {
-    printf("hello world!\n");
-    cc = redisConnectWithTimeout(hostname, port, timeout);
-    if (cc == NULL || cc->err) {
-        if (cc) {
-            printf("Connection error: %s\n", cc->errstr);
-            redisFree(cc);
-        } else {
-            printf("Connection error: can't allocate redis context\n");
-        }
-        exit(1);
-    }
-
-    /* PING server */
-    reply = redisCommand(cc,"PING");
-    printf("PING: %s\n", reply->str);
-    freeReplyObject(reply);
-    reply = redisCommand(cc,"LPUSH passivedns hello");
-    freeReplyObject(reply);
-
-/*   hiredis, libevent connection*/
-//    base = event_base_new();
-//    c = redisAsyncConnect("127.0.0.1", 6379);
-//    if (c->err) {
-//        /* Let *c leak for now... */
-//        printf("Error: %s\n", c->errstr);
-//        return 1;
-//    }
-//    printf("pee");
-/*    redisLibeventAttach(c,base);
-    redisAsyncSetConnectCallback(c,connectCallback);
-    redisAsyncSetDisconnectCallback(c,disconnectCallback);
-    redisAsyncCommand(c, NULL, NULL, "SET pee yyyyyy", strlen("imhere"));
-    redisAsyncCommand(c, getCallback, (char*)"end-1", "GET key");
-    event_base_dispatch(base);
-    //event_base_free(base);
-
-    printf("free .. and ping");
-    //base = event_base_new();
-    //redisLibeventAttach(c,base);
-    //redisAsyncSetConnectCallback(c,connectCallback);
-    //redisAsyncSetDisconnectCallback(c,disconnectCallback);
-    redisAsyncCommand(c, NULL, NULL, "SET ping pong", strlen("pong"));
-    //redisAsyncCommand(c, getCallback, (char*)"end-1", "GET ping");
-    //event_base_dispatch(base);
-    //event_base_free(base);
-    
-    printf("final free");
-*/
 
     int ch = 0; // verbose_already = 0;
     int daemon = 0;
@@ -1581,6 +1533,28 @@ int main(int argc, char *argv[])
     }
 
     alarm(TIMEOUT);
+
+    // Redis Connection
+    cc = redisConnectWithTimeout(hostname, port, timeout);
+    if (cc == NULL || cc->err) {
+        if (cc) {
+            printf("Connection error: %s\n", cc->errstr);
+            redisFree(cc);
+        } else {
+            printf("Connection error: can't allocate redis context\n");
+        }
+        exit(1);
+    }
+    olog("Connected to redis server on 127.0.0.1");
+
+    /* PING Redis server */
+    reply = redisCommand(cc,"PING");
+    printf("PING: %s\n", reply->str);
+    freeReplyObject(reply);
+    char *msg="Passivedns ready to send!";
+    reply = redisCommand(cc,"LPUSH passivedns %s-from-%s",msg,config.dev);
+    freeReplyObject(reply);
+
 
     if (!config.pcap_file) olog("[*] Sniffing...\n\n");
 
