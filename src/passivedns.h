@@ -496,6 +496,8 @@ typedef struct _globalconfig {
     uint8_t             use_json;          /* Use JSON as output in log */
     uint8_t             use_json_nxd;      /* Use JSON as output in NXDOMAIN log */
 #endif /* HAVE_JSON */
+    uint8_t             use_stats_file;    /* Print stats on signal to file */
+    char                *statsfile;        /* File to print stats to */
     uint8_t             setfilter;
     uint8_t             promisc;           /* set interface promisc mode */
     uint8_t             drop_privs_flag;   /* Flag marking to drop privs */
@@ -545,6 +547,7 @@ typedef struct _globalconfig {
 #define ISSET_INTERRUPT_DNS(config)     ((config).intr_flag & INTERRUPT_DNS)
 
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
+#define flog(h, fmt, ...) do{ fprintf(h, fmt, ##__VA_ARGS__); }while(0)
 #define olog(fmt, ...) do{ if(!(ISSET_CONFIG_QUIET(config))) fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 //#define DEBUG 1
 #ifdef DEBUG
