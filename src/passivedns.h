@@ -531,6 +531,8 @@ typedef struct _globalconfig {
     char                *configpath;       /* Path to config directory */
     uint32_t            dnsprinttime;      /* Minimum time between printing duplicate DNS info */
     uint32_t            dnscachetimeout;   /* Time before a DNS record/asset times out if not updated */
+    uint8_t             log_additional_flag; /* Log additional reccords */
+    uint8_t             log_authority_flag; /* Log authority reccords */
 } globalconfig;
 
 #define ISSET_CONFIG_VERBOSE(config)    ((config).cflags & CONFIG_VERBOSE)

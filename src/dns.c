@@ -251,77 +251,11 @@ int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt)
     return 0;
 }
 
-int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
-                      ldns_buffer *buff, ldns_pkt *dns_pkt)
+
+void cache_records(int dns_answer_domain_cnt, ldns_rr_list *dns_answer_domains, pdns_record *pr, ldns_buffer *buff, unsigned char **domain_name, packetinfo *pi, int copy_name)
 {
-    int           j;
-    int           dns_answer_domain_cnt;
+    int j;
     uint64_t      dnshash;
-    ldns_status   status;
-    pdns_record   *pr = NULL;
-    ldns_rr_list  *dns_answer_domains;
-    unsigned char *domain_name = 0;
-
-    ldns_buffer_clear(buff);
-    status = ldns_rdf2buffer_str(buff, rdf_data);
-
-    if (status != LDNS_STATUS_OK) {
-        dlog("[D] Error in ldns_rdf2buffer_str(): %d\n", status);
-        return -1;
-    }
-
-    dns_answer_domains    = ldns_pkt_answer(dns_pkt);
-    dns_answer_domain_cnt = ldns_rr_list_rr_count(dns_answer_domains);
-    domain_name           = (unsigned char *) ldns_buffer2str(buff);
-
-    if (domain_name == NULL) {
-        dlog("[D] Error in ldns_buffer2str(%p)\n", buff);
-        return -1;
-    }
-    else {
-        dlog("[D] domain_name: %s\n", domain_name);
-        dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
-    }
-
-    if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) != 0) {
-        uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
-        dlog("[D] Error return code: %d\n", rcode);
-
-        /* PROBLEM:
-         * As there is no valid ldns_rr here and we can't fake one that will
-         * be very unique, we cant push this to the normal
-         * bucket[hash->linked_list]. We should probably allocate a static
-         * bucket[MAX_NXDOMAIN] to hold NXDOMAINS, and when that is full, pop
-         * out the oldest (LRU). A simple script querying for random non-existing
-         * domains could easily put stress on passivedns (think conficker etc.)
-         * if the bucket is to big or non-efficient. We would still store data
-         * such as: firstseen,lastseen,client_ip,server_ip,class,query,NXDOMAIN
-         */
-         if (config.dnsfe & (pdns_chk_dnsfe(rcode))) {
-            ldns_rr_list  *dns_query_domains;
-            ldns_rr       *rr;
-
-            dnshash = hash(domain_name);
-            dlog("[D] Hash: %lu\n", dnshash);
-            /* Check if the node exists, if not, make it */
-            pr = get_pdns_record(dnshash, pi, domain_name);
-
-            /* Set the SRC flag: */
-            //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
-            dns_query_domains = ldns_pkt_question(dns_pkt);
-            rr = ldns_rr_list_rr(dns_query_domains, 0);
-            if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
-                /* Print the SRC Error record */
-                print_passet(pr, NULL, rr, rdf_data, rcode);
-            }
-        } else {
-            dlog("[D] Error return code %d was not processed:%d\n",
-                 pdns_chk_dnsfe(rcode), config.dnsfe);
-        }
-        free(domain_name);
-        return 0;
-    }
-
     for (j = 0; j < dns_answer_domain_cnt; j++)
     {
         int           offset = -1;
@@ -329,7 +263,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         int           len;
         ldns_rr       *rr;
         ldns_rdf      *rname;
-        unsigned char *rdomain_name = 0, *tmp1=NULL, *tmp2=NULL;
+        unsigned char *rdomain_name = 0, *tmp1=NULL, *tmp2=NULL, *qdomain_name=NULL;
 
         rr = ldns_rr_list_rr(dns_answer_domains, j);
 
@@ -465,7 +399,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             case LDNS_RR_TYPE_NAPTR:
                 if (config.dnsf & DNS_CHK_NAPTR)
                     offset = 0;
-                    to_offset = 6;
+                to_offset = 6;
                 break;
             case LDNS_RR_TYPE_RP:
                 if (config.dnsf & DNS_CHK_RP)
@@ -507,7 +441,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
         if (offset == -1) {
             dlog("[D] LDNS_RR_TYPE not enabled/supported: %d\n",
-                 ldns_rr_get_type(rr));
+                    ldns_rr_get_type(rr));
             //data_offset = 0;
             continue;
         }
@@ -536,10 +470,11 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             if (tmp1 != NULL) {
                 tmp2 = strcpy(tmp2, tmp1);
                 tmp2 = strcat(tmp2, " ");
+                free(tmp1); 
+                tmp1 = NULL;
             } else {
                 tmp2 = strcpy(tmp2, "");
             }
-            free(tmp1);
             // we just concat everything together
             tmp2 = strcat(tmp2, rdomain_name);
             tmp1 = tmp2;
@@ -548,22 +483,47 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             dlog("[D] tmp1 %s: NULL (%d)\n", tmp1, offset);
         } while (offset < to_offset);
         rdomain_name = tmp1;
-       /* if (rname == NULL && to_offset < 1) {
-            dlog("[D] ldns_rr_rdf returned: NULL (%d)\n", offset);
-            continue;
-        }*/
+        /* if (rname == NULL && to_offset < 1) {
+           dlog("[D] ldns_rr_rdf returned: NULL (%d)\n", offset);
+           continue;
+           }*/
         if (rdomain_name == NULL && offset <= 1) {
-        // we have found no suitable answer in the  packet
+            // we have found no suitable answer in the  packet
             dlog("[D] ldns_buffer2str returned: NULL\n");
             continue;
         }
         dlog("[D] rdomain_name: %s\n", rdomain_name);
 
         if (pr == NULL) {
-            dnshash = hash(domain_name);
+            dnshash = hash(*domain_name);
             dlog("[D] Hash: %lu\n", dnshash);
             /* Check if the node exists, if not, make it */
-            pr = get_pdns_record(dnshash, pi, domain_name);
+            pr = get_pdns_record(dnshash, pi, *domain_name);
+        }
+        if (copy_name) {
+            int len;
+            ldns_buffer_clear(buff);
+            rname = ldns_rr_owner(rr);
+
+            if (rname == NULL) {
+                dlog("[D] ldns_rr_rdf returned: NULL\n");
+                continue;
+            }
+
+            ldns_rdf2buffer_str(buff, rname);
+            qdomain_name = (unsigned char *) ldns_buffer2str(buff);
+            if (qdomain_name == NULL) {
+                dlog("[D] ldns_buffer2str returned: NULL\n");
+                continue;
+            }
+            len = strlen((char *)qdomain_name);
+            free(*domain_name);
+            *domain_name = calloc(1, (len + 1));
+            strncpy((char *)*domain_name, (char *)qdomain_name, len);
+            free(qdomain_name);
+            dnshash = hash(*domain_name);
+            dlog("[D] Hash: %lu\n", dnshash);
+            pr = get_pdns_record(dnshash, pi, *domain_name);
         }
 
         /* Update the pdns record with the pdns asset */
@@ -573,18 +533,101 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_CNAME) {
             if (config.dnsf & DNS_CHK_CNAME) {
                 int len;
-                free(domain_name);
+                free(*domain_name);
                 len = strlen((char *)rdomain_name);
-                domain_name = calloc(1, (len + 1));
-                strncpy((char *)domain_name, (char *)rdomain_name, len);
-                dnshash = hash(domain_name);
+                *domain_name = calloc(1, (len + 1));
+                strncpy((char *)*domain_name, (char *)rdomain_name, len);
+                dnshash = hash(*domain_name);
                 dlog("[D] Hash: %lu\n", dnshash);
-                pr = get_pdns_record(dnshash, pi, domain_name);
+                pr = get_pdns_record(dnshash, pi, *domain_name);
             }
-        }
+        } 
 
         /* Free the rdomain_name */
+
         free(rdomain_name);
+    }
+}
+
+int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
+                      ldns_buffer *buff, ldns_pkt *dns_pkt)
+{
+    int           dns_answer_domain_cnt;
+    uint64_t      dnshash;
+    ldns_status   status;
+    pdns_record   *pr = NULL;
+    ldns_rr_list  *dns_answer_domains;
+    unsigned char *domain_name = 0;
+
+    ldns_buffer_clear(buff);
+    status = ldns_rdf2buffer_str(buff, rdf_data);
+
+    if (status != LDNS_STATUS_OK) {
+        dlog("[D] Error in ldns_rdf2buffer_str(): %d\n", status);
+        return -1;
+    }
+
+    dns_answer_domains    = ldns_pkt_answer(dns_pkt);
+    dns_answer_domain_cnt = ldns_rr_list_rr_count(dns_answer_domains);
+    domain_name           = (unsigned char *) ldns_buffer2str(buff);
+
+    if (domain_name == NULL) {
+        dlog("[D] Error in ldns_buffer2str(%p)\n", buff);
+        return -1;
+    }
+    else {
+        dlog("[D] domain_name: %s\n", domain_name);
+        dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
+    }
+
+    if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) != 0) {
+        uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
+        dlog("[D] Error return code: %d\n", rcode);
+
+        /* PROBLEM:
+         * As there is no valid ldns_rr here and we can't fake one that will
+         * be very unique, we cant push this to the normal
+         * bucket[hash->linked_list]. We should probably allocate a static
+         * bucket[MAX_NXDOMAIN] to hold NXDOMAINS, and when that is full, pop
+         * out the oldest (LRU). A simple script querying for random non-existing
+         * domains could easily put stress on passivedns (think conficker etc.)
+         * if the bucket is to big or non-efficient. We would still store data
+         * such as: firstseen,lastseen,client_ip,server_ip,class,query,NXDOMAIN
+         */
+         if (config.dnsfe & (pdns_chk_dnsfe(rcode))) {
+            ldns_rr_list  *dns_query_domains;
+            ldns_rr       *rr;
+
+            dnshash = hash(domain_name);
+            dlog("[D] Hash: %lu\n", dnshash);
+            /* Check if the node exists, if not, make it */
+            pr = get_pdns_record(dnshash, pi, domain_name);
+
+            /* Set the SRC flag: */
+            //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
+            dns_query_domains = ldns_pkt_question(dns_pkt);
+            rr = ldns_rr_list_rr(dns_query_domains, 0);
+            if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
+                /* Print the SRC Error record */
+                print_passet(pr, NULL, rr, rdf_data, rcode);
+            }
+        } else {
+            dlog("[D] Error return code %d was not processed:%d\n",
+                 pdns_chk_dnsfe(rcode), config.dnsfe);
+        }
+        free(domain_name);
+        return 0;
+    }
+    cache_records(dns_answer_domain_cnt, dns_answer_domains, pr, buff, &domain_name, pi, 0);
+    if (config.log_authority_flag) {
+        dns_answer_domains    = ldns_pkt_authority(dns_pkt);
+        dns_answer_domain_cnt = ldns_rr_list_rr_count(dns_answer_domains);
+        cache_records(dns_answer_domain_cnt, dns_answer_domains, pr, buff, &domain_name, pi, 1);
+    }
+    if (config.log_additional_flag) {
+        dns_answer_domains    = ldns_pkt_additional(dns_pkt);
+        dns_answer_domain_cnt = ldns_rr_list_rr_count(dns_answer_domains);
+        cache_records(dns_answer_domain_cnt, dns_answer_domains, pr, buff, &domain_name, pi, 1);
     }
     free(domain_name);
     return 0;

@@ -1156,6 +1156,8 @@ int main(int argc, char *argv[])
     config.output_log_nxd = 0;
     config.output_syslog = 0;
     config.output_syslog_nxd = 0;
+    config.log_authority_flag = 0;
+    config.log_additional_flag = 0;
     /* Default memory limit: 256 MB */
     config.mem_limit_max = (256 * 1024 * 1024);
     config.dnsprinttime = DNSPRINTTIME;
@@ -1193,10 +1195,16 @@ int main(int argc, char *argv[])
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
-#define ARGS "i:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define ARGS "Aai:r:c:nyYjJl:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
+        case 'A':
+            config.log_authority_flag = 1;
+            break;
+        case 'a':
+            config.log_additional_flag = 1;
+            break;
         case 'i':
             config.dev = optarg;
             break;
