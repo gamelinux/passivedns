@@ -668,8 +668,10 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     json_t *json_proto;
     json_t *json_class;
     json_t *json_query;
+    json_t *json_query_len;
     json_t *json_type;
     json_t *json_answer;
+    json_t *json_answer_len;
     json_t *json_ttl;
     json_t *json_count;
     size_t data_flags = 0;
@@ -925,6 +927,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             json_decref(json_query);
         }
 
+        /* Print query length */
+        if (config.fieldsf & FIELD_QUERY_LEN) {
+            json_query_len = json_integer(strlen(l->qname));
+            json_object_set(jdata, JSON_QUERY_LEN, json_query_len);
+            json_decref(json_query_len);
+        }
+
         /* Print type */
         if (config.fieldsf & FIELD_TYPE) {
             json_type = json_string(rr_type);
@@ -938,6 +947,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                 json_answer = json_string(rr_rcode);
                 json_object_set(jdata, JSON_ANSWER, json_answer);
                 json_decref(json_answer);
+            }
+
+            /* Print answer length */
+            if (config.fieldsf & FIELD_ANSWER_LEN) {
+                json_answer_len = json_integer(strlen(rr_rcode));
+                json_object_set(jdata, JSON_ANSWER_LEN, json_answer_len);
+                json_decref(json_answer_len);
             }
 
             /* Print TTL */
@@ -960,6 +976,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                 json_answer = json_string((const char *)p->answer);
                 json_object_set(jdata, JSON_ANSWER, json_answer);
                 json_decref(json_answer);
+            }
+
+            /* Print answer length */
+            if (config.fieldsf & FIELD_ANSWER_LEN) {
+                json_answer_len = json_integer(strlen(p->answer));
+                json_object_set(jdata, JSON_ANSWER_LEN, json_answer_len);
+                json_decref(json_answer_len);
             }
 
             /* Print TTL */
@@ -1061,6 +1084,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", l->qname);
         }
 
+        /* Print query length */
+        if (config.fieldsf & FIELD_QUERY_LEN) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%zd", strlen(l->qname));
+        }
+
         /* Print type */
         if (config.fieldsf & FIELD_TYPE) {
             if (offset != 0)
@@ -1076,6 +1106,16 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_rcode);
             else
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", p->answer);
+        }
+
+        /* Print answer length*/
+        if (config.fieldsf & FIELD_ANSWER_LEN) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (is_err_record)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%zd", strlen(rr_rcode));
+            else
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%zd", strlen(p->answer));
         }
 
         /* Print TTL */
@@ -1519,6 +1559,11 @@ void parse_field_flags(char *args)
                 dlog("[D] Enabling field: FIELD_QUERY\n");
                 ok++;
                 break;
+            case 'L': /* Query Length */
+                config.fieldsf |= FIELD_QUERY_LEN;
+                dlog("[D] Enabling field: FIELD_QUERY_LEN\n");
+                ok++;
+                break;
             case 'T': /* Type */
                 config.fieldsf |= FIELD_TYPE;
                 dlog("[D] Enabling field: FIELD_TYPE\n");
@@ -1527,6 +1572,11 @@ void parse_field_flags(char *args)
             case 'A': /* Answer */
                 config.fieldsf |= FIELD_ANSWER;
                 dlog("[D] Enabling field: FIELD_ANSWER\n");
+                ok++;
+                break;
+            case 'l': /* Answer Lenght */
+                config.fieldsf |= FIELD_ANSWER_LEN;
+                dlog("[D] Enabling field: FIELD_ANSWER_LEN\n");
                 ok++;
                 break;
             case 't': /* TTL */

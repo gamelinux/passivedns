@@ -1142,7 +1142,7 @@ void usage()
     olog("   H: YMD-HMS Stamp S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  \n");
     olog("   s: Server IP     C: Class         Q: Query          T: Type       \n");
     olog("   A: Answer        t: TTL           p: Protocol       n: Count\n");
-    olog("   h: hostname\n");
+    olog("   h: hostname      L: QueryLength   l: AnswerLength\n");
     olog("\n");
     olog(" FLAGS:\n");
     olog("\n");

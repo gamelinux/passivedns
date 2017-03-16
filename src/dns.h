@@ -73,6 +73,8 @@
 #define FIELD_TIMESTAMP_YMDHMS 0x0400
 #define FIELD_PROTO        0x0800
 #define FIELD_HOSTNAME     0x1000
+#define FIELD_QUERY_LEN    0x2000
+#define FIELD_ANSWER_LEN   0x4000
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
@@ -89,8 +91,10 @@
 #define JSON_PROTO         "proto"
 #define JSON_CLASS         "class"
 #define JSON_QUERY         "query"
+#define JSON_QUERY_LEN     "query_len"
 #define JSON_TYPE          "type"
 #define JSON_ANSWER        "answer"
+#define JSON_ANSWER_LEN    "answer_len"
 #define JSON_TTL           "ttl"
 #define JSON_COUNT         "count"
 #define JSON_HOSTNAME      "hostname"
