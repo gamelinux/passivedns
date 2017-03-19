@@ -87,6 +87,14 @@
 #define s6_addr32   __u6_addr.__u6_addr32
 #endif /* __FreeBSD__ or __APPLE__ */
 
+#ifndef HOST_NAME_MAX
+#if defined(__APPLE__)
+#define HOST_NAME_MAX 255
+#else
+#define HOST_NAME_MAX 64
+#endif /* __APPLE__ */
+#endif /* HOST_NAME_MAX */
+
 /*  D A T A  S T R U C T U R E S  *********************************************/
 
 /*
