@@ -231,6 +231,7 @@ void prepare_ip4(packetinfo *pi)
     pi->af = AF_INET;
     pi->ip4 = (ip4_header *) (pi->packet + pi->eth_hlen);
     pi->packet_bytes = (pi->ip4->ip_len - (IP_HL(pi->ip4) * 4));
+    pi->s_ttl=pi->ip4->ip_ttl;
 }
 
 void parse_ip4(packetinfo *pi)
@@ -304,6 +305,7 @@ void prepare_ip6(packetinfo *pi)
     config.p_s.ip6_recv++;
     pi->af = AF_INET6;
     pi->ip6 = (ip6_header *) (pi->packet + pi->eth_hlen);
+    pi->s_ttl=pi->ip6->hop_lmt;
     pi->packet_bytes = pi->ip6->len;
 }
 
@@ -1142,7 +1144,7 @@ void usage()
     olog("   H: YMD-HMS Stamp S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  \n");
     olog("   s: Server IP     C: Class         Q: Query          T: Type       \n");
     olog("   A: Answer        t: TTL           p: Protocol       n: Count\n");
-    olog("   h: hostname      L: QueryLength   l: AnswerLength\n");
+    olog("   h: hostname      L: QueryLength   l: AnswerLength   i: Server IP TTL\n");
     olog("\n");
     olog(" FLAGS:\n");
     olog("\n");

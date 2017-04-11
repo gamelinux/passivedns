@@ -75,6 +75,7 @@
 #define FIELD_HOSTNAME     0x1000
 #define FIELD_QUERY_LEN    0x2000
 #define FIELD_ANSWER_LEN   0x4000
+#define FIELD_SERVER_TTL   0x8000
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
@@ -98,6 +99,7 @@
 #define JSON_TTL           "ttl"
 #define JSON_COUNT         "count"
 #define JSON_HOSTNAME      "hostname"
+#define JSON_SERVER_TTL    "server_ttl"
 
 /* To avoid spaming the logfile with duplicate dns info
  * we only print a dns record one time each 24H. This way
@@ -137,6 +139,7 @@ typedef struct _pdns_asset {
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
+    uint8_t                sip_ttl;    /* DNS Server IP ttl(v4/6)*/
     struct _pdns_asset     *next;      /* Next dns asset */
     struct _pdns_asset     *prev;      /* Prev dns asset */
 } pdns_asset;
@@ -151,6 +154,7 @@ typedef struct _pdns_record {
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
+    uint8_t                sip_ttl;    /* DNS Server IP ttl(v4/6)*/
     uint8_t                proto;      /* Protocol */
     pdns_asset             *passet;    /* Head of dns assets */
     struct _pdns_record    *next;      /* Next dns record */
