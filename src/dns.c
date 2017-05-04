@@ -410,8 +410,10 @@ void cache_records(int dns_answer_domain_cnt, ldns_rr_list *dns_answer_domains, 
                     offset = 3;
                 break;
             case LDNS_RR_TYPE_TXT:
-                if (config.dnsf & DNS_CHK_TXT)
+                if (config.dnsf & DNS_CHK_TXT) {
                     offset = 0;
+                    to_offset = ldns_rr_rd_count(rr);
+                }
                 break;
             case LDNS_RR_TYPE_SPF:
                 if (config.dnsf & DNS_CHK_SPF)
