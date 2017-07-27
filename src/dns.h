@@ -51,6 +51,7 @@
 #define DNS_CHK_IPSECKEY    0x00400000
 #define DNS_CHK_NULL        0x00800000
 #define DNS_CHK_AFSDB       0x01000000
+#define DNS_CHK_APL         0x02000000
 #define DNS_CHK_ALL         0x80000000
 /* Default flags for Server Errors to handle */
 #define DNS_SE_CHK_FORMERR  0x0001

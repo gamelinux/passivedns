@@ -269,6 +269,12 @@ void cache_records(int dns_answer_domain_cnt, ldns_rr_list *dns_answer_domains, 
 
         dlog("[D] RR TYpe: %d\n",ldns_rr_get_type(rr));
         switch (ldns_rr_get_type(rr)) {
+            case LDNS_RR_TYPE_APL:
+                if (config.dnsf & DNS_CHK_APL) {
+                    offset = 0;
+                    to_offset = ldns_rr_rd_count(rr);
+                }
+                break;
             case LDNS_RR_TYPE_KX:
                 if (config.dnsf & DNS_CHK_KX) {
                     offset = 1;
@@ -834,6 +840,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 
     switch (ldns_rr_get_type(rr)) {
+        case LDNS_RR_TYPE_APL:
+            snprintf(rr_type, 10, "APL");
+            break;
         case LDNS_RR_TYPE_AFSDB:
             snprintf(rr_type, 10, "AFSDB");
             break;
@@ -1672,6 +1681,11 @@ void parse_dns_flags(char *args)
             case 'A': /* CAA */
                 config.dnsf |= DNS_CHK_CAA;
                 dlog("[D] Enabling flag: DNS_CHK_CAA\n");
+                ok++;
+                break;
+            case 'X': /* APL */
+                config.dnsf |= DNS_CHK_APL;
+                dlog("[D] Enabling flag: DNS_CHK_APL\n");
                 ok++;
                 break;
             case 'l': /* TLSA */
