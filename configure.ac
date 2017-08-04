@@ -128,6 +128,21 @@ if test "$LIBLDNS_L" = "no"; then
     exit 1
 fi
 
+# Check for hiredis library
+AC_CHECK_LIB(lhiredis,,LIBLHIREDIS_L="no")
+
+if test "$LIBLHIREDIS_L" = "no"; then
+    echo -e "\n  ERROR! lhiredis library not found\n"
+    exit 1
+fi
+
+
+# add hiredis
+LDFLAGS="${LDFLAGS} -lhiredis"
+
+
+
+
 # Checks for PF_RING.
 AC_ARG_ENABLE(pfring,
     AS_HELP_STRING([--enable-pfring], [Enable PF_RING support]))

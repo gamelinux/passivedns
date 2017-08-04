@@ -45,6 +45,13 @@
 #include "passivedns.h"
 #include "dns.h"
 
+/* hiredis */
+
+//#include <hiredis/hiredis.h>
+//#include <hiredis/async.h>
+//#include <hiredis/adapters/libevent.h>
+//#include "redis-conn.c"
+
 #ifdef HAVE_JSON
 #include <jansson.h>
 #endif /* HAVE_JSON */
@@ -1192,8 +1199,17 @@ void show_version()
 extern int optind, opterr, optopt; // getopt()
 
 /* magic main */
+
+//struct event_base *base; //= event_base_new();
+//redisAsyncContext *c;    //= redisAsyncConnect("127.0.0.1", 6379);
+
+const char *hostname = "127.0.0.1";
+int port = 6379;
+struct timeval timeout = { 1, 500000 }; // 1.5 seconds
+
 int main(int argc, char *argv[])
 {
+
     int ch = 0; // verbose_already = 0;
     int daemon = 0;
     memset(&config, 0, sizeof(globalconfig));
@@ -1554,6 +1570,28 @@ int main(int argc, char *argv[])
     }
 
     alarm(TIMEOUT);
+
+    // Redis Connection
+    cc = redisConnectWithTimeout(hostname, port, timeout);
+    if (cc == NULL || cc->err) {
+        if (cc) {
+            printf("Connection error: %s\n", cc->errstr);
+            redisFree(cc);
+        } else {
+            printf("Connection error: can't allocate redis context\n");
+        }
+        exit(1);
+    }
+    olog("Connected to redis server on 127.0.0.1");
+
+    /* PING Redis server */
+    reply = redisCommand(cc,"PING");
+    printf("PING: %s\n", reply->str);
+    freeReplyObject(reply);
+    char *msg="Passivedns ready to send!";
+    reply = redisCommand(cc,"LPUSH passivedns %s-from-%s",msg,config.dev);
+    freeReplyObject(reply);
+
 
     if (!config.pcap_file) olog("[*] Sniffing...\n\n");
 
