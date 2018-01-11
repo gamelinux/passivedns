@@ -130,7 +130,7 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
     pi->packet = packet;
     pi->pheader = pheader;
     set_pkt_end_ptr (pi);
-    config.tstamp = pi->pheader->ts; /* Global */
+    memcpy( &config.tstamp, &pi->pheader->ts, sizeof( struct timeval ) ); /* Global */
 
     if (signal_reopen_log_files)
         reopen_log_files();
@@ -144,9 +144,11 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
         case DLT_RAW:
             prepare_raw(pi);
             break;
+#ifdef DLT_LINUX_SSL
         case DLT_LINUX_SLL:
             prepare_sll(pi);
             break;
+#endif
         default:
             prepare_eth(pi);
             check_vlan(pi);
@@ -431,8 +433,13 @@ int connection_tracking(packetinfo *pi)
         ip_dst = &PI_IP6DST(pi);
     }
     else {
+#ifdef BSD_DERIVED
+        ips.__u6_addr.__u6_addr32[0] = pi->ip4->ip_src;
+        ipd.__u6_addr.__u6_addr32[0] = pi->ip4->ip_dst;
+#else
         ips.s6_addr32[0] = pi->ip4->ip_src;
         ipd.s6_addr32[0] = pi->ip4->ip_dst;
+#endif
         ip_src = &ips;
         ip_dst = &ipd;
     }
@@ -524,8 +531,13 @@ connection *cxt_new(packetinfo *pi)
         cxt->d_ip = PI_IP6DST(pi);
     }
     else {
+#ifdef BSD_DERIVED
+        ips.__u6_addr.__u6_addr32[0] = pi->ip4->ip_src;
+        ipd.__u6_addr.__u6_addr32[0] = pi->ip4->ip_dst;
+#else
         ips.s6_addr32[0] = pi->ip4->ip_src;
         ipd.s6_addr32[0] = pi->ip4->ip_dst;
+#endif
         cxt->s_ip = ips;
         cxt->d_ip = ipd;
     }

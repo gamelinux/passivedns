@@ -269,7 +269,7 @@ typedef struct _connection {
 #define ISSET_SERVICE_UNKNOWN(pi)        (pi->cxt->check & CXT_SERVICE_UNKNOWN_SET)
 #define ISSET_CLIENT_UNKNOWN(pi)         (pi->cxt->check & CXT_CLIENT_UNKNOWN_SET)
 
-#ifdef OSX
+#ifdef BSD_DERIVED
 // sidds darwin ports
 #define IP4ADDR(ip) (ip)->__u6_addr.__u6_addr32[0]
 
@@ -330,7 +330,7 @@ typedef struct _connection {
        CMP_PORT((cxt1)->s_port, (sp)) && CMP_PORT((cxt1)->d_port, (dp))))
 
 /* clear the address structure by setting all fields to 0 */
-#ifdef OSX
+#ifdef BSD_DERIVED
 #define CLEAR_ADDR(a) { \
     (a)->__u6_addr.__u6_addr32[0] = 0; \
     (a)->__u6_addr.__u6_addr32[1] = 0; \
@@ -349,7 +349,7 @@ typedef struct _connection {
 #define CXT_HASH4(src,dst,sp,dp,pr) \
    ((src + dst + sp + dp + pr) % BUCKET_SIZE)
 
-#ifndef OSX
+#ifndef BSD_DERIVED
 #define CXT_HASH6(src,dst,sp,dp,pr) \
  (( \
   (src)->s6_addr32[0] + (src)->s6_addr32[1] + \
@@ -358,7 +358,7 @@ typedef struct _connection {
   (dst)->s6_addr32[2] + (dst)->s6_addr32[3] + \
   sp + dp + pr ) % BUCKET_SIZE)
 #else
-#define CXT_HASH6(src,dest,sp,dp,pr) \
+#define CXT_HASH6(src,dst,sp,dp,pr) \
  (( \
   (src)->__u6_addr.__u6_addr32[0] + (src)->__u6_addr.__u6_addr32[1] + \
   (src)->__u6_addr.__u6_addr32[2] + (src)->__u6_addr.__u6_addr32[3] + \
