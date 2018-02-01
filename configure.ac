@@ -10,6 +10,52 @@ AC_CONFIG_HEADERS([src/config.h])
 # Checks for programs.
 AC_PROG_CC
 
+AC_CANONICAL_HOST
+
+dnl Checks for OS type.
+case "$host" in
+    *-freebsd*)
+        AC_DEFINE([BSD_DERIVED],1,BSD_DERIVED)
+        AC_DEFINE([FREEBSD],1,FREEBSD)
+        LDFLAGS="${LDFLAGS}"
+        ;;
+    *-netbsd*)
+        AC_DEFINE([BSD_DERIVED],1,BSD_DERIVED)
+        AC_DEFINE([NETBSD],1,NETBSD)
+        ;;
+    *-openbsd*)
+        AC_DEFINE([BSD_DERIVED],1,BSD_DERIVED)
+        AC_DEFINE([OPENBSD],1,OPENBSD)
+        CFLAGS="${CFLAGS} -Wbounded"
+        LDFLAGS="${LDFLAGS}"
+        ;;
+    *-apple*)
+        AC_DEFINE([BSD_DERIVED],1,BSD_DERIVED)
+        AC_DEFINE([MACOS],1,MACOS)
+        LDFLAGS="${LDFLAGS} -L/sw/lib"
+        AC_SUBST(more_incl)
+        more_incl=-I/sw/include
+        ;;
+    *-linux*)
+        AC_DEFINE([SYSV_DERIVED],1,SYSV_DERIVED)
+        AC_DEFINE([LINUX],1,LINUX)
+        LDFLAGS="${LDFLAGS}"
+        ;;
+    *-solaris*)
+        AC_DEFINE([SYSV_DERIVED],1,SYSV_DERIVED)
+        AC_DEFINE([SOLARIS],1,SOLARIS)
+        LDFLAGS="${LDFLAGS}"
+        ;;
+    *-aix*)
+        AC_DEFINE([SYSV_DERIVED],1,SYSV_DERIVED)
+        AC_DEFINE([AIX],1,AIX)
+        ;;
+    *-hpux*)
+        AC_DEFINE([SYSV_DERIVED],1,SYSV_DERIVED)
+        AC_DEFINE([HPUX],1,HPUX)
+        ;;
+esac
+
 # Enable debug output.
 AC_ARG_ENABLE(debug,
     AS_HELP_STRING([--enable-debug], [Enable debug output]))

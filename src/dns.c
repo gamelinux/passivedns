@@ -563,7 +563,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 /* We have this, update and if its over 24h since last print -
                    print it, then return */
                 passet->seen++;
-                passet->last_seen = pi->pheader->ts;
+		memcpy( &passet->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
                 passet->af        = pi->cxt->af;
                 passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
                 passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
@@ -606,8 +606,8 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
         passet->next = NULL;
 
     /* Populate new values */
-    passet->first_seen = pi->pheader->ts;
-    passet->last_seen = pi->pheader->ts;
+    memcpy( &passet->first_seen, &pi->pheader->ts, sizeof( struct timeval ) );
+    memcpy( &passet->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
     passet->af = pi->cxt->af;
     passet->cip = pi->cxt->s_ip; /* This should always be the client IP */
     passet->sip = pi->cxt->d_ip; /* This should always be the server IP */
@@ -1193,7 +1193,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         if (strcmp((const char *)domain_name,
                 (const char *)pdnsr->qname) == 0) {
             /* match :) */
-            pdnsr->last_seen = pi->pheader->ts;
+            memcpy( &pdnsr->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
             pdnsr->af = pi->cxt->af;
             pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
             pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
@@ -1213,8 +1213,8 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         head->prev = pdnsr;
 
     /* Populate new values */
-    pdnsr->first_seen = pi->pheader->ts;
-    pdnsr->last_seen = pi->pheader->ts;
+    memcpy( &pdnsr->first_seen, &pi->pheader->ts, sizeof( struct timeval ) );
+    memcpy( &pdnsr->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
     pdnsr->af = pi->cxt->af;
     pdnsr->nxflag = 0;
     pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
