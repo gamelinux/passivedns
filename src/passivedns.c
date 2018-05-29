@@ -144,7 +144,7 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
         case DLT_RAW:
             prepare_raw(pi);
             break;
-#ifdef DLT_LINUX_SSL
+#ifdef DLT_LINUX_SLL
         case DLT_LINUX_SLL:
             prepare_sll(pi);
             break;
