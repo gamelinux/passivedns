@@ -660,6 +660,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
 #ifdef HAVE_JSON
     json_t *jdata;
+    json_t *json_timestamp_ymdhms;
     json_t *json_timestamp_s;
     json_t *json_timestamp_ms;
     json_t *json_hostname;
@@ -870,6 +871,17 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     if ((is_err_record && config.use_json_nxd) ||
             (!is_err_record && config.use_json)) {
         jdata = json_object();
+
+        /* Print timestamp(ymdhms) */
+        if (config.fieldsf & FIELD_TIMESTAMP_YMDHMS) {
+            struct tm *tmpTime;
+            char timestr[200];
+            tmpTime = localtime(&l->last_seen.tv_sec);
+            strftime(timestr, sizeof(timestr), "%Y-%m-%d %H:%M:%S", tmpTime);
+            json_timestamp_ymdhms = json_string(timestr);
+            json_object_set(jdata, JSON_TIMESTAMP, json_timestamp_ymdhms);
+            json_decref(json_timestamp_ymdhms);
+        }
 
         /* Print timestamp(s) */
         if (config.fieldsf & FIELD_TIMESTAMP_S) {
