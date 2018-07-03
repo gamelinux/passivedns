@@ -84,6 +84,7 @@
 #define PDNS_IDENT         "passivedns"
 
 /* JSON fields used when printing PDNS */
+#define JSON_TIMESTAMP     "timestamp"
 #define JSON_TIMESTAMP_S   "timestamp_s"
 #define JSON_TIMESTAMP_MS  "timestamp_ms"
 #define JSON_CLIENT        "client"
