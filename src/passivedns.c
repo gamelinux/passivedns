@@ -1146,6 +1146,7 @@ void usage()
     olog(" -u <uid>        User ID to drop privileges to.\n");
     olog(" -g <gid>        Group ID to drop privileges to.\n");
     olog(" -T <dir>        Directory to chroot into.\n");
+    olog(" -q              Quiet mode (no output except errors).\n");
     olog(" -D              Run as daemon.\n");
     olog(" -V              Show version and exit.\n");
     olog(" -h              This help message.\n\n");
@@ -1258,7 +1259,7 @@ int main(int argc, char *argv[])
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
-#define ARGS "i:H:r:c:nyYNjJl:s:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define ARGS "i:H:r:qc:nyYNjJl:s:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
 
     while ((ch = getopt(argc, argv, ARGS)) != -1)
         switch (ch) {
@@ -1270,6 +1271,9 @@ int main(int argc, char *argv[])
             break;
         case 'r':
             config.pcap_file = optarg;
+            break;
+        case 'q':
+            config.cflags |= CONFIG_QUIET;
             break;
         case 'L':
             config.output_log_nxd = 1;
@@ -1386,7 +1390,7 @@ int main(int argc, char *argv[])
         else {
             config.logfile_fd = fopen(config.logfile, "a");
             if (config.logfile_fd == NULL) {
-                olog("[!] Error opening log file %s\n", config.logfile);
+                elog("[!] Error opening log file %s\n", config.logfile);
                 exit(1);
             }
         }
@@ -1403,7 +1407,7 @@ int main(int argc, char *argv[])
         else {
             config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
             if (config.logfile_nxd_fd == NULL) {
-                olog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
+                elog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
                 exit(1);
             }
         }
@@ -1415,12 +1419,12 @@ int main(int argc, char *argv[])
     if (config.use_pfring) {
         /* PF_RING does not have an option to read PCAP files */
         if (config.pcap_file) {
-            olog("[!] Reading PCAP files are not supported when using PF_RING\n");
+            elog("[!] Reading PCAP files are not supported when using PF_RING\n");
             exit(1);
         }
 
         if (config.dev == NULL) {
-            olog("[!] Must specify capture NIC\n");
+            elog("[!] Must specify capture NIC\n");
             exit(1);
         }
 
@@ -1428,7 +1432,7 @@ int main(int argc, char *argv[])
         config.pfhandle = pfring_open(config.dev, SNAPLENGTH, flags);
 
         if (config.pfhandle == NULL) {
-            olog("[!] Could not start PF_RING capture\n");
+            elog("[!] Could not start PF_RING capture\n");
             exit(1);
         }
 
@@ -1442,20 +1446,20 @@ int main(int argc, char *argv[])
         if ((strncmp(config.dev, "zc", 2) != 0) && (strncmp(config.dev, "dna", 3)) != 0) {
             if ((pfring_set_cluster(config.pfhandle, config.cluster_id,
                  cluster_per_flow)) != 0) {
-                olog("[!] Could not set PF_RING cluster_id\n");
+                elog("[!] Could not set PF_RING cluster_id\n");
             }
         }
 
 #ifdef HAVE_PFRING_BPF
         if (*config.bpff != '\0') {
             if ((pfring_set_bpf_filter(config.pfhandle, config.bpff)) != 0) {
-                olog("[!] Unable to set bpf filter\n");
+                elog("[!] Unable to set bpf filter\n");
             }
         }
 #endif /* HAVE_PFRING_BPF */
 
         if ((pfring_enable_ring(config.pfhandle)) != 0) {
-            olog("[!] Could not enable ring\n");
+            elog("[!] Could not enable ring\n");
             exit(1);
         }
 
@@ -1495,7 +1499,7 @@ int main(int argc, char *argv[])
         /* Read from PCAP file specified by '-r' switch. */
         olog("[*] Reading from file %s\n\n", config.pcap_file);
         if (!(config.handle = pcap_open_offline(config.pcap_file, config.errbuf))) {
-            olog("[*] Unable to open %s.  (%s)", config.pcap_file, config.errbuf);
+            elog("[*] Unable to open %s.  (%s)", config.pcap_file, config.errbuf);
         }
 
     }
@@ -1507,7 +1511,7 @@ int main(int argc, char *argv[])
 
         if ((config.handle = pcap_open_live(config.dev, SNAPLENGTH, config.promisc, 500,
              config.errbuf)) == NULL) {
-            olog("[*] Error pcap_open_live: %s \n", config.errbuf);
+            elog("[*] Error pcap_open_live: %s \n", config.errbuf);
             exit(1);
         }
 
@@ -1555,7 +1559,7 @@ int main(int argc, char *argv[])
     /* Segfaults on empty pcap! */
     if ((pcap_compile(config.handle, &config.cfilter, config.bpff, 1,
          config.net_mask)) == -1) {
-            olog("[*] Error pcap_compile user_filter: %s\n",
+            elog("[*] Error pcap_compile user_filter: %s\n",
                  pcap_geterr(config.handle));
             exit(1);
     }

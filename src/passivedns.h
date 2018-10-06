@@ -555,7 +555,12 @@ typedef struct _globalconfig {
 #define ISSET_INTERRUPT_DNS(config)     ((config).intr_flag & INTERRUPT_DNS)
 
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
-#define flog(h, fmt, ...) do{ fprintf(h, fmt, ##__VA_ARGS__); }while(0)
+#define flog(h, fmt, ...) \
+  do{ \
+    if (!(h == stdout && ISSET_CONFIG_QUIET(config))) \
+      fprintf(h, fmt, ##__VA_ARGS__); \
+  } \
+  while(0)
 #define olog(fmt, ...) do{ if(!(ISSET_CONFIG_QUIET(config))) fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 //#define DEBUG 1
 #ifdef DEBUG
