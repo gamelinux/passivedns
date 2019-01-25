@@ -567,6 +567,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 passet->af        = pi->cxt->af;
                 passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
                 passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
+                passet->sip_ttl   = pi->s_ttl; /* This should always be the server V4/v6 IP */
                 if (rr->_ttl > passet->rr->_ttl)
                         passet->rr->_ttl = rr->_ttl;   /* Catch the highest TTL seen */
                 dlog("[*] DNS asset updated...\n");
@@ -611,6 +612,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     passet->af = pi->cxt->af;
     passet->cip = pi->cxt->s_ip; /* This should always be the client IP */
     passet->sip = pi->cxt->d_ip; /* This should always be the server IP */
+    passet->sip_ttl = pi->s_ttl; /* This should always be the server IP TTL */
     passet->prev = NULL;
     len = strlen((char *)rdomain_name);
     passet->answer = calloc(1, (len + 1));
@@ -648,6 +650,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     FILE *fd = NULL;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
+    uint8_t ip_addr_s_ttl ;
     char *d = config.log_delimiter;
     char *proto;
     char *rr_class;
@@ -667,6 +670,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     json_t *json_client;
     json_t *json_server;
     json_t *json_proto;
+    json_t *json_server_ttl;
     json_t *json_class;
     json_t *json_query;
     json_t *json_query_len;
@@ -705,12 +709,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     if (is_err_record) {
         u_ntop(l->sip, l->af, ip_addr_s);
         u_ntop(l->cip, l->af, ip_addr_c);
+        ip_addr_s_ttl=l->sip_ttl;
     }
     else {
         u_ntop(p->sip, p->af, ip_addr_s);
         u_ntop(p->cip, p->af, ip_addr_c);
+        ip_addr_s_ttl=p->sip_ttl;
     }
-
     proto    = malloc(4);
     rr_class = malloc(10);
     rr_type  = malloc(12);
@@ -918,6 +923,13 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             json_decref(json_server);
         }
 
+        /* Print server IP  TTL*/
+        if (config.fieldsf & FIELD_SERVER_TTL) {
+            json_server_ttl = json_string(ip_addr_s_ttl);
+            json_object_set(jdata, json_server_ttl, json_server_ttl);
+            json_decref(json_server_ttl);
+        }
+
         /* Print protocol */
         if (config.fieldsf & FIELD_PROTO) {
             json_proto = json_string(proto);
@@ -1075,6 +1087,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_s);
         }
 
+        /* Print Server IP  TTL */
+        if (config.fieldsf & FIELD_SERVER_TTL) {
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%d", ip_addr_s_ttl);
+        }
         /* Print protocol */
         if (config.fieldsf & FIELD_PROTO) {
             if (offset != 0)
@@ -1209,6 +1227,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
             pdnsr->af = pi->cxt->af;
             pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
             pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
+            pdnsr->sip_ttl = pi->s_ttl; /* This should always be the server IP TTL */
             return pdnsr;
         }
         pdnsr = pdnsr->next;
@@ -1231,6 +1250,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
     pdnsr->nxflag = 0;
     pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
     pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
+    pdnsr->sip_ttl = pi->s_ttl; /* This should always be the server IP ttl */
     pdnsr->next = head;
     pdnsr->prev = NULL;
     pdnsr->passet = NULL;
@@ -1579,6 +1599,11 @@ void parse_field_flags(char *args)
             case 'T': /* Type */
                 config.fieldsf |= FIELD_TYPE;
                 dlog("[D] Enabling field: FIELD_TYPE\n");
+                ok++;
+                break;
+            case 'i': /* IP heder TTL */
+                config.fieldsf |= FIELD_SERVER_TTL;
+                dlog("[D] Enabling field: FIELD_SERVER_TTL\n");
                 ok++;
                 break;
             case 'A': /* Answer */

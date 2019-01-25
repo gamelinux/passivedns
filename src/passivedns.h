@@ -386,6 +386,7 @@ typedef struct _packetinfo {
     uint16_t        packet_bytes;     /* Length of IP payload in packet */
     uint16_t        s_port;           /* Source port */
     uint16_t        d_port;           /* Destination port */
+    uint8_t         s_ttl;            /* Source IP  ttl */
     uint8_t         proto;            /* IP protocol type */
     uint8_t         sc;               /* SC_SERVER, SC_CLIENT or SC_UNKNOWN */
     tcp_header      *tcph;            /* TCP header struct pointer */
