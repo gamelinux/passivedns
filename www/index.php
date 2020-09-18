@@ -57,7 +57,7 @@ if ($query) {
     }
   } else {
     echo "<b>PassiveDNS Records for Domain: ". $query ."</b> <br><br>";
-    $domains = mysql_query("SELECT * FROM pdns WHERE query='$query' OR query LIKE '%.$query' LIMIT $DBLIMIT");
+    $domains = mysql_query("SELECT * FROM pdns WHERE query LIKE '$query' LIMIT $DBLIMIT");
     if(mysql_num_rows($domains)==0){
       echo "<b>No records found...</b><br><br>";
     } else {
