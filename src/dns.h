@@ -60,21 +60,23 @@
 #define DNS_NXDOMAIN       0x01
 
 /* Flags for which fields to print */
-#define FIELD_TIMESTAMP_S  0x0001
-#define FIELD_TIMESTAMP_MS 0x0002
-#define FIELD_CLIENT       0x0004
-#define FIELD_SERVER       0x0008
-#define FIELD_CLASS        0x0010
-#define FIELD_QUERY        0x0020
-#define FIELD_TYPE         0x0040
-#define FIELD_ANSWER       0x0080
-#define FIELD_TTL          0x0100
-#define FIELD_COUNT        0x0200
-#define FIELD_TIMESTAMP_YMDHMS 0x0400
-#define FIELD_PROTO        0x0800
-#define FIELD_HOSTNAME     0x1000
-#define FIELD_QUERY_LEN    0x2000
-#define FIELD_ANSWER_LEN   0x4000
+#define FIELD_TIMESTAMP_S  0x00001
+#define FIELD_TIMESTAMP_MS 0x00002
+#define FIELD_CLIENT       0x00004
+#define FIELD_SERVER       0x00008
+#define FIELD_CLASS        0x00010
+#define FIELD_QUERY        0x00020
+#define FIELD_TYPE         0x00040
+#define FIELD_ANSWER       0x00080
+#define FIELD_TTL          0x00100
+#define FIELD_COUNT        0x00200
+#define FIELD_TIMESTAMP_YMDHMS 0x00400
+#define FIELD_PROTO        0x00800
+#define FIELD_HOSTNAME     0x01000
+#define FIELD_QUERY_LEN    0x02000
+#define FIELD_ANSWER_LEN   0x04000
+#define FIELD_CLT_HWADDR   0x08000
+#define FIELD_SRV_HWADDR   0x10000
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
@@ -137,7 +139,9 @@ typedef struct _pdns_asset {
     unsigned char          *answer;    /* Answer, like 8.8.8.8 or 2001:67c:21e0::16 */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
+    u_char                 smac[6];    /* DNS Server MAC address */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
+    u_char                 cmac[6];    /* DNS Client MAC address */
     struct _pdns_asset     *next;      /* Next dns asset */
     struct _pdns_asset     *prev;      /* Prev dns asset */
 } pdns_asset;
@@ -151,7 +155,9 @@ typedef struct _pdns_record {
     uint8_t                nxflag;     /* Flag to indicate if this is a NXDOMAIN */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
+    u_char                 smac[6];    /* DNS Server MAC address */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
+    u_char                 cmac[6];    /* DNS Client MAC address */
     uint8_t                proto;      /* Protocol */
     pdns_asset             *passet;    /* Head of dns assets */
     struct _pdns_record    *next;      /* Next dns record */

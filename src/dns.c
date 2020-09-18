@@ -610,7 +610,9 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     memcpy( &passet->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
     passet->af = pi->cxt->af;
     passet->cip = pi->cxt->s_ip; /* This should always be the client IP */
+    memcpy(passet->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
     passet->sip = pi->cxt->d_ip; /* This should always be the server IP */
+    memcpy(passet->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
     passet->prev = NULL;
     len = strlen((char *)rdomain_name);
     passet->answer = calloc(1, (len + 1));
@@ -1068,11 +1070,33 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_c);
         }
 
+        /* Print client hardware address  */
+        if (config.fieldsf & FIELD_CLT_HWADDR) {
+            char buf[128];
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            snprintf(buf, 128, "%02x:%02x:%02x:%02x:%02x:%02x",
+                p->cmac[0], p->cmac[1], p->cmac[2],
+                p->cmac[3], p->cmac[4], p->cmac[5]);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", buf);
+        }
+
         /* Print server IP */
         if (config.fieldsf & FIELD_SERVER) {
             if (offset != 0)
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
             offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_s);
+        }
+
+        /* Print server hardware address  */
+        if (config.fieldsf & FIELD_SRV_HWADDR) {
+            char buf[128];
+            if (offset != 0)
+                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            snprintf(buf, 128, "%02x:%02x:%02x:%02x:%02x:%02x",
+                p->smac[0], p->smac[1], p->smac[2],
+                p->smac[3], p->smac[4], p->smac[5]);
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", buf);
         }
 
         /* Print protocol */
@@ -1149,6 +1173,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             else
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%"PRIu64, p->seen);
         }
+
 #ifdef HAVE_JSON
     }
 #endif /* HAVE_JSON */
@@ -1208,7 +1233,9 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
             memcpy( &pdnsr->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
             pdnsr->af = pi->cxt->af;
             pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
+            memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
             pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
+            memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
             return pdnsr;
         }
         pdnsr = pdnsr->next;
@@ -1230,7 +1257,9 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
     pdnsr->af = pi->cxt->af;
     pdnsr->nxflag = 0;
     pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
+    memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
     pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
+    memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
     pdnsr->next = head;
     pdnsr->prev = NULL;
     pdnsr->passet = NULL;
@@ -1609,6 +1638,16 @@ void parse_field_flags(char *args)
             case 'h': /* Hostname */
                 config.fieldsf |= FIELD_HOSTNAME;
                 dlog("[D] Enabling field: FIELD_HOSTNAME\n");
+                ok++;
+                break;
+            case 'w': /* Client hw address */
+                config.fieldsf |= FIELD_CLT_HWADDR;
+                dlog("[D] Enabling field: FIELD_CLT_HWADDR\n");
+                ok++;
+                break;
+            case 'W': /* Server hw address */
+                config.fieldsf |= FIELD_SRV_HWADDR;
+                dlog("[D] Enabling field: FIELD_SRV_HWADDR\n");
                 ok++;
                 break;
             default:
