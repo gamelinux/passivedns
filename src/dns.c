@@ -35,7 +35,7 @@
 #include <jansson.h>
 #endif /* HAVE_JSON */
 
-globalconfig config;
+extern globalconfig config;
 
 /* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
 //#define DBUCKET_SIZE     16769023
