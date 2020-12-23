@@ -18,6 +18,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 # ----------------------------------------------------------------------
+# Added Resource Record Type :  hookol 20180321
 
 use strict;
 use warnings;
@@ -40,7 +41,7 @@ my $DLIMIT       =    100;
 
 =head1 VERSION
 
-    0.1.0
+    0.1.1
 
 =head1 SYNOPSIS
 
@@ -50,6 +51,7 @@ $ search-pdns.pl [options]
 
     -s            : %IP/Domain%
     -r            : Enables raw search
+    -t            : Resource Record Type (A, NS, MX, SOA, etc.)
     --first-seen  : Date to search from in iso format (2010-01-01 etc.)
     --last-seen   : Date to search to in iso format (2020-01-01 etc.)
     --limit       : Limit on search results (100)
@@ -73,6 +75,7 @@ our $SEARCH        = "%";
 our $FROM_DATE;
 our $TO_DATE;
 our $LIMIT;
+our $TYPE;
 
 GetOptions(
     'd=s'           => \$DEBUG,
@@ -81,6 +84,7 @@ GetOptions(
     'first-seen=s'  => \$FROM_DATE,
     'last-seen=s'   => \$TO_DATE,
     'limit=s'       => \$LIMIT,
+    't=s'           => \$TYPE,
 );
 
 if ($SEARCH eq "") {
@@ -130,6 +134,13 @@ if (defined $SEARCH) {
        $QUERY2 = $QUERY2 . qq[AND answer like '%$SEARCH%' ];
     }
 }
+
+
+if (defined $TYPE) {
+       $QUERY1 = $QUERY1 . qq[AND maptype = '$TYPE' ];
+       $QUERY2 = $QUERY2 . qq[AND maptype = '$TYPE' ];
+}
+
 
 $QUERY = $QUERY1 . qq[ UNION ] . $QUERY2;
 
