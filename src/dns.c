@@ -418,9 +418,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     offset = 0;
                 break;
             case LDNS_RR_TYPE_NAPTR:
-                if (config.dnsf & DNS_CHK_NAPTR)
+                if (config.dnsf & DNS_CHK_NAPTR) {
                     offset = 0;
                     to_offset = 6;
+                }
                 break;
             case LDNS_RR_TYPE_RP:
                 if (config.dnsf & DNS_CHK_RP)
@@ -610,9 +611,11 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     memcpy( &passet->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
     passet->af = pi->cxt->af;
     passet->cip = pi->cxt->s_ip; /* This should always be the client IP */
-    memcpy(passet->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
     passet->sip = pi->cxt->d_ip; /* This should always be the server IP */
-    memcpy(passet->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
+    if (pi-> eth_hdr) {
+        memcpy(passet->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
+        memcpy(passet->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
+    }
     passet->prev = NULL;
     len = strlen((char *)rdomain_name);
     passet->answer = calloc(1, (len + 1));
@@ -1233,9 +1236,11 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
             memcpy( &pdnsr->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
             pdnsr->af = pi->cxt->af;
             pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
-            memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
             pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
-            memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
+            if (pi->eth_hdr){
+                memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
+                memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
+            }
             return pdnsr;
         }
         pdnsr = pdnsr->next;
@@ -1257,9 +1262,11 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
     pdnsr->af = pi->cxt->af;
     pdnsr->nxflag = 0;
     pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
-    memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
     pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
-    memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
+    if (pi->eth_hdr) {
+        memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
+        memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
+    }
     pdnsr->next = head;
     pdnsr->prev = NULL;
     pdnsr->passet = NULL;
