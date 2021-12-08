@@ -54,6 +54,7 @@
 #define IP6_PROTO_ICMP                58
 
 #define SLL_HDR_LEN                   16
+#define LOOPBACK_HDR_LEN              4
 #define IP4_HEADER_LEN                20
 #define IP6_HEADER_LEN                40
 #define TCP_HEADER_LEN                20

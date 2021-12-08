@@ -66,6 +66,7 @@ uint8_t signal_reopen_log_files = 0;
 static void usage();
 static void show_version();
 void check_vlan (packetinfo *pi);
+void prepare_null (packetinfo *pi);
 void prepare_raw (packetinfo *pi);
 void prepare_sll (packetinfo *pi);
 void prepare_eth (packetinfo *pi);
@@ -141,6 +142,9 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
     config.inpacket = 1;
 
     switch (config.linktype) {
+        case DLT_NULL:
+            prepare_null(pi);
+            break;
         case DLT_RAW:
             prepare_raw(pi);
             break;
@@ -171,6 +175,16 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
     }
 
     config.inpacket = 0;
+}
+
+void prepare_null(packetinfo *pi)
+{
+    pi->eth_hlen = LOOPBACK_HDR_LEN;
+    if ((u_int32_t)*pi->packet == AF_INET) {
+        pi->eth_type = ETHERNET_TYPE_IP;
+    } else {
+        pi->eth_type = ETHERNET_TYPE_IPV6;
+    }
 }
 
 void prepare_raw(packetinfo *pi)
