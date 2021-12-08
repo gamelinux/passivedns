@@ -121,7 +121,7 @@ void dns_parser(packetinfo *pi)
         }
         dlog("[D] DNS Answer\n");
         /* Check the DNS TID */
-        if ((pi->cxt->plid == ldns_pkt_id(dns_pkt))) {
+        if (pi->cxt->plid == ldns_pkt_id(dns_pkt)) {
             dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
         }
         else {
@@ -372,7 +372,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                     to_offset = 5;
                 }
                 break;
-            
+
             case LDNS_RR_TYPE_NSEC:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
