@@ -60,7 +60,7 @@
 /*  G L O B A L S  *** (or candidates for refactoring, as we say)***********/
 globalconfig config;
 connection *bucket[BUCKET_SIZE];
-uint8_t signal_reopen_log_files = 0;
+static volatile sig_atomic_t signal_reopen_log_files = 0;
 
 /*  I N T E R N A L   P R O T O T Y P E S  ***********************************/
 static void usage();
