@@ -281,7 +281,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
     }
 
-    if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) != 0) {
+    if ((dns_answer_domain_cnt == 0) && ((config.dnsfe & DNS_SE_CHK_NOERR) || (ldns_pkt_get_rcode(dns_pkt) != 0))) {
         uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
         dlog("[D] Error return code: %d\n", rcode);
 
@@ -836,7 +836,10 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
     if (is_err_record) {
         switch (rcode) {
-            case 1:
+            case 0:
+                snprintf(rr_rcode, 20, "NOERROR");
+                break;
+             case 1:
                 snprintf(rr_rcode, 20, "FORMERR");
                 break;
             case 2:
@@ -1825,6 +1828,11 @@ void parse_dns_flags(char *args)
                dlog("[D] Enabling flag: DNS_SE_CHK_NOTZONE\n");
                ok++;
                break;
+            case '0': /* NOERR */
+               config.dnsfe |= DNS_SE_CHK_NOERR;
+               dlog("[D] Enabling flag: DNS_SE_CHK_NOERR\n");
+               ok++;
+               break;
             case '\0':
                dlog("[W] Bad DNS flag - ending flag checks!\n");
                ok = 0;
@@ -1846,6 +1854,9 @@ uint16_t pdns_chk_dnsfe(uint16_t rcode)
     uint16_t retcode = 0x0000;
 
     switch (rcode) {
+        case 0:
+            retcode = DNS_SE_CHK_NOERR;
+            break;
         case 1:
             retcode = DNS_SE_CHK_FORMERR;
             break;
