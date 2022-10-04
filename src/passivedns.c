@@ -1520,8 +1520,15 @@ int main(int argc, char *argv[])
     }
     else {
         /* Look up an available device if non specified */
-        if (config.dev == 0x0)
-            config.dev = pcap_lookupdev(config.errbuf);
+        if (config.dev == 0x0) {
+            pcap_if_t *alldevs;
+            if (0 != pcap_findalldevs(&alldevs, config.errbuf)) {
+                elog("[*] Error pcap_findalldevs: %s \n", config.errbuf);
+                exit(1);
+            }
+            config.dev = strdup(alldevs[0].name);
+            pcap_freealldevs(alldevs);
+        }
         olog("[*] Device: %s\n", config.dev);
 
         if ((config.handle = pcap_open_live(config.dev, SNAPLENGTH, config.promisc, 500,
