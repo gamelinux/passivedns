@@ -28,7 +28,17 @@ Ubuntu
   # libdate-simple-perl is also needed for pdns2db.pl
   $ git clone git://github.com/gamelinux/passivedns.git
   $ cd passivedns/
-  $ autoreconf --install
+  $ autoreconf --install
+  $ ./configure
+  $ make
+
+Debian 12 (Bookworm)
+  $ sudo apt install git build-essential libldns-dev libpcap-dev automake autoconf
+  # libdate-simple-perl might be needed for pdns2db.pl if you're using it
+  $ sudo apt install libdate-simple-perl
+  $ git clone git://github.com/gamelinux/passivedns.git
+  $ cd passivedns/
+  $ autoreconf --install
   $ ./configure
   $ make
 
@@ -45,4 +55,8 @@ RedHat (RHEL 6u2 x86_64)
   $ autoreconf --install
   $ ./configure
   $ make
+
+
+
+
 
