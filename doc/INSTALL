@@ -23,6 +23,18 @@ OS X (using Homebrew for dependencies)
   $ ./configure
   $ make
 
+Macbook Pro 2023 running Sonoma 14.4.1 (using Homebrew for dependencies)
+  $ brew install automake autoconf ldns jansson openssl
+  $ export LDFLAGS="-L$(brew --prefix openssl)/lib $LDFLAGS"
+  $ export CPPFLAGS="-I$(brew --prefix openssl)/include $CPPFLAGS"
+  $ export LDFLAGS="-L$(brew --prefix ldns)/lib $LDFLAGS"
+  $ export CPPFLAGS="-I$(brew --prefix ldns)/include $CPPFLAGS"
+  $ git clone git://github.com/gamelinux/passivedns.git
+  $ cd passivedns/
+  $ autoreconf --install
+  $ ./configure
+  $ make
+
 Ubuntu
   $ sudo apt-get install git-core binutils-dev libldns1 libldns-dev libpcap-dev 
   # libdate-simple-perl is also needed for pdns2db.pl
