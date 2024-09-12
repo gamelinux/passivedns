@@ -54,6 +54,7 @@
 #define DNS_SE_CHK_NXRRSET  0x0080
 #define DNS_SE_CHK_NOTAUTH  0x0100
 #define DNS_SE_CHK_NOTZONE  0x0200
+#define DNS_SE_CHK_NOERR    0x0400
 #define DNS_SE_CHK_ALL      0x8000
 
 /* Flag for indicating an NXDOMAIN */

@@ -1187,6 +1187,7 @@ void usage()
     olog(" * For Server Return Code (SRC) Errors:\n");
     olog("   f:FORMERR   s:SERVFAIL  x:NXDOMAIN  o:NOTIMPL  r:REFUSED\n");
     olog("   y:YXDOMAIN  e:YXRRSET   t:NXRRSET   a:NOTAUTH  z:NOTZONE\n");
+    olog("   0:NOERR\n");
     olog("\n");
 }
 
