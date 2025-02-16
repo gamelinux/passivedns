@@ -14,7 +14,7 @@
 
 NAME=passivedns
 PIDFILE=/var/run/passivedns.pid
-DAEMON=/usr/bin/$NAME
+DAEMON=/usr/local/bin/$NAME
 ARGS="-i eth0 -D"
 
 # Source default configs.

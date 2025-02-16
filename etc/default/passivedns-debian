@@ -26,7 +26,7 @@
 ## Default values
 NAME=passivedns
 PIDFILE=/var/run/passivedns.pid
-DAEMON=/usr/bin/$NAME
+DAEMON=/usr/local/bin/$NAME
 
 ## Quick and dirty:
 INTERFACE="-i eth0"
