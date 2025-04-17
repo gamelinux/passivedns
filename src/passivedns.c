@@ -1241,7 +1241,7 @@ int main(int argc, char *argv[])
     config.mem_limit_max = (256 * 1024 * 1024);
     config.dnsprinttime = DNSPRINTTIME;
     config.dnscachetimeout =  DNSCACHETIMEOUT;
-    config.dnsf = 0;
+    config.dnsfe = DNS_SE_CHK_ALL;
     config.log_delimiter = "||";
     config.fieldsf = 0;
     config.fieldsf |= FIELD_TIMESTAMP_S;

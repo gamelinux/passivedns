@@ -23,6 +23,9 @@
 #define DNS_H
 
 #include <ldns/ldns.h>
+#include <stdint.h>
+#include <sys/time.h>
+#include <netinet/in.h>
 
 /* Default flags for types to handle */
 #define DNS_CHK_AAAA        0x00000001
@@ -77,7 +80,7 @@
 #define FIELD_ANSWER_LEN   0x04000
 #define FIELD_CLT_HWADDR   0x08000
 #define FIELD_SRV_HWADDR   0x10000
-
+#define FIELD_RCODE        0x20000
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
 #define PASSET_ERR_COUNT   1
@@ -101,7 +104,7 @@
 #define JSON_TTL           "ttl"
 #define JSON_COUNT         "count"
 #define JSON_HOSTNAME      "hostname"
-
+#define JSON_RCODE         "rcode"
 /* To avoid spaming the logfile with duplicate dns info
  * we only print a dns record one time each 24H. This way
  * you will get a last seen timestamp update once a day
@@ -158,7 +161,8 @@ typedef struct _pdns_record {
     u_char                 smac[6];    /* DNS Server MAC address */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
     u_char                 cmac[6];    /* DNS Client MAC address */
-    uint8_t                proto;      /* Protocol */
+    uint8_t                proto;
+    uint16_t               rcode;      /* Protocol */
     pdns_asset             *passet;    /* Head of dns assets */
     struct _pdns_record    *next;      /* Next dns record */
     struct _pdns_record    *prev;      /* Prev dns record */
@@ -171,7 +175,7 @@ pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *d
 const char *u_ntop (const struct in6_addr ip_addr, int af, char *dest);
 void dns_parser (packetinfo *pi);
 void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr, unsigned char *rdomain_name);
-void print_passet (pdns_record *l, pdns_asset *p, ldns_rr *rr, ldns_rdf *lname, uint16_t rcode);
+void print_passet (pdns_record *l, pdns_asset *p, ldns_rr *rr, ldns_rdf *lname);
 void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
 void expire_dns_records();
 void expire_all_dns_records();

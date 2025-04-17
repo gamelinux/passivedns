@@ -252,6 +252,7 @@ int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt)
 int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                       ldns_buffer *buff, ldns_pkt *dns_pkt)
 {
+    uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
     int j;
     int dns_answer_domain_cnt;
     uint64_t dnshash;
@@ -295,7 +296,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
          * if the bucket is to big or non-efficient. We would still store data
          * such as: firstseen,lastseen,client_ip,server_ip,class,query,NXDOMAIN
          */
-         if (config.dnsfe & (pdns_chk_dnsfe(rcode))) {
+         if (1) {
             ldns_rr_list *dns_query_domains;
             ldns_rr *rr;
 
@@ -303,6 +304,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             dlog("[D] Hash: %lu\n", dnshash);
             /* Check if the node exists, if not, make it */
             pr = get_pdns_record(dnshash, pi, domain_name);
+            pr->rcode = rcode;
 
             /* Set the SRC flag: */
             //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
@@ -310,7 +312,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             rr = ldns_rr_list_rr(dns_query_domains, 0);
             if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
                 /* Print the SRC Error record */
-                print_passet(pr, NULL, rr, rdf_data, rcode);
+                print_passet(pr, NULL, rr, rdf_data);
             }
         }
         else
@@ -513,6 +515,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             dlog("[D] Hash: %lu\n", dnshash);
             /* Check if the node exists, if not, make it */
             pr = get_pdns_record(dnshash, pi, domain_name);
+             pr->rcode = rcode;
         }
 
         /* Update the pdns record with the pdns asset */
@@ -534,6 +537,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
         /* Free the rdomain_name */
         free(rdomain_name);
+        pr->rcode = rcode;
     }
     free(domain_name);
     return 0;
@@ -573,7 +577,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 dlog("[*] DNS asset updated...\n");
                 if ((passet->last_seen.tv_sec -
                         passet->last_print.tv_sec) >= config.dnsprinttime)
-                    print_passet(pr, passet, passet->rr, NULL, 0);
+                    print_passet(pr, passet, passet->rr, NULL);
                 return;
             }
         }
@@ -626,7 +630,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
 
     pr->passet = passet;
 
-    print_passet(pr, passet, passet->rr, NULL, 0);
+    print_passet(pr, passet, passet->rr, NULL);
 }
 
 const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
@@ -648,8 +652,9 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
 }
 
 void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
-                  ldns_rdf *lname, uint16_t rcode)
+                  ldns_rdf *lname)
 {
+    uint16_t rcode = l->rcode;
     FILE *fd = NULL;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
@@ -677,7 +682,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     json_t *json_query_len;
     json_t *json_type;
     json_t *json_answer;
-    json_t *json_answer_len;
+    json_t *json_answer_len1. Update RCODE Handling in print_passet();
     json_t *json_ttl;
     json_t *json_count;
     size_t data_flags = 0;
@@ -695,12 +700,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
     /* Use the correct file descriptor */
     if (is_err_record && config.output_log_nxd) {
-        if (config.logfile_all)
-            fd = config.logfile_fd;
-        else
-            fd = config.logfile_nxd_fd;
-        if (fd == NULL)
-            return;
+        fd = config.logfile_fd;
     }
     else if (!is_err_record && config.output_log) {
         fd = config.logfile_fd;
@@ -834,44 +834,6 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             break;
     }
 
-    if (is_err_record) {
-        switch (rcode) {
-            case 1:
-                snprintf(rr_rcode, 20, "FORMERR");
-                break;
-            case 2:
-                snprintf(rr_rcode, 20, "SERVFAIL");
-                break;
-            case 3:
-                snprintf(rr_rcode, 20, "NXDOMAIN");
-                break;
-            case 4:
-                snprintf(rr_rcode, 20, "NOTIMPL");
-                break;
-            case 5:
-                snprintf(rr_rcode, 20, "REFUSED");
-                break;
-            case 6:
-                snprintf(rr_rcode, 20, "YXDOMAIN");
-                break;
-            case 7:
-                snprintf(rr_rcode, 20, "YXRRSET");
-                break;
-            case 8:
-                snprintf(rr_rcode, 20, "NXRRSET");
-                break;
-            case 9:
-                snprintf(rr_rcode, 20, "NOTAUTH");
-                break;
-            case 10:
-                snprintf(rr_rcode, 20, "NOTZONE");
-                break;
-            default:
-                snprintf(rr_rcode, 20, "UNKNOWN-ERROR-%d", rcode);
-                break;
-        }
-    }
-
 #ifdef HAVE_JSON
     if ((is_err_record && config.use_json_nxd) ||
             (!is_err_record && config.use_json)) {
@@ -922,7 +884,25 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             json_object_set(jdata, JSON_SERVER, json_server);
             json_decref(json_server);
         }
-
+        
+        /* Add RCODE to JSON */
+        char rr_rcode[20];
+        switch (l->rcode) {
+            case 0:  snprintf(rr_rcode, 20, "NOERROR");    break;
+            case 1:  snprintf(rr_rcode, 20, "FORMERR");    break;
+            case 2:  snprintf(rr_rcode, 20, "SERVFAIL");   break;
+            case 3:  snprintf(rr_rcode, 20, "NXDOMAIN");   break;
+            case 4:  snprintf(rr_rcode, 20, "NOTIMPL");    break;
+            case 5:  snprintf(rr_rcode, 20, "REFUSED");    break;
+            case 6:  snprintf(rr_rcode, 20, "YXDOMAIN");   break;
+            case 7:  snprintf(rr_rcode, 20, "YXRRSET");    break;
+            case 8:  snprintf(rr_rcode, 20, "NXRRSET");    break;
+            case 9:  snprintf(rr_rcode, 20, "NOTAUTH");    break;
+            case 10: snprintf(rr_rcode, 20, "NOTZONE");    break;
+            default: snprintf(rr_rcode, 20, "UNKNOWN-%d", l->rcode); break;
+        }
+        json_object_set(jdata, JSON_RCODE, json_string(rr_rcode));
+        
         /* Print protocol */
         if (config.fieldsf & FIELD_PROTO) {
             json_proto = json_string(proto);
@@ -1016,7 +996,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                 json_decref(json_count);
             }
         }
-
+        
         output = json_dumps(jdata, data_flags);
         json_decref(jdata);
         if (output == NULL)
@@ -1136,6 +1116,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
             offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_type);
         }
+        
 
         /* Print answer */
         if (config.fieldsf & FIELD_ANSWER) {
@@ -1175,6 +1156,29 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%d", PASSET_ERR_COUNT);
             else
                 offset += snprintf(output+offset, sizeof(buffer) - offset, "%"PRIu64, p->seen);
+        }
+        /* Print RCODE */
+        if (config.fieldsf & FIELD_RCODE) {
+            if (offset != 0)
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+
+            char rr_rcode[20];  // Buffer for human-readable RCODE strings
+            switch (l->rcode) {  // Use l->rcode for both error and non-error records
+                case 0:  snprintf(rr_rcode, 20, "NOERROR");    break;
+                case 1:  snprintf(rr_rcode, 20, "FORMERR");    break;
+                case 2:  snprintf(rr_rcode, 20, "SERVFAIL");   break;
+                case 3:  snprintf(rr_rcode, 20, "NXDOMAIN");   break;
+                case 4:  snprintf(rr_rcode, 20, "NOTIMPL");    break;
+                case 5:  snprintf(rr_rcode, 20, "REFUSED");    break;
+                case 6:  snprintf(rr_rcode, 20, "YXDOMAIN");   break;
+                case 7:  snprintf(rr_rcode, 20, "YXRRSET");    break;
+                case 8:  snprintf(rr_rcode, 20, "NXRRSET");    break;
+                case 9:  snprintf(rr_rcode, 20, "NOTAUTH");    break;
+                case 10: snprintf(rr_rcode, 20, "NOTZONE");    break;
+                default: snprintf(rr_rcode, 20, "UNKNOWN-%d", l->rcode); break;
+            }
+
+            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_rcode);
         }
 
 #ifdef HAVE_JSON
@@ -1396,11 +1400,11 @@ void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
         /* Print the asset before we expires if it
          * has been updated since it last was printed */
         if (asset->last_seen.tv_sec > asset->last_print.tv_sec)
-            print_passet(pdnsr, asset, asset->rr, NULL, 0);
+            print_passet(pdnsr, asset, asset->rr, NULL);
 
         else if (asset->last_seen.tv_sec == asset->last_print.tv_sec) {
             if (asset->last_seen.tv_usec > asset->last_print.tv_usec)
-                print_passet(pdnsr, asset, asset->rr, NULL, 0);
+                print_passet(pdnsr, asset, asset->rr, NULL);
         }
         tmp_asset = asset;
         asset = asset->next;
@@ -1443,11 +1447,11 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
             /* Print the asset before we expires if it
                has been updated since it last was printed */
             if (passet->last_seen.tv_sec > passet->last_print.tv_sec)
-                print_passet(pdnsr, passet, passet->rr, NULL, 0);
+                print_passet(pdnsr, passet, passet->rr, NULL);
 
             else if (passet->last_seen.tv_sec == passet->last_print.tv_sec) {
                 if (passet->last_seen.tv_usec > passet->last_print.tv_usec)
-                    print_passet(pdnsr, passet, passet->rr, NULL, 0);
+                    print_passet(pdnsr, passet, passet->rr, NULL);
             }
             /* Remove the asset from the linked list */
             if (passet->prev)
@@ -1655,6 +1659,12 @@ void parse_field_flags(char *args)
             case 'W': /* Server hw address */
                 config.fieldsf |= FIELD_SRV_HWADDR;
                 dlog("[D] Enabling field: FIELD_SRV_HWADDR\n");
+                ok++;
+                break;
+            /*** ADD RCODE HANDLING HERE ***/
+            case 'R':  // RCODE field
+                config.fieldsf |= FIELD_RCODE;
+                dlog("[D] Enabling field: FIELD_RCODE\n");
                 ok++;
                 break;
             default:
