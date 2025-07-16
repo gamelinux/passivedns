@@ -1,17 +1,34 @@
 #Makefile
 AUTOMAKE_OPTIONS = -Wno-portability
 
-OBJECTS=passivedns.o dns.o
-bin_PROGRAMS=passivedns
+bin_PROGRAMS = passivedns
+passivedns_SOURCES = passivedns.c dns.c passivedns.h dns.h
 
-all: $(bin_PROGRAMS)
+# Security hardening compiler flags
+HARDENING_CFLAGS = -fstack-protector-strong \
+                   -fstack-clash-protection \
+                   -fcf-protection=full \
+                   -D_FORTIFY_SOURCE=2 \
+                   -fPIE \
+                   -Wformat \
+                   -Wformat-security \
+                   -Werror=format-security \
+                   -Wall \
+                   -Wextra \
+                   -Wconversion \
+                   -Wsign-conversion \
+                   -Wcast-align \
+                   -Wcast-qual \
+                   -Wshadow \
+                   -Wstrict-overflow=5 \
+                   -fno-strict-aliasing
 
-%.o: %.c
-	$(CC) -O3 $(CPPFLAGS) -c $< -o $@
+HARDENING_LDFLAGS = -pie \
+                    -Wl,-z,relro \
+                    -Wl,-z,now \
+                    -Wl,-z,noexecstack \
+                    -Wl,--as-needed
 
-passivedns$(EXEEXT): $(OBJECTS)
-	$(CC) -o passivedns $(OBJECTS) $(LDFLAGS)
-
-clean:
-	-rm -v passivedns *.o 2>/dev/null || true
+AM_CFLAGS = -O2 -g $(HARDENING_CFLAGS)
+AM_LDFLAGS = $(HARDENING_LDFLAGS)
 

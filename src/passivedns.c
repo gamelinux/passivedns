@@ -91,10 +91,10 @@ void cxt_init();
 int connection_tracking(packetinfo *pi);
 connection *cxt_new(packetinfo *pi);
 void del_connection(connection *, connection **);
-void print_pdns_stats();
+void print_pdns_stats(int sig);
 void free_config();
 void reopen_log_files();
-void game_over ();
+void game_over (int sig);
 void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
                 const u_char *packet);
 #ifdef HAVE_PFRING
@@ -776,7 +776,7 @@ void check_interrupt()
 {
     dlog("[D] In interrupt. Flag: %d\n",config.intr_flag);
     if (ISSET_INTERRUPT_END(config))
-        game_over();
+        game_over(0);
 
     else if (ISSET_INTERRUPT_SESSION(config))
         set_end_sessions();
@@ -788,7 +788,7 @@ void check_interrupt()
         config.intr_flag = 0;
 }
 
-void sig_alarm_handler()
+void sig_alarm_handler(int sig)
 {
     time_t now_t;
     now_t = config.tstamp.tv_sec;
@@ -804,7 +804,7 @@ void sig_alarm_handler()
     alarm(TIMEOUT);
 }
 
-void sig_hup_handler()
+void sig_hup_handler(int sig)
 {
     signal_reopen_log_files = 1;
 }
@@ -862,15 +862,26 @@ static int set_chroot(void)
 
    /* Always returns an absolute pathname */
    absdir = getcwd(NULL, 0);
+   if (absdir == NULL) {
+       printf("Could not get current directory: %s\n", strerror(errno));
+       return -1;
+   }
 
    /* Make the chroot call */
-   if (chroot(absdir) < 0)
+   if (chroot(absdir) < 0) {
        printf("Could not chroot to \"%s\": absolute: %s: %s\n",
               config.chroot_dir, absdir, strerror(errno));
+       free(absdir);
+       return -1;
+   }
 
-   if (chdir("/") < 0)
+   if (chdir("/") < 0) {
        printf("Could not chdir to \"/\" after chroot: %s\n", strerror(errno));
+       free(absdir);
+       return -1;
+   }
 
+   free(absdir);
    return 0;
 }
 
@@ -927,22 +938,44 @@ int drop_privs(void)
             groupid = pw->pw_gid;
     }
 
+    /* Clear supplementary groups first */
+    if (do_setuid && getuid() == 0) {
+        if (setgroups(0, NULL) < 0) {
+            elog("[!] Failed to clear supplementary groups: %s\n", strerror(errno));
+            exit(1);
+        }
+    }
+
     if (do_setgid) {
-        if ((i = setgid(groupid)) < 0)
-            printf("Unable to set group ID: %s", strerror(i));
-   }
+        if (setgid(groupid) < 0) {
+            elog("[!] Failed to set group ID to %lu: %s\n", groupid, strerror(errno));
+            exit(1);
+        }
+    }
 
     endgrent();
     endpwent();
 
     if (do_setuid) {
-        if (getuid() == 0 && initgroups(config.user_name, groupid) < 0)
-            printf("Unable to init group names (%s/%lu)", config.user_name,
-                   groupid);
+        if (getuid() == 0 && initgroups(config.user_name, groupid) < 0) {
+            elog("[!] Failed to init group names (%s/%lu): %s\n", 
+                 config.user_name, groupid, strerror(errno));
+            exit(1);
+        }
 
-        if ((i = setuid(userid)) < 0)
-            printf("Unable to set user ID: %s\n", strerror(i));
+        if (setuid(userid) < 0) {
+            elog("[!] Failed to set user ID to %lu: %s\n", userid, strerror(errno));
+            exit(1);
+        }
+
+        /* Verify privileges were actually dropped */
+        if (getuid() == 0 || geteuid() == 0 || getgid() == 0 || getegid() == 0) {
+            elog("[!] Failed to drop root privileges completely\n");
+            exit(1);
+        }
     }
+    
+    olog("[*] Successfully dropped privileges to UID %lu, GID %lu\n", userid, groupid);
     return 0;
 }
 
@@ -950,11 +983,26 @@ int is_valid_path(const char *path)
 {
     char dir[STDBUF];
     struct stat st;
+    size_t path_len;
 
     if (path == NULL)
         return 0;
 
-    memcpy(dir, path, strnlen(path, STDBUF));
+    /* Check for directory traversal attacks */
+    if (strstr(path, "../") != NULL || path[0] == '/' || strstr(path, "//") != NULL) {
+        elog("[!] Invalid path detected: %s\n", path);
+        return 0;
+    }
+
+    path_len = strnlen(path, STDBUF);
+    if (path_len >= STDBUF - 1) {
+        elog("[!] Path too long: %zu\n", path_len);
+        return 0;
+    }
+
+    /* Safe copy with null termination */
+    memcpy(dir, path, path_len);
+    dir[path_len] = '\0';
     dirname(dir);
 
     if (stat(dir, &st) != 0)
@@ -978,9 +1026,12 @@ int create_pid_file(const char *path)
     if (!is_valid_path(path))
         printf("PID path \"%s\" aint writable", path);
 
-    if ((fd = open(path, O_CREAT | O_WRONLY,
-                   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1)
+    /* Create PID file with secure permissions (owner read/write only) */
+    if ((fd = open(path, O_CREAT | O_WRONLY | O_TRUNC,
+                   S_IRUSR | S_IWUSR)) == -1) {
+        elog("[!] Failed to create PID file %s: %s\n", path, strerror(errno));
         return ERROR;
+    }
 
     /* PID file locking */
     lock.l_type = F_WRLCK;
@@ -1000,12 +1051,16 @@ int create_pid_file(const char *path)
         return ERROR;
     }
 
-    if (write(fd, pid_buffer, strlen(pid_buffer)) != 0) {
+    /* Write PID to file */
+    ssize_t bytes_written = write(fd, pid_buffer, strlen(pid_buffer));
+    if (bytes_written < 0) {
+        elog("[!] Failed to write to PID file: %s\n", strerror(errno));
         close(fd);
         return ERROR;
     }
 
-    close(fd);
+    /* Keep file descriptor open to maintain lock until process exits */
+    config.pidfile_fd = fd;
     return SUCCESS;
 }
 
@@ -1039,19 +1094,26 @@ int daemonize()
     return SUCCESS;
 }
 
-void game_over()
+void game_over(int sig)
 {
     if (config.inpacket == 0) {
-        expire_all_dns_records();
-        print_pdns_stats();
+        expire_all_dns_records(0);
+        print_pdns_stats(0);
 
         if (config.handle != NULL)
             pcap_close(config.handle);
 
         config.handle = NULL;
 
-        if (config.hostname != NULL)
+        if (config.hostname != NULL) {
             free(config.hostname);
+            config.hostname = NULL;
+        }
+
+        if (config.dev != NULL) {
+            free(config.dev);
+            config.dev = NULL;
+        }
 
 #ifdef HAVE_PFRING
         if (config.use_pfring && config.pfhandle != NULL) {
@@ -1068,6 +1130,12 @@ void game_over()
         if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
             fclose(config.logfile_nxd_fd);
 
+        /* Close PID file descriptor to release lock */
+        if (config.pidfile_fd >= 0) {
+            close(config.pidfile_fd);
+            config.pidfile_fd = -1;
+        }
+
         free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
@@ -1081,7 +1149,7 @@ void free_config()
         free(config.cfilter.bf_insns);
 }
 
-void print_pdns_stats()
+void print_pdns_stats(int sig)
 {
     FILE *handle = stdout;
     if (config.use_stats_file) {
@@ -1224,8 +1292,13 @@ int main(int argc, char *argv[])
 {
     int ch = 0; // verbose_already = 0;
     int daemon = 0;
+    
+    /* Set secure umask for file creation */
+    umask(077);
+    
     memset(&config, 0, sizeof(globalconfig));
     config.inpacket = config.intr_flag = 0;
+    config.pidfile_fd = -1;
     config.dnslastchk = 0;
     config.bpff = BPFF;
     config.logfile = "/var/log/passivedns.log";
@@ -1321,15 +1394,34 @@ int main(int argc, char *argv[])
         case 'p':
             config.pidfile = optarg;
             break;
-        case 'C':
-            config.dnscachetimeout = strtol(optarg, NULL, 0);
+        case 'C': {
+            long cache_timeout = strtol(optarg, NULL, 0);
+            if (cache_timeout < 0 || cache_timeout > UINT32_MAX) {
+                elog("[!] Invalid DNS cache timeout: %ld\\n", cache_timeout);
+                exit(1);
+            }
+            config.dnscachetimeout = (uint32_t)cache_timeout;
             break;
-        case 'P':
-            config.dnsprinttime = strtol(optarg, NULL, 0);
+        }
+        case 'P': {
+            long print_time = strtol(optarg, NULL, 0);
+            if (print_time < 0 || print_time > UINT32_MAX) {
+                elog("[!] Invalid DNS print time: %ld\\n", print_time);
+                exit(1);
+            }
+            config.dnsprinttime = (uint32_t)print_time;
             break;
-        case 'S':
-            config.mem_limit_max = (strtol(optarg, NULL, 0) * 1024 * 1024);
+        }
+        case 'S': {
+            /* Safe memory limit calculation with overflow check */
+            long mem_mb = strtol(optarg, NULL, 0);
+            if (mem_mb < 0 || mem_mb > (LONG_MAX / (1024 * 1024))) {
+                elog("[!] Invalid memory limit: %ld MB\\n", mem_mb);
+                exit(1);
+            }
+            config.mem_limit_max = (size_t)(mem_mb * 1024 * 1024);
             break;
+        }
         case 's':
             config.use_stats_file = 1;
             config.statsfile = optarg;
@@ -1478,17 +1570,17 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
+        if (config.drop_privs_flag) {
+            olog("[*] Dropping privs...\n");
+            drop_privs();
+        }
+
         if (config.chroot_dir) {
             olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
             if (set_chroot()) {
                 elog("[!] failed to chroot\n");
                 exit(1);
             }
-        }
-
-        if (config.drop_privs_flag) {
-            olog("[*] Dropping privs...\n");
-            drop_privs();
         }
 
         if (daemon) {
@@ -1505,7 +1597,7 @@ int main(int argc, char *argv[])
 
         pfring_loop(config.pfhandle, pfring_got_packet, (u_char*)NULL, 1);
 
-        game_over();
+        game_over(0);
         return 0;
     }
 #endif /* HAVE_PFRING */
@@ -1548,17 +1640,17 @@ int main(int argc, char *argv[])
             }
         }
 
+        if (config.drop_privs_flag) {
+            olog("[*] Dropping privs...\n");
+            drop_privs();
+        }
+
         if (config.chroot_dir) {
             olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
             if(set_chroot()){
                 elog("[!] failed to chroot\n");
                 exit(1);
             }
-        }
-
-        if (config.drop_privs_flag) {
-            olog("[*] Dropping privs...\n");
-            drop_privs();
         }
 
         if (daemon) {
@@ -1572,7 +1664,7 @@ int main(int argc, char *argv[])
     }
 
     if (config.handle == NULL) {
-       game_over();
+       game_over(0);
        return 1;
     }
 
@@ -1597,7 +1689,7 @@ int main(int argc, char *argv[])
 
     pcap_loop(config.handle, -1, got_packet, NULL);
 
-    game_over();
+    game_over(0);
     return 0;
 }
 

@@ -541,6 +541,7 @@ typedef struct _globalconfig {
     char                *group_name;       /* Group to drop privileges too */
     char                *user_name;        /* User to drop privileges too */
     char                *pidfile;          /* Pidfile */
+    int                 pidfile_fd;        /* PID file descriptor for locking */
     char                *configpath;       /* Path to config directory */
     uint32_t            dnsprinttime;      /* Minimum time between printing duplicate DNS info */
     uint32_t            dnscachetimeout;   /* Time before a DNS record/asset times out if not updated */
