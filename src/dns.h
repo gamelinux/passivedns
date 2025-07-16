@@ -174,7 +174,7 @@ void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr, uns
 void print_passet (pdns_record *l, pdns_asset *p, ldns_rr *rr, ldns_rdf *lname, uint16_t rcode);
 void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
 void expire_dns_records();
-void expire_all_dns_records();
+void expire_all_dns_records(int sig);
 void delete_dns_record (pdns_record *pdnsr, pdns_record **bucket_ptr);
 void delete_dns_asset (pdns_asset **passet_head, pdns_asset *passet);
 void update_config_mem_counters();

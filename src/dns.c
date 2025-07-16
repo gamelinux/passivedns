@@ -60,16 +60,41 @@ void dns_parser(packetinfo *pi)
 
     status = LDNS_STATUS_ERR;
 
+    /* Validate packet length */
+    if (pi->plen < 12) {  /* DNS header is minimum 12 bytes */
+        dlog("[D] DNS packet too small: %d bytes\n", pi->plen);
+        return;
+    }
+    
+    if (pi->plen > 65535) {  /* Maximum DNS packet size */
+        dlog("[D] DNS packet too large: %d bytes\n", pi->plen);
+        return;
+    }
+
     /* In DNS tcp messages, the first 2 bytes signal the
      * amount of data to expect. So we need to skip them in the read. */
-    if (pi->plen <= 2)
+    if (pi->plen <= 2) {
+        dlog("[D] TCP DNS packet too small: %d bytes\n", pi->plen);
         return;  /* The minimum bytes in a packet, else return */
+    }
 
     if (pi->af == AF_INET) {
         switch (pi->ip4->ip_p) {
-            case IP_PROTO_TCP:
+            case IP_PROTO_TCP: {
+                /* Validate TCP DNS length field */
+                uint16_t tcp_len = ntohs(*(uint16_t*)pi->payload);
+                if (tcp_len != pi->plen - 2) {
+                    dlog("[D] TCP DNS length mismatch: header=%d, actual=%d\\n", 
+                         tcp_len, pi->plen - 2);
+                    return;
+                }
+                if (pi->plen - 2 < 12) {  /* DNS header minimum after TCP length */
+                    dlog("[D] TCP DNS payload too small: %d bytes\\n", pi->plen - 2);
+                    return;
+                }
                 status = ldns_wire2pkt(&dns_pkt,pi->payload + 2, pi->plen - 2);
                 break;
+            }
             case IP_PROTO_UDP:
                 status = ldns_wire2pkt(&dns_pkt,pi->payload, pi->plen);
                 break;
@@ -482,16 +507,21 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             if (tmp1 != NULL)
                 len += strlen(tmp1);
             tmp2 = malloc(len);
+            if (tmp2 == NULL) {
+                dlog("[D] Memory allocation failed\n");
+                free(tmp1);
+                free(rdomain_name);
+                return -1;
+            }
 
             if (tmp1 != NULL) {
-                tmp2 = strcpy(tmp2, tmp1);
-                tmp2 = strcat(tmp2, " ");
+                snprintf(tmp2, len, "%s %s", tmp1, rdomain_name);
             }
-            else
-                tmp2 = strcpy(tmp2, "");
+            else {
+                snprintf(tmp2, len, "%s", rdomain_name);
+            }
 
             free(tmp1);
-            tmp2 = strcat(tmp2, rdomain_name);
             tmp1 = tmp2;
             free(rdomain_name);
             offset ++;
@@ -1352,7 +1382,7 @@ void update_config_mem_counters()
     dlog("------------------------------------------------\n");
 }
 
-void expire_all_dns_records()
+void expire_all_dns_records(int sig)
 {
     pdns_record *pdnsr;
 

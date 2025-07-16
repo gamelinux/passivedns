@@ -12,8 +12,6 @@ if [ ! -d config ]; then
  mkdir config
 fi
 
-aclocal
-automake --gnu --add-missing
-autoconf
-autoheader
+autoreconf -ifv
+
 
