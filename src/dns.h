@@ -42,6 +42,7 @@
 #define DNS_CHK_SPF         0x00004000
 #define DNS_CHK_SSHFP       0x00008000
 #define DNS_CHK_HINFO       0x00010000
+#define DNS_CHK_HTTPS       0x00020000
 #define DNS_CHK_ALL         0x80000000
 /* Default flags for Server Errors to handle */
 #define DNS_SE_CHK_FORMERR  0x0001
