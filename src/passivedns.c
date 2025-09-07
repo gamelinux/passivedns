@@ -1155,7 +1155,7 @@ void usage()
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default: %u).\n", DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n", DNSPRINTTIME);
-    olog(" -X <flags>      Manually set DNS RR Types to care about (default: -X 46CDNPRS).\n");
+    olog(" -X <flags>      Manually set DNS RR Types to care about (default: -X 46CDNPRSh).\n");
     olog(" -N              Set interface to non promisc. mode.\n");
     olog(" -u <uid>        User ID to drop privileges to.\n");
     olog(" -g <gid>        Group ID to drop privileges to.\n");
@@ -1176,7 +1176,7 @@ void usage()
     olog("\n");
     olog(" * For Record Types:\n");
     olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA  L:LOC   F:SPF   I:HINFO\n");
-    olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS   d:DNSEC H:SSHFP\n");
+    olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS   d:DNSEC H:SSHFP h:HTTPS\n");
     olog("   L also enables GPOS\n");
 #ifdef LDNS_RR_TYPE_NSEC3PARAM
     olog("   d enables DS, DNSKEY, NSEC, NSEC3, RRSIG\n");
@@ -1262,6 +1262,7 @@ int main(int argc, char *argv[])
     config.dnsf |= DNS_CHK_NAPTR;
     config.dnsf |= DNS_CHK_RP;
     config.dnsf |= DNS_CHK_SRV;
+    config.dnsf |= DNS_CHK_HTTPS;
 #ifdef HAVE_PFRING
     config.cluster_id = 0;
     u_int32_t flags = 0;

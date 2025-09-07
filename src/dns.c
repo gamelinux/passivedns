@@ -451,6 +451,12 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 if (config.dnsf & DNS_CHK_NS)
                     offset = 0;
                 break;
+            case LDNS_RR_TYPE_HTTPS:
+                if (config.dnsf & DNS_CHK_HTTPS) {
+                    offset = 1;
+                    to_offset = 3;
+                }
+                break;
             default:
                 offset = -1;
                 dlog("[D] ldns_rr_get_type: %d\n", ldns_rr_get_type(rr));
@@ -825,6 +831,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             break;
         case LDNS_RR_TYPE_MX:
             snprintf(rr_type, 10, "MX");
+            break;
+        case LDNS_RR_TYPE_HTTPS:
+            snprintf(rr_type, 10, "HTTPS");
             break;
         default:
             if (is_err_record)
@@ -1772,6 +1781,11 @@ void parse_dns_flags(char *args)
             case 'n': /* NS */
                config.dnsf |= DNS_CHK_NS;
                dlog("[D] Enabling flag: DNS_CHK_NS\n");
+               ok++;
+               break;
+            case 'h': /* HTTPS */
+               config.dnsf |= DNS_CHK_HTTPS;
+               dlog("[D] Enabling flag: DNS_CHK_HTTPS\n");
                ok++;
                break;
             case 'f': /* FORMERR */
