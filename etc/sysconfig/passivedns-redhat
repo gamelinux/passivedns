@@ -26,7 +26,7 @@ NXSYSLOG=
 
 # To add a BPF filter to the command line uncomment the following variable
 # syntax corresponds to tcpdump(8)
-# default is "port 53"
+# default keeps port 53, IPv4 fragments, and IPv6 extension headers
 BPF=
 
 # Name of PID file

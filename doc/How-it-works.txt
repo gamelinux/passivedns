@@ -7,11 +7,17 @@
   currently print out the vlan tag seen)
 * Handles IPv4 and IPv6 packets
 * We look at DNS on UDP and TCP
+* IPv4 and IPv6 fragments are reassembled. The default filter keeps
+  port 53, IPv4 fragments, and IPv6 hop-by-hop, routing, fragment,
+  and destination-option headers. libpcap does not look past those
+  headers for a port match
+* IPv6 extension headers are walked, including fragment headers
+* DNS over TCP is collected per direction up to one maximum message
 
 ## Connection Tracking
 * Same connection tracking as in cxtracker
-** When used with a propper BPF (filter),
-   it only tracks traffic on port 53.
+** When used with the default BPF, it tracks port 53, IPv4 fragments,
+   and IPv6 extension headers the port match would otherwise drop.
 * Connection tracking is used to make sure
   that a client asked for a domain, so that
   there will not be any tracking of domains,

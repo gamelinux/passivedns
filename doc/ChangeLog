@@ -1,3 +1,18 @@
+Changes with PassiveDNS 1.2.2
+
+- Reject short, wrapped, and zero-length IP headers before parsing
+- Stop IP-in-IP recursion and walk IPv6 extension headers
+- Reassemble IPv4 and IPv6 fragments, and DNS messages over TCP
+- Format log lines on the heap with a hard length cap
+- Copy DNS record type, class, and TTL so a freed packet is not reused
+- Cap live flows and count strings, flows, and reassembly buffers
+- Fail closed when a requested user, group, or chroot cannot be applied
+- Hold the pid file open so its lock stays
+- Create log files mode 0640
+- Read database credentials from the environment in the Perl and PHP tools
+- Send SQL through placeholders, and escape HTML in the local demo page
+- Build with -fstack-protector-strong when using GCC
+
 Changes with PassiveDNS 1.2.0
 
 - Added enhancements to better handle high volume traffic
