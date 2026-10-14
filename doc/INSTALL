@@ -54,6 +54,18 @@ For VLAN traffic pass a filter such as:
 
     passivedns -i eth0 -b "vlan and port 53" -l /var/log/passivedns.log
 
+Live capture keeps 4096 bytes of each frame. -s changes it. -s 0
+means 262144. A longer frame is cut, and a cut TCP DNS message is
+dropped. Generic receive offload can turn a large answer into one
+frame. Turn it off on the capture device:
+
+    sudo ethtool -K eth0 gro off
+
+passivedns warns on stderr when that offload is on. Unless -q is
+set, startup prints the snapshot length and the enabled record
+letters. -s does not change the snapshot length of a pcap read
+with -r.
+
 HTTPS and SVCB answers are logged by default. An empty NOERROR answer
 is logged only with -X 0. -f i adds the IP TTL (IPv6 hop limit) of the
 reply and is not in the default field mask. passivedns -h lists the flags.

@@ -29,7 +29,8 @@
 /*  D E F I N E S  ************************************************************/
 #define TIMEOUT                       60
 #define BUCKET_SIZE                   65537
-#define SNAPLENGTH                    1600
+#define SNAPLENGTH                    4096      /* Live snapshot length. -s overrides. */
+#define SNAPLENGTH_MAX                262144    /* -s 0. Same ceiling as tcpdump. */
 #define PKT_MAXPAY                    255
 #define MAX_BYTE_CHECK                500000
 #define MAX_PKT_CHECK                 10
@@ -542,6 +543,8 @@ typedef struct _globalconfig {
     char                *statsfile;        /* File to print stats to */
     uint8_t             setfilter;
     uint8_t             promisc;           /* set interface promisc mode */
+    uint8_t             snaplen_set;       /* -s was given */
+    int                 snaplen;           /* Live capture snapshot length */
     uint8_t             drop_privs_flag;   /* Flag marking to drop privs */
     uint8_t             chroot_flag;       /* Flag for going chroot */
     uint8_t             daemon_flag;       /* Flag for going daemon */

@@ -1,5 +1,9 @@
 Changes with PassiveDNS 1.3.0
 
+- Add -s for the live snapshot length and raise the default from 1600 to 4096
+- Move the SIGUSR1 stats file option from -s to --stats-file
+- Warn when generic-receive-offload is enabled on the capture device
+- Print the snapshot length and enabled record letters at startup unless -q
 - Document the Ubuntu 26.04 build and drop the older distro notes
 - Tell the test runner when the passivedns binary is missing
 - Build with PIE, full RELRO, a non-executable stack, and fortified libc calls

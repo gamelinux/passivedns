@@ -19,6 +19,10 @@
 **
 */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 /*  I N C L U D E S  **********************************************************/
 #include "config.h"
 #include <stdio.h>
@@ -42,6 +46,13 @@
 #include <errno.h>
 #include <ctype.h>
 #include <limits.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#ifdef __linux__
+#include <net/if.h>
+#include <linux/sockios.h>
+#include <linux/ethtool.h>
+#endif /* __linux__ */
 #include "passivedns.h"
 #include "dns.h"
 #include "reasm.h"
@@ -66,6 +77,9 @@ static volatile sig_atomic_t signal_reopen_log_files = 0;
 /*  I N T E R N A L   P R O T O T Y P E S  ***********************************/
 static void usage();
 static void show_version();
+static void show_record_letters();
+static void show_snapshot(int snaplen);
+static void warn_if_gro(const char *dev);
 void check_vlan (packetinfo *pi);
 void prepare_null (packetinfo *pi);
 void prepare_raw (packetinfo *pi);
@@ -1471,7 +1485,11 @@ void usage()
     olog(" -J              Use JSON as output in NXDOMAIN log file.\n");
 #endif /* HAVE_JSON */
     olog(" -f <fields>     Choose which fields to print (default: -f SMcsCQTAtn).\n");
-    olog(" -s <file>       Print stats on signal (SIGUSR1) to this file.\n");
+    olog(" -s <bytes>      Live snapshot length (default: %d, 0 means %d).\n",
+         SNAPLENGTH, SNAPLENGTH_MAX);
+    olog("                 A longer frame is truncated. On the capture device:\n");
+    olog("                 ethtool -K <iface> gro off\n");
+    olog(" --stats-file <file>  Write SIGUSR1 stats to this file.\n");
     olog(" -b 'BPF'        Berkley Packet Filter (default: '%s').\n", BPFF);
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
@@ -1547,6 +1565,93 @@ void show_version()
 #endif /* HAVE_JSON */
 }
 
+static void add_letter(char *buf, size_t cap, size_t *used, int enabled, char letter)
+{
+    if (!enabled || *used + 1 >= cap)
+        return;
+    buf[(*used)++] = letter;
+    buf[*used] = '\0';
+}
+
+static void show_record_letters(void)
+{
+    char letters[64];
+    size_t used = 0;
+
+    letters[0] = '\0';
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_A, '4');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_AAAA, '6');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_CNAME, 'C');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_DNAME, 'D');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_NAPTR, 'N');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_SOA, 'O');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_LOC, 'L');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_SPF, 'F');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_HINFO, 'I');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_PTR, 'P');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_RP, 'R');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_SRV, 'S');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_TXT, 'T');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_MX, 'M');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_NS, 'n');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_DNSSEC, 'd');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_SSHFP, 'H');
+#ifdef PDNS_HAVE_HTTPS
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_HTTPS, 'h');
+    add_letter(letters, sizeof(letters), &used, config.dnsf & DNS_CHK_SVCB, 'V');
+#endif
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_FORMERR, 'f');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_SERVFAIL, 's');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NXDOMAIN, 'x');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NOTIMPL, 'o');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_REFUSED, 'r');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_YXDOMAIN, 'y');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_YXRRSET, 'e');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NXRRSET, 't');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NOTAUTH, 'a');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NOTZONE, 'z');
+    add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NOERR, '0');
+    olog("[*] Record letters: %s\n", letters[0] ? letters : "(none)");
+}
+
+static void show_snapshot(int snaplen)
+{
+    if (config.pcap_file && config.snaplen_set)
+        olog("[*] -s %d does not apply when reading a pcap\n", config.snaplen);
+    olog("[*] Snapshot length: %d\n", snaplen);
+}
+
+static void warn_if_gro(const char *dev)
+{
+#ifdef __linux__
+    int fd;
+    struct ifreq ifr;
+    struct ethtool_value eval;
+
+    if (dev == NULL || dev[0] == '\0' || strcmp(dev, "any") == 0)
+        return;
+    if (strlen(dev) >= IFNAMSIZ)
+        return;
+
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0)
+        return;
+
+    memset(&ifr, 0, sizeof(ifr));
+    memset(&eval, 0, sizeof(eval));
+    memcpy(ifr.ifr_name, dev, strlen(dev));
+    eval.cmd = ETHTOOL_GGRO;
+    ifr.ifr_data = (char *)&eval;
+    if (ioctl(fd, SIOCETHTOOL, &ifr) == 0 && eval.data != 0) {
+        elog("[!] generic-receive-offload is on for %s; a large TCP DNS answer can arrive as one frame and be cut at the snapshot length.\n", dev);
+        elog("[!] Turn it off with: ethtool -K %s gro off\n", dev);
+    }
+    close(fd);
+#else
+    (void)dev;
+#endif /* __linux__ */
+}
+
 extern int optind, opterr, optopt; // getopt()
 
 /* magic main */
@@ -1565,6 +1670,7 @@ int main(int argc, char *argv[])
     config.statsfile = "/var/log/passivedns.stats";
     config.pidfile = "/var/run/passivedns.pid";
     config.promisc = 1;
+    config.snaplen = SNAPLENGTH;
     config.output_log = 0;
     config.output_log_nxd = 0;
     config.output_syslog = 0;
@@ -1611,8 +1717,13 @@ int main(int argc, char *argv[])
     signal(SIGUSR2, expire_all_dns_records);
 
 #define ARGS "i:H:r:qc:nyYNjJl:s:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define OPT_STATS_FILE 256
+    static const struct option long_options[] = {
+        {"stats-file", required_argument, NULL, OPT_STATS_FILE},
+        {NULL, 0, NULL, 0}
+    };
 
-    while ((ch = getopt(argc, argv, ARGS)) != -1)
+    while ((ch = getopt_long(argc, argv, ARGS, long_options, NULL)) != -1)
         switch (ch) {
         case 'i':
             config.dev = optarg;
@@ -1666,7 +1777,26 @@ int main(int argc, char *argv[])
         case 'S':
             config.mem_limit_max = (strtol(optarg, NULL, 0) * 1024 * 1024);
             break;
-        case 's':
+        case 's': {
+            char *end = NULL;
+            long snap;
+
+            errno = 0;
+            snap = strtol(optarg, &end, 10);
+            if (optarg[0] == '\0' || end == optarg || *end != '\0' ||
+                errno == ERANGE || snap < 0 || snap > SNAPLENGTH_MAX) {
+                elog("[!] -s needs a snapshot length from 0 to %d\n", SNAPLENGTH_MAX);
+                elog("[!] 0 means %d. SIGUSR1 stats go to --stats-file <file>.\n",
+                     SNAPLENGTH_MAX);
+                exit(1);
+            }
+            if (snap == 0)
+                snap = SNAPLENGTH_MAX;
+            config.snaplen = (int)snap;
+            config.snaplen_set = 1;
+            break;
+        }
+        case OPT_STATS_FILE:
             config.use_stats_file = 1;
             config.statsfile = optarg;
             break;
@@ -1767,6 +1897,7 @@ int main(int argc, char *argv[])
     }
 
     show_version();
+    show_record_letters();
 
 #ifdef HAVE_PFRING
     if (config.use_pfring) {
@@ -1781,8 +1912,10 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
+        show_snapshot(config.snaplen);
+        warn_if_gro(config.dev);
         flags |= PF_RING_PROMISC;
-        config.pfhandle = pfring_open(config.dev, SNAPLENGTH, flags);
+        config.pfhandle = pfring_open(config.dev, config.snaplen, flags);
 
         if (config.pfhandle == NULL) {
             elog("[!] Could not start PF_RING capture\n");
@@ -1847,6 +1980,7 @@ int main(int argc, char *argv[])
             elog("[*] Unable to open %s.  (%s)\n", config.pcap_file, config.errbuf);
             exit(1);
         }
+        show_snapshot(pcap_snapshot(config.handle));
         confine();
 
     }
@@ -1862,8 +1996,10 @@ int main(int argc, char *argv[])
             pcap_freealldevs(alldevs);
         }
         olog("[*] Device: %s\n", config.dev);
+        show_snapshot(config.snaplen);
+        warn_if_gro(config.dev);
 
-        if ((config.handle = pcap_open_live(config.dev, SNAPLENGTH, config.promisc, 500,
+        if ((config.handle = pcap_open_live(config.dev, config.snaplen, config.promisc, 500,
              config.errbuf)) == NULL) {
             elog("[*] Error pcap_open_live: %s \n", config.errbuf);
             exit(1);

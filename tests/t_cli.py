@@ -45,7 +45,10 @@ def main():
     code, out, err = run(["-h"])
     report(code == 0 and "ip6[6] = 44" in out and "-u <uid>" in out
            and "h:HTTPS" in out and "V:SVCB" in out and "0:NOERR" in out
-           and "i: Server IP TTL" in out and "46CDNPRShV" in out,
+           and "i: Server IP TTL" in out and "46CDNPRShV" in out
+           and "-s <bytes>" in out and "4096" in out and "262144" in out
+           and "ethtool -K <iface> gro off" in out
+           and "--stats-file <file>" in out,
            "help", out + err)
 
     missing = tempfile.mkdtemp(prefix="pdns-missing-")
@@ -71,6 +74,44 @@ def main():
 
     code, out, err = run(["-T", "/no/such/pdns-chroot"], empty)
     report(code != 0 and "failed to chroot" in (out + err), "chroot-missing", out + err)
+
+    code, out, err = run([], empty)
+    report(code == 0 and "Snapshot length: 65535" in out
+           and "Record letters: 46CDNPRShV" in out
+           and "-s " not in out,
+           "startup-letters", out + err)
+
+    code, out, err = run(["-q"], empty)
+    report(code == 0 and "Snapshot length:" not in out
+           and "Record letters:" not in out
+           and "PassiveDNS" not in out,
+           "quiet-startup", out + err)
+
+    code, out, err = run(["-s", "4096"], empty)
+    report(code == 0 and "-s 4096 does not apply when reading a pcap" in out
+           and "Snapshot length: 65535" in out,
+           "snaplen-ignored-on-read", out + err)
+
+    code, out, err = run(["-s", "0"], empty)
+    report(code == 0 and "-s 262144 does not apply when reading a pcap" in out,
+           "snaplen-zero", out + err)
+
+    code, out, err = run(["-s", "/var/log/passivedns.stats"], empty)
+    report(code != 0 and "snapshot length" in (out + err)
+           and "--stats-file" in (out + err),
+           "snaplen-was-stats-file", out + err)
+
+    code, out, err = run(["-s", "300000"], empty)
+    report(code != 0 and "snapshot length" in (out + err),
+           "snaplen-too-big", out + err)
+
+    code, out, err = run(["--stats-file", "/tmp/pdns-stats"], empty)
+    report(code == 0 and "Record letters: 46CDNPRShV" in out,
+           "stats-file-long", out + err)
+
+    code, out, err = run(["-X", "4nOMT"], empty)
+    report(code == 0 and "Record letters: 4OTMn" in out,
+           "record-letters-replace", out + err)
 
     if os.geteuid() != 0:
         code, out, err = run(["-T", "/tmp"], empty)

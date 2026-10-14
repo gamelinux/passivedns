@@ -14,6 +14,15 @@
   headers for a port match
 * IPv6 extension headers are walked, including fragment headers
 * DNS over TCP is collected per direction up to one maximum message
+* Live capture keeps the first 4096 bytes of each frame (-s).
+  A frame longer than that is cut. TCP reassembly then sees a gap
+  and drops the DNS message. Generic receive offload can present a
+  whole DNS-over-TCP answer as one frame. Turn it off on the
+  capture device:
+    ethtool -K <iface> gro off
+  Reading a pcap uses that file's snapshot length. -s does not
+  change it. Startup prints the snapshot length and the enabled
+  record letters unless -q is set. The offload warning is on stderr.
 * HTTPS and SVCB answers are logged by default when ldns is 1.8.3
   or newer. The answer text is the priority, the target name, and
   the service parameters

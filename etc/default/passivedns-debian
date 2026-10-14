@@ -9,6 +9,10 @@
 #                  extension headers (hop-by-hop, routing, fragment,
 #                  destination options).
 #  -p <file>       Name of pid file (default: /var/run/passivedns.pid).
+#  -s <bytes>      Live snapshot length (default: 4096, 0 means 262144).
+#                  A longer frame is truncated. On the capture device:
+#                  ethtool -K <iface> gro off
+#  --stats-file <file>  Write SIGUSR1 stats to this file.
 #  -S <mem>        Soft memory limit in MB (default: 256).
 #  -C <sec>        Seconds to cache DNS objects in memory (default 43200).
 #  -P <sec>        Seconds between printing duplicate DNS info (default 86400).
