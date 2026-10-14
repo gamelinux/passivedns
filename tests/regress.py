@@ -82,12 +82,46 @@ def eth(payload, etype=0x0800):
     return b"\x00" * 12 + struct.pack(">H", etype) + payload
 
 
-def write_pcap(path, packets):
+def write_pcap(path, packets, linktype=1, times=None):
     with open(path, "wb") as fh:
-        fh.write(struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1))
+        fh.write(struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, linktype))
         for i, pkt in enumerate(packets):
-            fh.write(struct.pack("<IIII", 1700000000, i, len(pkt), len(pkt)))
+            sec, usec = (1700000000, i) if not times else times[i]
+            fh.write(struct.pack("<IIII", sec, usec, len(pkt), len(pkt)))
             fh.write(pkt)
+
+
+def charstr(text):
+    raw = text.encode()
+    return bytes([len(raw)]) + raw
+
+
+def dns_nxdomain(tid, qname):
+    hdr = struct.pack(">HHHHHH", tid, 0x8183, 1, 0, 0, 0)
+    return hdr + name(qname) + struct.pack(">HH", 1, 1)
+
+
+def dns_answers(tid, qname, qtype, answers):
+    hdr = struct.pack(">HHHHHH", tid, 0x8180, 1, len(answers), 0, 0)
+    question = name(qname) + struct.pack(">HH", qtype, 1)
+    body = b""
+    for owner, typ, ttl, rdata in answers:
+        body += name(owner) + struct.pack(">HHIH", typ, 1, ttl, len(rdata)) + rdata
+    return hdr + question + body
+
+
+def eth_vlan(payload, vid=100):
+    tci = vid & 0x0FFF
+    return b"\x00" * 12 + struct.pack(">HHH", 0x8100, tci, 0x0800) + payload
+
+
+def qa(src, dst, sport, tid, qname, rdata, qtype=1):
+    q = dns_query(tid, qname, qtype)
+    a = dns_response(tid, qname, rdata, qtype)
+    return [
+        eth(ipv4(src, dst, 17, udp(sport, 53, q))),
+        eth(ipv4(dst, src, 17, udp(53, sport, a))),
+    ]
 
 
 def find_binary():
@@ -100,39 +134,54 @@ def find_binary():
     sys.exit("set PASSIVEDNS to the passivedns binary")
 
 
-def run_case(binary, packets, args):
+def run_case(binary, packets, args, linktype=1, times=None):
     tmp = tempfile.mkdtemp(prefix="pdns-regress-")
     try:
         pcap = os.path.join(tmp, "case.pcap")
         log = os.path.join(tmp, "case.log")
-        write_pcap(pcap, packets)
+        write_pcap(pcap, packets, linktype, times)
         cmd = [binary, "-r", pcap, "-l", log, "-L", log] + args
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         except subprocess.TimeoutExpired:
-            return 124, "", "timeout"
+            return 124, "", "timeout", False
         text = ""
+        mode_ok = False
         if os.path.exists(log):
+            mode_ok = (os.stat(log).st_mode & 0o777) == 0o640
             with open(log, encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
-        return proc.returncode, text, proc.stderr
+        return proc.returncode, text, proc.stderr, mode_ok
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def expect_logged(binary, label, packets, needle, args=None):
-    code, text, err = run_case(binary, packets, args or [])
+def expect_logged(binary, label, packets, needle, args=None, linktype=1, absent=(), times=None):
+    code, text, err, mode_ok = run_case(binary, packets, args or [], linktype, times)
     lines = [ln for ln in text.splitlines() if needle in ln]
-    if code != 0 or len(lines) != 1:
-        return False, "%s: exit %s lines %d\n%s\n%s" % (
-            label, code, len(lines), text, err)
+    if code != 0 or not mode_ok or len(lines) != 1:
+        return False, "%s: exit %s mode %s lines %d\n%s\n%s" % (
+            label, code, mode_ok, len(lines), text, err)
+    for item in absent:
+        if item in lines[0]:
+            return False, "%s: unexpected %r in %s" % (label, item, lines[0])
     return True, lines[0]
 
 
-def expect_quiet(binary, label, packets, args=None):
-    code, text, err = run_case(binary, packets, args or [])
-    if code != 0 or text.strip():
-        return False, "%s: exit %s\n%s\n%s" % (label, code, text, err)
+def expect_many(binary, label, packets, needles, args=None, linktype=1):
+    code, text, err, mode_ok = run_case(binary, packets, args or [], linktype)
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    found = [n for n in needles if any(n in ln for ln in lines)]
+    if code != 0 or not mode_ok or len(lines) != len(needles) or len(found) != len(needles):
+        return False, "%s: exit %s mode %s lines %d found %s\n%s\n%s" % (
+            label, code, mode_ok, len(lines), found, text, err)
+    return True, "\n".join(lines)
+
+
+def expect_quiet(binary, label, packets, args=None, linktype=1):
+    code, text, err, mode_ok = run_case(binary, packets, args or [], linktype)
+    if code != 0 or not mode_ok or text.strip():
+        return False, "%s: exit %s mode %s\n%s\n%s" % (label, code, mode_ok, text, err)
     return True, "quiet"
 
 
@@ -142,7 +191,7 @@ def cases():
     yield ("udp-a", [
         eth(ipv4("10.0.0.1", "10.0.0.2", 17, udp(40000, 53, q))),
         eth(ipv4("10.0.0.2", "10.0.0.1", 17, udp(53, 40000, a))),
-    ], "a.example.com", None)
+    ], "10.0.0.1||10.0.0.2||IN||a.example.com.||A||9.9.9.9||300||1", None)
 
     udp_dg = udp(53, 40000, a)
     frag1, frag2 = udp_dg[:64], udp_dg[64:]
@@ -228,15 +277,227 @@ def cases():
     ) + (b"\x00" * 20)
     yield ("ihl-zero", [eth(raw)], None, ["-b", "ip"])
 
+    yield ("aaaa", qa("10.5.0.1", "10.5.0.2", 44000, 0x6111, "aaaa.example.com",
+                      socket.inet_pton(socket.AF_INET6, "2001:db8::9"), 28),
+           "aaaa.example.com.||AAAA||2001:db8::9", None)
+
+    yield ("cname", qa("10.5.0.1", "10.5.0.2", 44001, 0x6222, "cname.example.com",
+                       name("target.example.com"), 5),
+           "cname.example.com.||CNAME||target.example.com.", None)
+
+    cname_a = dns_answers(0x6333, "www.example.com", 1, [
+        ("www.example.com", 5, 300, name("target.example.com")),
+        ("target.example.com", 1, 300, socket.inet_aton("9.9.9.9")),
+    ])
+    qchain = dns_query(0x6333, "www.example.com")
+    yield ("cname-a", [
+        eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44002, 53, qchain))),
+        eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44002, cname_a))),
+    ], ("www.example.com.||CNAME||target.example.com.",
+        "target.example.com.||A||9.9.9.9"), None)
+
+    yield ("ptr", qa("10.5.0.1", "10.5.0.2", 44003, 0x6444,
+                     "4.3.2.1.in-addr.arpa", name("host.example.com"), 12),
+           "4.3.2.1.in-addr.arpa.||PTR||host.example.com.", None)
+
+    naptr = (struct.pack(">HH", 100, 10) + charstr("u") + charstr("sip+E2U")
+             + charstr("!^.*$!sip:ed@example.com!") + name("."))
+    yield ("naptr", qa("10.5.0.1", "10.5.0.2", 44004, 0x6555, "naptr.example.com",
+                       naptr, 35),
+           "sip:ed@example.com", None)
+
+    srv = struct.pack(">HHH", 10, 20, 5060) + name("sip.example.com")
+    yield ("srv", qa("10.5.0.1", "10.5.0.2", 44005, 0x6666, "srv.example.com",
+                     srv, 33),
+           "srv.example.com.||SRV||sip.example.com.", None)
+
+    mx = struct.pack(">H", 10) + name("mail.example.com")
+    yield ("mx", qa("10.5.0.1", "10.5.0.2", 44006, 0x6777, "mx.example.com", mx, 15),
+           "mail.example.com", ["-X", "M"])
+    yield ("mx-off", qa("10.5.0.1", "10.5.0.2", 44007, 0x6778, "mxoff.example.com",
+                        mx, 15), None, None)
+
+    yield ("txt-off", qa("10.5.0.1", "10.5.0.2", 44008, 0x6888, "txtoff.example.com",
+                         txt_rdata("hello"), 16), None, None)
+
+    qnx = dns_query(0x6999, "nx.example.com")
+    nx = dns_nxdomain(0x6999, "nx.example.com")
+    nxpkts = [
+        eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44009, 53, qnx))),
+        eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44009, nx))),
+    ]
+    yield ("nxdomain", nxpkts, "nx.example.com.||A||NXDOMAIN", ["-X", "x"])
+    yield ("nxdomain-off", nxpkts, None, None)
+
+    qonly = dns_query(0x6aaa, "qonly.example.com")
+    yield ("query-only", [
+        eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44010, 53, qonly))),
+    ], None, None)
+
+    aonly = dns_response(0x6bbb, "aonly.example.com", socket.inet_aton("9.9.9.9"))
+    yield ("answer-only", [
+        eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44011, aonly))),
+    ], None, None)
+
+    qbad = dns_query(0x6ccc, "tid.example.com")
+    abad = dns_response(0x6ccd, "tid.example.com", socket.inet_aton("9.9.9.9"))
+    yield ("tid-mismatch", [
+        eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44012, 53, qbad))),
+        eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44012, abad))),
+    ], None, None)
+
+    qzero = dns_query(0, "zero.example.com")
+    azero = dns_response(0, "zero.example.com", socket.inet_aton("9.9.9.9"))
+    yield ("tid-zero", [
+        eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44013, 53, qzero))),
+        eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44013, azero))),
+    ], None, None)
+
+    qdup = dns_query(0x6ddd, "dup.example.com")
+    adup = dns_response(0x6ddd, "dup.example.com", socket.inet_aton("9.9.9.9"))
+    # Same timestamp on every packet. A newer timestamp is flushed again at shutdown.
+    yield ("duplicate", [
+        eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44014, 53, qdup))),
+        eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44014, adup))),
+        eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44014, 53, qdup))),
+        eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44014, adup))),
+    ], "dup.example.com.||A||9.9.9.9", None, 1, (), ((1700000000, 0),) * 4)
+
+    vlan_q = dns_query(0x7001, "vlan.example.com")
+    vlan_a = dns_response(0x7001, "vlan.example.com", socket.inet_aton("9.9.9.9"))
+    vlan_pkts = [
+        eth_vlan(ipv4("10.6.0.1", "10.6.0.2", 17, udp(45000, 53, vlan_q))),
+        eth_vlan(ipv4("10.6.0.2", "10.6.0.1", 17, udp(53, 45000, vlan_a))),
+    ]
+    # The default filter does not look inside a VLAN tag.
+    yield ("vlan-bpf", vlan_pkts, None, None)
+    yield ("vlan", vlan_pkts, "vlan.example.com.||A||9.9.9.9",
+           ["-b", "vlan and port 53"])
+
+    # Second fragment arrives before the first.
+    yield ("ipv4-ooo", [
+        eth(ipv4("10.0.0.1", "10.0.0.2", 17, udp(40000, 53, q), ident=1)),
+        eth(ipv4("10.0.0.2", "10.0.0.1", 17, frag2, ident=11, off=64 // 8)),
+        eth(ipv4("10.0.0.2", "10.0.0.1", 17, frag1, ident=11, off=0x2000)),
+    ], "a.example.com.||A||9.9.9.9", None)
+
+    short_frag = udp_dg[:20]
+    yield ("ipv4-frag-unaligned", [
+        eth(ipv4("10.0.0.1", "10.0.0.2", 17, udp(40000, 53, q), ident=1)),
+        eth(ipv4("10.0.0.2", "10.0.0.1", 17, short_frag, ident=12, off=0x2000)),
+        eth(ipv4("10.0.0.2", "10.0.0.1", 17, udp_dg[20:], ident=12, off=20 // 8)),
+    ], None, None)
+
+    yield ("port-80", [
+        eth(ipv4("10.7.0.1", "10.7.0.2", 17, udp(40000, 80, q))),
+        eth(ipv4("10.7.0.2", "10.7.0.1", 17, udp(80, 40000, a))),
+    ], None, None)
+
+    yield ("mem-zero", qa("10.8.0.1", "10.8.0.2", 46000, 0x7111, "mem.example.com",
+                          socket.inet_aton("9.9.9.9")), None, ["-S", "0"])
+
+    yield ("fields-qt", qa("10.8.0.1", "10.8.0.2", 46001, 0x7222, "fields.example.com",
+                           socket.inet_aton("9.9.9.9")),
+           "fields.example.com.||A", ["-f", "QT"], 1, ("10.8.0.1", "9.9.9.9"))
+
+    yield ("fields-fallback", qa("10.8.0.1", "10.8.0.2", 46002, 0x7333,
+                                 "fallback.example.com", socket.inet_aton("9.9.9.9")),
+           "fallback.example.com.||A||9.9.9.9||300||1", ["-f", "Z"])
+
+    yield ("flags-fallback", qa("10.8.0.1", "10.8.0.2", 46003, 0x7444,
+                                "flagfall.example.com", socket.inet_aton("9.9.9.9")),
+           "flagfall.example.com.||A||9.9.9.9", ["-X", "Z"])
+
+    yield ("delim", qa("10.8.0.1", "10.8.0.2", 46004, 0x7555, "delim.example.com",
+                       socket.inet_aton("9.9.9.9")),
+           "delim.example.com.|A|9.9.9.9", ["-d", "|"])
+
+    quoted = txt_rdata("o'brien\\path")
+    yield ("txt-quote", qa("10.8.0.1", "10.8.0.2", 46005, 0x7666, "quote.example.com",
+                           quoted, 16),
+           "o'brien", ["-X", "T"])
+
+    comp = b"\xc0\x0c" + struct.pack(">HHIH", 1, 1, 300, 4) + socket.inet_aton("9.9.9.9")
+    qcomp = dns_query(0x7777, "comp.example.com")
+    acomp = struct.pack(">HHHHHH", 0x7777, 0x8180, 1, 1, 0, 0) + name("comp.example.com") + struct.pack(">HH", 1, 1) + comp
+    yield ("compressed", [
+        eth(ipv4("10.9.0.1", "10.9.0.2", 17, udp(47000, 53, qcomp))),
+        eth(ipv4("10.9.0.2", "10.9.0.1", 17, udp(53, 47000, acomp))),
+    ], "comp.example.com.||A||9.9.9.9", None)
+
+    raw_q = ipv4("10.9.0.1", "10.9.0.2", 17, udp(47001, 53, dns_query(0x7888, "raw.example.com")))
+    raw_a = ipv4("10.9.0.2", "10.9.0.1", 17, udp(53, 47001,
+                 dns_response(0x7888, "raw.example.com", socket.inet_aton("9.9.9.9"))))
+    yield ("dlt-raw", [raw_q, raw_a], "raw.example.com.||A||9.9.9.9", None, 101)
+
+    nq = ipv4("10.9.0.1", "10.9.0.2", 17, udp(47002, 53, dns_query(0x7999, "null.example.com")))
+    na = ipv4("10.9.0.2", "10.9.0.1", 17, udp(53, 47002,
+              dns_response(0x7999, "null.example.com", socket.inet_aton("9.9.9.9"))))
+    yield ("dlt-null", [struct.pack("<I", socket.AF_INET) + nq,
+                        struct.pack("<I", socket.AF_INET) + na],
+           "null.example.com.||A||9.9.9.9", None, 0)
+
+    sll = struct.pack(">HHH", 0, 1, 6) + b"\x00" * 8 + struct.pack(">H", 0x0800)
+    yield ("dlt-sll", [sll + nq, sll + na], "null.example.com.||A||9.9.9.9", None, 113)
+
+    rh = bytes([17, 0]) + b"\x00" * 6
+    qdst = dns_query(0x7aaa, "dest.example.com")
+    adst = dns_response(0x7aaa, "dest.example.com", socket.inet_aton("9.9.9.9"))
+    yield ("ipv6-dest", [
+        eth(ipv6(src6, dst6, 60, rh + udp(48000, 53, qdst)), 0x86DD),
+        eth(ipv6(dst6, src6, 60, rh + udp(53, 48000, adst)), 0x86DD),
+    ], "dest.example.com.||A||9.9.9.9", None)
+
+    qrt = dns_query(0x7bbb, "route.example.com")
+    art = dns_response(0x7bbb, "route.example.com", socket.inet_aton("9.9.9.9"))
+    yield ("ipv6-route", [
+        eth(ipv6(src6, dst6, 43, rh + udp(48001, 53, qrt)), 0x86DD),
+        eth(ipv6(dst6, src6, 43, rh + udp(53, 48001, art)), 0x86DD),
+    ], "route.example.com.||A||9.9.9.9", None)
+
+    qat = dns_query(0x7abd, "atomic.example.com")
+    aat = dns_response(0x7abd, "atomic.example.com", socket.inet_aton("9.9.9.9"))
+    atomic = struct.pack(">BBHI", 17, 0, 0, 9) + udp(53, 48002, aat)
+    yield ("ipv6-atomic", [
+        eth(ipv6(src6, dst6, 17, udp(48002, 53, qat)), 0x86DD),
+        eth(ipv6(dst6, src6, 44, atomic), 0x86DD),
+    ], "atomic.example.com.||A||9.9.9.9", None)
+
+    qre = dns_query(0x7ccc, "re.example.com")
+    are = dns_response(0x7ccc, "re.example.com", socket.inet_aton("5.6.7.8"))
+    qmsg2 = struct.pack(">H", len(qre)) + qre
+    amsg2 = struct.pack(">H", len(are)) + are
+    yield ("tcp-retransmit", [
+        eth(ipv4("10.1.0.1", "10.1.0.2", 6, tcp(41002, 53, 1000, qmsg2[:10]))),
+        eth(ipv4("10.1.0.1", "10.1.0.2", 6, tcp(41002, 53, 1000, qmsg2[:10]))),
+        eth(ipv4("10.1.0.1", "10.1.0.2", 6, tcp(41002, 53, 1010, qmsg2[10:]))),
+        eth(ipv4("10.1.0.2", "10.1.0.1", 6, tcp(53, 41002, 5000, amsg2))),
+    ], "re.example.com.||A||5.6.7.8", None)
+
+    yield ("short-eth", [b"\x00" * 10], None, None)
+
+    tiny = struct.pack(">BBHHHBBH4s4s", 0x45, 0, 10, 1, 0, 64, 17, 0,
+                       socket.inet_aton("10.4.0.1"), socket.inet_aton("10.4.0.2"))
+    yield ("ip-total-short", [eth(tiny)], None, None)
+
+    yield ("empty-pcap", [], None, None)
+
 
 def main():
     binary = find_binary()
     failed = 0
-    for label, packets, needle, args in cases():
-        if needle:
-            ok, detail = expect_logged(binary, label, packets, needle, args)
+    for case in cases():
+        label, packets, needle, args = case[:4]
+        linktype = case[4] if len(case) > 4 else 1
+        absent = case[5] if len(case) > 5 else ()
+        times = case[6] if len(case) > 6 else None
+        if needle is None:
+            ok, detail = expect_quiet(binary, label, packets, args, linktype)
+        elif isinstance(needle, tuple):
+            ok, detail = expect_many(binary, label, packets, needle, args, linktype)
         else:
-            ok, detail = expect_quiet(binary, label, packets, args)
+            ok, detail = expect_logged(
+                binary, label, packets, needle, args, linktype, absent, times)
         print("%s %s" % ("PASS" if ok else "FAIL", label))
         if not ok:
             failed += 1
