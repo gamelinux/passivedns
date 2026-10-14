@@ -113,6 +113,10 @@ def main():
     report(code == 0 and "Record letters: 4OTMn" in out,
            "record-letters-replace", out + err)
 
+    code, out, err = run(["-X", "F"], empty)
+    report(code == 0 and "Record letters: F" in out and "FT" not in out,
+           "spf-does-not-enable-txt", out + err)
+
     if os.geteuid() != 0:
         code, out, err = run(["-T", "/tmp"], empty)
         report(code != 0 and "failed to chroot" in (out + err), "chroot-unpriv", out + err)

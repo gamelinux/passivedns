@@ -1915,6 +1915,7 @@ void parse_dns_flags(char *args)
                 config.dnsf |= DNS_CHK_SPF;
                 dlog("[D] Enabling flag: DNS_CHK_SPF\n");
                 ok++;
+                break;
             case 'T': /* TXT */
                 config.dnsf |= DNS_CHK_TXT;
                 dlog("[D] Enabling flag: DNS_CHK_TXT\n");
