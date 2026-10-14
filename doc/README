@@ -11,14 +11,15 @@
 ########
 
 # passivedns
+See doc/INSTALL for the Ubuntu 26.04 build.
+
 root@localhost: ./passivedns -i eth1 -l /var/log/passivedns.log
 
 # pdns2db.pl
-root@localhost: apt-get install libdatetime-perl
-(Redhat/CentOS: yum install perl-DateTime)
+root@localhost: sudo apt install libdatetime-perl libdate-simple-perl libdbd-mysql-perl
 
-First you need to add a user to the mysql db. Grant only SELECT, CREATE,
-INSERT, and UPDATE on the pdns database.
+First you need to add a user to the MySQL or MariaDB server. Grant only
+SELECT, CREATE, INSERT, and UPDATE on the pdns database.
 
 mysql> CREATE DATABASE pdns;
 mysql> CREATE USER 'pdns'@'localhost' IDENTIFIED BY 'choose-a-password';

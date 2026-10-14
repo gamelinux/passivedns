@@ -3,8 +3,9 @@
 ## Packet capture
 * Uses libpcap
 * Decodes packets as they come in.
-* Handles vlan (looks inside vlan packets, but does not
-  currently print out the vlan tag seen)
+* Handles VLAN when the packet is delivered to the decoder. The tag
+  is not printed. The default BPF does not match 802.1Q; use a filter
+  such as "vlan and port 53"
 * Handles IPv4 and IPv6 packets
 * We look at DNS on UDP and TCP
 * IPv4 and IPv6 fragments are reassembled. The default filter keeps
@@ -13,6 +14,12 @@
   headers for a port match
 * IPv6 extension headers are walked, including fragment headers
 * DNS over TCP is collected per direction up to one maximum message
+* HTTPS and SVCB answers are logged by default when ldns is 1.8.3
+  or newer. The answer text is the priority, the target name, and
+  the service parameters
+* An empty NOERROR answer is logged only with -X 0
+* -f i prints the IP TTL, or IPv6 hop limit, of the reply. It is
+  not in the default field mask
 
 ## Connection Tracking
 * Same connection tracking as in cxtracker
@@ -28,16 +35,12 @@
   server answered the right TID request :)
 
 ## Domain caching
-* When a DNS question and answer is recieved, it
-  is stored in an internal linked list. If its new,
-  we will print the info to the logfile, and we will
-  not print it again befor it has gone 12 hours or
-  the record has changed. This is to provent flooding
-  of data to the log file, and serving you much duplicat
-  info.
-* If we have not seen any activity agains a domain in 24h,
-  it will be deleted from the internal cache.
-* If we have not seen any activity of any related entries
-  within 24h, it will be deleted...
+* When a DNS question and answer is received, it is stored
+  in an internal linked list. A new answer is printed once.
+  The same answer is not printed again for 24 hours
+  (DNSPRINTTIME, 86400 seconds) unless the record changes.
+* A record that has not been updated for 12 hours
+  (DNSCACHETIMEOUT, 43200 seconds) is dropped from the cache.
+  Both intervals can be changed with -P and -C.
 
 

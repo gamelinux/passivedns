@@ -1,74 +1,91 @@
-# General:
-  # PassiveDNS was initially developed on a Ubuntu 10.04 platform, and later on Ubuntu 12.04, so all
-  # main testing was done on Ubuntu. I have compiled passivedns static and dynamic
-  # and tried it out on different linux OSes with great luck.
-  # I try to keep the git tags "stable" and the master branch might be under development.
-  # If you have issues with the current master, please read doc/ISSUES
+PassiveDNS on Ubuntu 26.04
 
-FreeBSD Install
-  $ pkg_add -r gmake git ldns
-  $ rehash
-  $ mkdir /usr/local/src/; cd /usr/local/src
-  $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/
-  $ autoreconf --install
-  $ ./configure
-  $ gmake
+These steps match Ubuntu 26.04 LTS (Resolute). libldns-dev, libjansson-dev,
+and the Perl database modules are in universe. Enable that component if apt
+cannot see them.
 
-OS X (using Homebrew for dependencies)
-  $ brew install automake autoconf ldns jansson
-  $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/
-  $ autoreconf --install
-  $ ./configure
-  $ make
+Build
+-----
 
-Macbook Pro 2023 running Sonoma 14.4.1 (using Homebrew for dependencies)
-  $ brew install automake autoconf ldns jansson openssl
-  $ export LDFLAGS="-L$(brew --prefix openssl)/lib $LDFLAGS"
-  $ export CPPFLAGS="-I$(brew --prefix openssl)/include $CPPFLAGS"
-  $ export LDFLAGS="-L$(brew --prefix ldns)/lib $LDFLAGS"
-  $ export CPPFLAGS="-I$(brew --prefix ldns)/include $CPPFLAGS"
-  $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/
-  $ autoreconf --install
-  $ ./configure
-  $ make
+    sudo apt update
+    sudo apt install git build-essential autoconf automake \
+        libldns-dev libpcap-dev
 
-Ubuntu
-  $ sudo apt-get install git-core binutils-dev libldns1 libldns-dev libpcap-dev 
-  # libdate-simple-perl is also needed for pdns2db.pl
-  $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/
-  $ autoreconf --install
-  $ ./configure
-  $ make
+    git clone https://github.com/gamelinux/passivedns.git
+    cd passivedns
+    autoreconf --install
+    ./configure
+    make
 
-Debian 12 (Bookworm)
-  $ sudo apt install git build-essential libldns-dev libpcap-dev automake autoconf
-  # libdate-simple-perl might be needed for pdns2db.pl if you're using it
-  $ sudo apt install libdate-simple-perl
-  $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/
-  $ autoreconf --install
-  $ ./configure
-  $ make
+The binary is src/passivedns. libldns-dev on Ubuntu 26.04 is ldns 1.8.4,
+which is new enough for the HTTPS and SVCB decoder (ldns 1.8.3 or newer).
 
-RedHat (RHEL 6u2 x86_64)
-  $ yum groupinstall "Development tools"
-  # EPEL : http://fedora.uib.no/epel/6/x86_64/
-  $ rpm -Uvh http://download.fedoraproject.org/pub/epel/6/x86_64/ldns-devel-1.6.11-2.el6.x86_64.rpm
-  $ rpm -Uvh http://download.fedoraproject.org/pub/epel/6/x86_64/ldns-1.6.11-2.el6.x86_64.rpm
-  # perl-DateTime is also needed for pdns2db.pl
-  $ wget http://www.tcpdump.org/release/libpcap-1.2.1.tar.gz
-  $ tar zxf libpcap-1.2.1.tar.gz; cd libpcap-1.2.1; ./configure; make && make install
-  $ git clone git://github.com/gamelinux/passivedns.git
-  $ cd passivedns/
-  $ autoreconf --install
-  $ ./configure
-  $ make
+    sudo install -m 0755 src/passivedns /usr/local/bin/passivedns
 
+A source install lands in /usr/local/bin. The example init script in
+etc/init.d/passivedns-debian still points DAEMON at /usr/bin/passivedns.
+Change that path if you use the example.
 
+JSON output is optional:
 
+    sudo apt install libjansson-dev
+    ./configure --enable-json
+    make
 
+Run
+---
 
+Reading a pcap does not need a capture device:
+
+    passivedns -r capture.pcap -l /tmp/passivedns.log -L /tmp/passivedns.log
+
+Live capture uses libpcap and starts as root. -u, -g, and -T are
+fail-closed: a missing user, group, or directory makes passivedns exit.
+Leave those options off until the account exists. The example in
+etc/default/passivedns-debian keeps UID and GID commented for that reason.
+
+The default BPF keeps UDP/TCP port 53, IPv4 fragments, and the IPv6
+extension headers a port match would miss. It does not match 802.1Q.
+For VLAN traffic pass a filter such as:
+
+    passivedns -i eth0 -b "vlan and port 53" -l /var/log/passivedns.log
+
+HTTPS and SVCB answers are logged by default. An empty NOERROR answer
+is logged only with -X 0. -f i adds the IP TTL (IPv6 hop limit) of the
+reply and is not in the default field mask. passivedns -h lists the flags.
+
+Logs are created mode 0640. The same path can be passed to -l and -L.
+
+Tests
+-----
+
+python3 from the base install is enough:
+
+    python3 tests/run.py
+
+If the binary is not src/passivedns:
+
+    PASSIVEDNS=/usr/local/bin/passivedns python3 tests/run.py
+
+The PHP page check runs only when php-cli is installed. Without it, that
+part of the suite is skipped.
+
+Database tools
+--------------
+
+pdns2db.pl and search-pdns.pl talk to MySQL or MariaDB. They read the
+password from PDNS_DB_PASSWORD and refuse to connect without it.
+
+    sudo apt install libdatetime-perl libdate-simple-perl libdbd-mysql-perl
+
+Create the database and a user with SELECT, CREATE, INSERT, and UPDATE
+on it. Then:
+
+    export PDNS_DB_PASSWORD='choose-a-password'
+    perl tools/pdns2db.pl --file /var/log/passivedns.log
+
+search-pdns.pl uses the same variables. See doc/README.
+
+The page in www/ is a local demo. It needs php-cli and php-mysql (mysqli),
+the same PDNS_DB_PASSWORD, and PDNS_WEB_TOKEN when it is reachable past
+localhost.

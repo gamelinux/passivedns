@@ -1,5 +1,6 @@
 Changes with PassiveDNS 1.3.0
 
+- Document the Ubuntu 26.04 build and drop the older distro notes
 - Build with PIE, full RELRO, a non-executable stack, and fortified libc calls
 - Log HTTPS and SVCB answers by default
 - Log an empty NOERROR answer when -X 0 is set

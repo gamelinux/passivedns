@@ -15,6 +15,8 @@ the DNS-server answers to a log file. PassiveDNS can cache/aggregate duplicate
 DNS answers in-memory, limiting the amount of data in the logfile without
 losing the essense in the DNS answer.
 
+Build instructions for Ubuntu 26.04 are in doc/INSTALL.
+
 Example output from version 1.0.0->Current in the log file (/var/log/passivedns.log):
 
 #timestamp||dns-client ||dns-server||RR class||Query||Query Type||Answer||TTL||Count
@@ -25,7 +27,9 @@ Example output from version 1.0.0->Current in the log file (/var/log/passivedns.
 1322849924.408860||10.1.1.1||8.8.8.8||IN||i1.ytimg.com.||CNAME||ytimg.l.google.com.||43200||3
 1322849924.408861||10.1.1.1||8.8.8.8||IN||clients1.google.com.||A||173.194.32.3||43200||2
 
-PassiveDNS works on IPv4 and IPv6 traffic and parse DNS traffic over TCP and UDP.
+PassiveDNS parses IPv4 and IPv6, including fragments and IPv6 extension
+headers, and DNS over UDP and TCP. HTTPS and SVCB answers are logged by
+default.
 
 ** How can PassiveDNS be used: **
 
