@@ -75,8 +75,8 @@ our $DB_NAME       = "pdns";
 our $DB_HOST       = "127.0.0.1";
 our $DB_PORT       = "3306";
 our $DB_USERNAME   = "pdns";
-our $DB_PASSWORD   = "pdns";
-our $DBI           = "DBI:mysql:$DB_NAME:$DB_HOST:$DB_PORT";
+our $DB_PASSWORD;
+our $DBI;
 our $TABLE_NAME    = "pdns";
 our $AUTOCOMMIT    = 0;
 our $BATCH         = 0;
@@ -161,9 +161,12 @@ if ( $DAEMON ) {
    open (STDERR, ">&STDOUT");
 }
 
+db_from_env();
+
 if ($NODB == 0) {
     logger("[*] Connecting to database...");
-    $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1, mysql_auto_reconnect=>1}) or die "$DBI::errstr";
+    $dbh = DBI->connect($DBI,$DB_USERNAME,$DB_PASSWORD, {RaiseError => 1, PrintError => 0, mysql_auto_reconnect=>1})
+        or die "database connect failed: $DBI::errstr\n";
     # Setup the pdns table, if not exist
     setup_db();
 } else {
@@ -289,17 +292,37 @@ sub parseLogfile {
     close(LOGFILE);
 }
 
+sub db_from_env {
+    $DB_HOST = $ENV{PDNS_DB_HOST} if defined $ENV{PDNS_DB_HOST} && $ENV{PDNS_DB_HOST} ne '';
+    $DB_PORT = $ENV{PDNS_DB_PORT} if defined $ENV{PDNS_DB_PORT} && $ENV{PDNS_DB_PORT} =~ /^\d+$/;
+    $DB_NAME = $ENV{PDNS_DB_NAME} if defined $ENV{PDNS_DB_NAME} && $ENV{PDNS_DB_NAME} ne '';
+    $DB_USERNAME = $ENV{PDNS_DB_USER} if defined $ENV{PDNS_DB_USER} && $ENV{PDNS_DB_USER} ne '';
+    $TABLE_NAME = $ENV{PDNS_DB_TABLE} if defined $ENV{PDNS_DB_TABLE} && $ENV{PDNS_DB_TABLE} ne '';
+    die "PDNS_DB_NAME must be an identifier\n" unless $DB_NAME =~ /^[A-Za-z0-9_]+$/;
+    die "PDNS_DB_TABLE must be an identifier\n" unless $TABLE_NAME =~ /^[A-Za-z0-9_]+$/;
+    if ($NODB == 0) {
+        $DB_PASSWORD = $ENV{PDNS_DB_PASSWORD};
+        die "Set PDNS_DB_PASSWORD\n" unless defined $DB_PASSWORD && $DB_PASSWORD ne '';
+    }
+    $DBI = "DBI:mysql:database=$DB_NAME;host=$DB_HOST;port=$DB_PORT";
+}
+
 sub put_dns_to_db {
     # 1322849924.123456||192.168.1.1||8.8.8.8||IN||www.adobe.com.||CNAME||www.wip4.adobe.com.||3600||22
     # 1322849924.123456||192.168.1.1||8.8.8.8||IN||www.adobe.com.||A||193.104.215.61||600||11
     my ($tst, $cip, $sip, $rr, $query, $type, $answer, $ttl, $count) = @_;
-    my ($ts, $tsu) = split(/\./,$tst);
+    my ($ts, $tsu) = split(/\./, defined $tst ? $tst : '');
     my $tsl = $ts;
 
-    $query  =~ s/^(.*)\.$/$1/; # Strip trailing dot
-    $answer =~ s/^(.*)\.$/$1/; # Strip trailing dot
-    $query  =~ s/(')/\\$1/g; # Wash "user-input" for non-friendly sql chars
-    $answer =~ s/(')/\\$1/g; # Wash "user-input" for non-friendly sql chars
+    $query  = '' unless defined $query;
+    $answer = '' unless defined $answer;
+    $rr     = '' unless defined $rr;
+    $type   = '' unless defined $type;
+    $query  =~ s/\.$//;
+    $answer =~ s/\.$//;
+    return 1 unless defined $ts && $ts =~ /^\d+$/;
+    return 1 unless defined $ttl && $ttl =~ /^\d+$/;
+    return 1 unless defined $count && $count =~ /^\d+$/;
 
     my ($sql, $sth);
 
@@ -308,16 +331,16 @@ sub put_dns_to_db {
              INSERT INTO $TABLE_NAME (
                QUERY,RR,MAPTYPE,ANSWER,TTL,COUNT,LAST_SEEN,FIRST_SEEN
              ) VALUES (
-               '$query','$rr','$type','$answer','$ttl','$count',FROM_UNIXTIME($ts),FROM_UNIXTIME($tsl)
+               ?,?,?,?,?,?,FROM_UNIXTIME(?),FROM_UNIXTIME(?)
              ) ON DUPLICATE KEY UPDATE
-               TTL = if (TTL < $ttl, $ttl, TTL),
-               COUNT = COUNT + '$count',
-               LAST_SEEN = if (LAST_SEEN < FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), LAST_SEEN),
-               FIRST_SEEN = if (FIRST_SEEN > FROM_UNIXTIME($ts), FROM_UNIXTIME($ts), FIRST_SEEN)
+               TTL = IF(TTL < VALUES(TTL), VALUES(TTL), TTL),
+               COUNT = COUNT + VALUES(COUNT),
+               LAST_SEEN = IF(LAST_SEEN < VALUES(LAST_SEEN), VALUES(LAST_SEEN), LAST_SEEN),
+               FIRST_SEEN = IF(FIRST_SEEN > VALUES(FIRST_SEEN), VALUES(FIRST_SEEN), FIRST_SEEN)
              ];
       logger("[D] $sql") if $DEBUG > 1;
       $sth = $dbh->prepare($sql);
-      $sth->execute;
+      $sth->execute($query, $rr, $type, $answer, $ttl, $count, $ts, $tsl);
       $sth->finish;
    };
    if ($@) {
@@ -380,7 +403,7 @@ sub checkif_table_exist {
     my $tablename = shift;
     my ($sql, $sth);
     eval {
-       $sql = "select count(*) from pdns where 1=0";
+       $sql = "select count(*) from $TABLE_NAME where 1=0";
        $dbh->do($sql);
     };
     if ($dbh->err) {

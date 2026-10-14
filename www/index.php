@@ -17,119 +17,148 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 # --------------------------------------------------------------------------
 #
-# Configure Start
-$DATABASE = "127.0.0.1";
-$DBUSER   = "pdns";
-$DBTABLE  = "pdns";
-$DBPASSWD = "pdns";
-$DBLIMIT  = 500;
-# Configure End
+# Local demo. Set PDNS_DB_PASSWORD before serving this page.
+# Optional: PDNS_DB_HOST, PDNS_DB_USER, PDNS_DB_NAME, PDNS_WEB_TOKEN.
+# PDNS_WEB_TOKEN, when set, is required on every request as ?token=.
 
-$query = sanitize("query"); if (empty($query)) $query = "";
+$DBHOST = getenv('PDNS_DB_HOST');
+$DBUSER = getenv('PDNS_DB_USER');
+$DBNAME = getenv('PDNS_DB_NAME');
+$DBPASS = getenv('PDNS_DB_PASSWORD');
+$TOKEN  = getenv('PDNS_WEB_TOKEN');
+if ($DBHOST === false || $DBHOST === '') $DBHOST = '127.0.0.1';
+if ($DBUSER === false || $DBUSER === '') $DBUSER = 'pdns';
+if ($DBNAME === false || $DBNAME === '') $DBNAME = 'pdns';
+
+if ($TOKEN !== false && $TOKEN !== '') {
+    $given = isset($_GET['token']) ? (string)$_GET['token'] : '';
+    if ($given === '' || !hash_equals($TOKEN, $given)) {
+        http_response_code(403);
+        echo "Forbidden";
+        exit;
+    }
+} else {
+    $TOKEN = '';
+}
+
+if ($DBPASS === false || $DBPASS === '') {
+    http_response_code(500);
+    echo "PDNS_DB_PASSWORD is not set";
+    exit;
+}
+
+$query = '';
+if (isset($_GET['query']))
+    $query = (string)$_GET['query'];
+elseif (isset($_POST['query']))
+    $query = (string)$_POST['query'];
+$query = str_replace("\0", '', $query);
+if (strlen($query) > 255)
+    $query = substr($query, 0, 255);
 
 print_header();
-print_search_body();
+print_search_body($TOKEN);
 
-if ($query) {
-  echo "<center>";
-  mysql_connect($DATABASE, $DBUSER, $DBPASSWD) or die(mysql_error());
-  mysql_select_db($DBTABLE) or die(mysql_error());
-  if ( filter_var($query, FILTER_VALIDATE_IP) ) {
-    echo "<b>PassiveDNS Records for IP: ". $query ."</b><br><br>";
-    $domains = mysql_query("SELECT * FROM pdns WHERE answer='$query' LIMIT $DBLIMIT");
-    if(mysql_num_rows($domains)==0){
-      echo "<b>No records found...</b><br><br>";
+if ($query !== '') {
+    echo "<center>";
+    $db = mysqli_connect($DBHOST, $DBUSER, $DBPASS, $DBNAME);
+    if (!$db) {
+        echo "<b>Database unavailable.</b>";
     } else {
-      echo "<table cellpadding='2'><tr><td><b>First Seen</b></td><td><b>Last Seen</b></td><td><b>Type</b></td><td><b>TTL</b></td><td><b>Query</b></td><td><b>Answer</b></td><td><b>Count</b></td></tr>";
-      echo '
-           ';
-      while ( $r = mysql_fetch_array($domains) ) {
-        echo "<tr>";
-        echo "<td>". $r['FIRST_SEEN'] ."</td>";
-        echo "<td>". $r['LAST_SEEN'] ."</td>";
-        echo "<td>". $r['MAPTYPE'] ."</td>";
-        echo "<td>". $r['TTL'] ."</td>";
-        echo "<td><a href='?query=". $r['QUERY']  ."'>". $r['QUERY']  ."</a></td>";
-        echo "<td><a href='?query=". $r['ANSWER'] ."'>". $r['ANSWER'] ."</a></td>";
-        echo "<td>". $r['COUNT'] ."</td>";
-        echo "</tr>";
-      }
+        mysqli_set_charset($db, 'utf8mb4');
+        $rows = pdns_search($db, $query);
+        if ($rows === null) {
+            echo "<b>Search failed.</b>";
+        } elseif (count($rows) === 0) {
+            echo "<b>PassiveDNS records for " . h($query) . "</b><br><br>";
+            echo "<b>No records found...</b><br><br>";
+        } else {
+            echo "<b>PassiveDNS records for " . h($query) . "</b><br><br>";
+            echo "<table cellpadding='2'><tr><td><b>First Seen</b></td><td><b>Last Seen</b></td><td><b>Type</b></td><td><b>TTL</b></td><td><b>Query</b></td><td><b>Answer</b></td><td><b>Count</b></td></tr>";
+            foreach ($rows as $r) {
+                echo "<tr>";
+                echo "<td>" . h($r['FIRST_SEEN']) . "</td>";
+                echo "<td>" . h($r['LAST_SEEN']) . "</td>";
+                echo "<td>" . h($r['MAPTYPE']) . "</td>";
+                echo "<td>" . h($r['TTL']) . "</td>";
+                echo "<td><a href='" . qlink($r['QUERY'], $TOKEN) . "'>" . h($r['QUERY']) . "</a></td>";
+                echo "<td><a href='" . qlink($r['ANSWER'], $TOKEN) . "'>" . h($r['ANSWER']) . "</a></td>";
+                echo "<td>" . h($r['COUNT']) . "</td>";
+                echo "</tr>";
+            }
+            echo "</table>";
+        }
+        mysqli_close($db);
     }
-  } else {
-    echo "<b>PassiveDNS Records for Domain: ". $query ."</b> <br><br>";
-    $domains = mysql_query("SELECT * FROM pdns WHERE query LIKE '$query' LIMIT $DBLIMIT");
-    if(mysql_num_rows($domains)==0){
-      echo "<b>No records found...</b><br><br>";
-    } else {
-      echo "<table cellpadding='2'><tr><td><b>First Seen</b></td><td><b>Last Seen</b></td><td><b>Type</b></td><td><b>TTL</b></td><td><b>Query</b></td><td><b>Answer</b></td><td><b>Count</b></td></tr>";
-      echo '
-           ';
-      while ( $r = mysql_fetch_array($domains) ) {
-        echo "<tr>";
-        echo "<td>". $r['FIRST_SEEN'] ."</td>";
-        echo "<td>". $r['LAST_SEEN'] ."</td>";
-        echo "<td>". $r['MAPTYPE'] ."</td>";
-        echo "<td>". $r['TTL'] ."</td>";
-        echo "<td><a href='?query=". $r['QUERY']  ."'>". $r['QUERY']  ."</a></td>";
-        echo "<td><a href='?query=". $r['ANSWER'] ."'>". $r['ANSWER'] ."</a></td>";
-        echo "<td>". $r['COUNT'] ."</td>";
-        echo "</tr>";
-      }
-    }
-  }
-  echo "</center>";
+    echo "</center>";
 }
 
 print_tail();
 
-function getVar($in) {
-
-    if (isset($_POST[$in])) {
-        $out = $_POST[$in];
-    } else {
-        $out = $_GET[$in];
-    }
-
-    if (get_magic_quotes_gpc()) {
-        if (is_array($out)) {
-            foreach ($out as $el) {
-                $array[] = stripslashes($el);
-            }
-            $out = $array;
-        } else {
-            $out = stripslashes($out);
-        }
-    }
-
-    return $out;
+function h($s) {
+    return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 }
 
-function sanitize($in) {
-  $qvar =  strip_tags(addslashes(getVar($in)));
-  
-  if ( preg_match('/(\w+\.)*\w{2,}\.\w{2,4}$/i', $qvar) ) {
-    /* Might be a domain */
-    return $qvar;
-  } else if ( preg_match('/^([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5])\\.([01]?\\d\\d?|2[0-4]\\d|25[0-5])$/', $qvar) ) {
-    /* Might be a IPv4 */
-    return $qvar;
-  } else if (preg_match('/^[a-f0-9]{1,4}:([a-f0-9]{0,4}:){1,6}[a-f0-9]{1,4}$/i', $qvar)) {
-    /* FE80:0000:0000:0000:0202:B3FF:FE1E:8329 or FE80::0202:B3FF:FE1E:8329 */
-    /* or even 2001:db8::1 or 0:0:0:0:0:ffff:192.1.56.10  */
-    /* Might be a IPv6 */
-    return $qvar;
-  } else {
-    /* B0rked */
-    echo "B0rked";
-    return "";
-  }
+function qlink($value, $token) {
+    $href = '?query=' . rawurlencode((string)$value);
+    if ($token !== '')
+        $href .= '&token=' . rawurlencode($token);
+    return h($href);
+}
+
+function like_escape($s) {
+    return str_replace(array('\\', '%', '_'), array('\\\\', '\\%', '\\_'), $s);
+}
+
+function pdns_search($db, $query) {
+    if (filter_var($query, FILTER_VALIDATE_IP)) {
+        $sql = "SELECT FIRST_SEEN, LAST_SEEN, MAPTYPE, TTL, QUERY, ANSWER, COUNT
+                FROM pdns WHERE ANSWER = ? LIMIT 500";
+        $stmt = mysqli_prepare($db, $sql);
+        if (!$stmt)
+            return null;
+        mysqli_stmt_bind_param($stmt, 's', $query);
+    } else {
+        $like = '%' . like_escape($query) . '%';
+        $like_q = $like;
+        $like_a = $like;
+        $sql = "SELECT FIRST_SEEN, LAST_SEEN, MAPTYPE, TTL, QUERY, ANSWER, COUNT
+                FROM pdns WHERE QUERY LIKE ? OR ANSWER LIKE ? LIMIT 500";
+        $stmt = mysqli_prepare($db, $sql);
+        if (!$stmt)
+            return null;
+        mysqli_stmt_bind_param($stmt, 'ss', $like_q, $like_a);
+    }
+    if (!mysqli_stmt_execute($stmt)) {
+        mysqli_stmt_close($stmt);
+        return null;
+    }
+    $first = $last = $map = $ttl = $q = $a = $count = null;
+    mysqli_stmt_bind_result($stmt, $first, $last, $map, $ttl, $q, $a, $count);
+    $rows = array();
+    while (mysqli_stmt_fetch($stmt)) {
+        $rows[] = array(
+            'FIRST_SEEN' => $first,
+            'LAST_SEEN' => $last,
+            'MAPTYPE' => $map,
+            'TTL' => $ttl,
+            'QUERY' => $q,
+            'ANSWER' => $a,
+            'COUNT' => $count,
+        );
+    }
+    mysqli_stmt_close($stmt);
+    return $rows;
 }
 
 function print_header() {
-  echo "<html>
+    header('Content-Type: text/html; charset=UTF-8');
+    header('X-Content-Type-Options: nosniff');
+    echo "<html>
 <head>
-<title>PassiveDNS</title>";
-  echo '
+<title>PassiveDNS</title>
+<meta charset=\"utf-8\">";
+    echo '
 <style type="text/css">
   td,p,div.box {
           color: #000;
@@ -144,7 +173,7 @@ function print_header() {
           background-color: #E2F1FF;
   }
   table
-  { 
+  {
   margin-left: auto;
   margin-right: auto;
   }
@@ -154,21 +183,24 @@ function print_header() {
   <div style="width: 860px; margin:auto;">
   <p>
    This data has been collected using <a href="http://github.com/gamelinux/passivedns">PassiveDNS</a>.
+   Local demo. Set PDNS_WEB_TOKEN when this page is reachable beyond this host.
   </p>
   </div>
   <table width="860" cellpadding="2" cellspacing="0">
 ';
 }
 
-function print_search_body() {
-  echo '<tr><td><center><form name search method="GET">';
-  echo 'Domain/IP: <input type="text" maxlength="300" name="query">';
-  echo '<input type="submit" value="Search"></form><center><br>
+function print_search_body($token) {
+    echo '<tr><td><center><form method="GET">';
+    if ($token !== '')
+        echo '<input type="hidden" name="token" value="' . h($token) . '">';
+    echo 'Domain/IP: <input type="text" maxlength="255" name="query">';
+    echo '<input type="submit" value="Search"></form></center><br>
 ';
 }
 
 function print_tail() {
-  echo '
+    echo '
 </center>
 </body>
 </html>';

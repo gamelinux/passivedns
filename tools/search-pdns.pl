@@ -28,11 +28,12 @@ use Date::Simple ('date', 'today');
 use Getopt::Long qw/:config auto_version auto_help/;
 use DBI;
 
-# You need to set DB user,password and host to connect to...
-my $db_host      = 'localhost';
-my $DB           = 'pdns';
-my $db_user_name = 'pdns';
-my $db_password  = 'pdns';
+# Password comes from the environment. Host, user, and database name
+# fall back to localhost / pdns / pdns.
+my $db_host      = $ENV{PDNS_DB_HOST} // 'localhost';
+my $DB           = $ENV{PDNS_DB_NAME} // 'pdns';
+my $db_user_name = $ENV{PDNS_DB_USER} // 'pdns';
+my $db_password  = $ENV{PDNS_DB_PASSWORD};
 my $DLIMIT       =    100;
 
 =head1 NAME
@@ -92,73 +93,80 @@ if ($SEARCH eq "") {
    exit 0;
 }
 
-my $dsn = "DBI:mysql:$DB:" . $db_host;
-my $dbh = DBI->connect($dsn, $db_user_name, $db_password);
+die "PDNS_DB_NAME must be an identifier\n" unless $DB =~ /^[A-Za-z0-9_]+$/;
+die "Set PDNS_DB_PASSWORD\n" unless defined $db_password && $db_password ne '';
 
-our ($QUERY, $QUERY1, $QUERY2) = q();
-
-$QUERY = qq[SELECT query, answer, first_seen, last_seen, ttl, count, maptype FROM pdns WHERE ];
-
-if (defined $FROM_DATE ) {
-    if ($FROM_DATE=~ /^\d\d\d\d\-\d\d\-\d\d$/) {
-       print "Searching from date: $FROM_DATE 00:00:01\n" if $DEBUG;
-       $QUERY1 = $QUERY . qq[first_seen > '$FROM_DATE 00:00:01' ];
-    } elsif ($FROM_DATE=~ /^\d\d\d\d\-\d\d\-\d\d \d\d:\d\d:\d\d$/) {
-       print "Searching from date: $FROM_DATE\n" if $DEBUG;
-       $QUERY1 = $QUERY . qq[first_seen > '$FROM_DATE' ];
+my $from = '1970-01-01 00:00:01';
+if (defined $FROM_DATE) {
+    if ($FROM_DATE =~ /^\d\d\d\d\-\d\d\-\d\d$/) {
+        $from = "$FROM_DATE 00:00:01";
+    } elsif ($FROM_DATE =~ /^\d\d\d\d\-\d\d\-\d\d \d\d:\d\d:\d\d$/) {
+        $from = $FROM_DATE;
+    } else {
+        die "first-seen must be YYYY-MM-DD or YYYY-MM-DD HH:MM:SS\n";
     }
-} else {
-    print "Searching from date: Thu Jan  1 00:00:00 UTC 1970\n" if $DEBUG;
-    $QUERY1 = $QUERY . qq[first_seen > '1970-01-01 00:00:01' ];
+    print "Searching from date: $from\n" if $DEBUG;
 }
 
+my $to;
 if (defined $TO_DATE) {
     if ($TO_DATE =~ /^\d\d\d\d\-\d\d\-\d\d$/) {
-       print "Searching to date: $TO_DATE 23:59:59\n" if $DEBUG;
-       $QUERY1 = $QUERY1 . qq[AND last_seen < '$TO_DATE' ];
+        $to = "$TO_DATE 23:59:59";
     } elsif ($TO_DATE =~ /^\d\d\d\d\-\d\d\-\d\d \d\d:\d\d:\d\d$/) {
-       print "Searching to date: $TO_DATE\n" if $DEBUG;
-       $QUERY1 = $QUERY1 . qq[AND last_seen < '$TO_DATE' ];
-    }
-}
-
-$QUERY2 = $QUERY1;
-
-if (defined $SEARCH) {
-    print "Searching for: $SEARCH\n" if $DEBUG;
-    if ( $RAW == 1 ) {
-       $QUERY1 = $QUERY1 . qq[AND query  like '$SEARCH' ];
-       $QUERY2 = $QUERY2 . qq[AND answer like '$SEARCH' ];
+        $to = $TO_DATE;
     } else {
-       $QUERY1 = $QUERY1 . qq[AND query  like '%$SEARCH%' ];
-       $QUERY2 = $QUERY2 . qq[AND answer like '%$SEARCH%' ];
+        die "last-seen must be YYYY-MM-DD or YYYY-MM-DD HH:MM:SS\n";
     }
+    print "Searching to date: $to\n" if $DEBUG;
 }
 
+if (defined $LIMIT) {
+    die "limit must be a number\n" unless $LIMIT =~ /^\d+$/;
+    $DLIMIT = $LIMIT + 0;
+    $DLIMIT = 1 if $DLIMIT < 1;
+    $DLIMIT = 10000 if $DLIMIT > 10000;
+}
+print "Limit: $DLIMIT\n" if $DEBUG;
 
-if (defined $TYPE) {
-       $QUERY1 = $QUERY1 . qq[AND maptype = '$TYPE' ];
-       $QUERY2 = $QUERY2 . qq[AND maptype = '$TYPE' ];
+if (defined $TYPE && $TYPE ne '') {
+    die "RR type must be alphanumeric\n" unless $TYPE =~ /^[A-Za-z0-9]{1,10}$/;
 }
 
-
-$QUERY = $QUERY1 . qq[ UNION ] . $QUERY2;
-
-if (defined $LIMIT && $LIMIT =~ /^([\d])+$/) {
-    print "Limit: $LIMIT\n" if $DEBUG;
-    $DLIMIT = $LIMIT;
-    $QUERY = $QUERY . qq[ORDER BY last_seen LIMIT $LIMIT ];
-} else {
-    print "Limit: $DLIMIT\n" if $DEBUG;
-    $QUERY = $QUERY . qq[ORDER BY last_seen LIMIT $DLIMIT ];
+sub like_escape {
+    my ($s) = @_;
+    $s =~ s/([\\%_])/\\$1/g;
+    return $s;
 }
+
+my $like = $RAW ? $SEARCH : '%' . like_escape($SEARCH) . '%';
+print "Searching for: $SEARCH\n" if $DEBUG;
+
+my @bind = ($from);
+my $where = 'first_seen > ?';
+if (defined $to) {
+    $where .= ' AND last_seen < ?';
+    push @bind, $to;
+}
+if (defined $TYPE && $TYPE ne '') {
+    $where .= ' AND maptype = ?';
+    push @bind, $TYPE;
+}
+
+my $QUERY = qq[SELECT query, answer, first_seen, last_seen, ttl, count, maptype FROM $DB.pdns WHERE $where AND query LIKE ?
+ UNION
+ SELECT query, answer, first_seen, last_seen, ttl, count, maptype FROM $DB.pdns WHERE $where AND answer LIKE ?
+ ORDER BY last_seen LIMIT $DLIMIT];
 
 print "\nmysql> $QUERY;\n\n" if $DEBUG;
 
 exit 0 if $DEBUG > 1;
 
-my $pri = $dbh->prepare( qq{ $QUERY } );
-$pri->execute();
+my $dsn = "DBI:mysql:database=$DB;host=$db_host";
+my $dbh = DBI->connect($dsn, $db_user_name, $db_password, {RaiseError => 1, PrintError => 0})
+    or die "database connect failed: $DBI::errstr\n";
+
+my $pri = $dbh->prepare($QUERY);
+$pri->execute(@bind, $like, @bind, $like);
 
 my $cnt = 0;
 print "                                            === PassiveDNS ===\n\n";
