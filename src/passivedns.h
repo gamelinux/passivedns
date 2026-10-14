@@ -37,6 +37,12 @@
 #define UDP_TIMEOUT                   60
 #define ICMP_TIMEOUT                  60
 #define OTHER_TIMEOUT                 300
+#define MAX_CONNECTIONS               65536
+#define MAX_IP_TUNNEL                 3
+#define FRAG_MAX                      256
+#define FRAG_TIMEOUT                  30
+#define TCP_STREAM_MAX                65537
+#define LOG_LINE_MAX                  65536
 
 #define ETHERNET_TYPE_IP              0x0800
 #define ETHERNET_TYPE_IPV6            0x86dd
@@ -48,9 +54,17 @@
 #define ETHERNET_TYPE_8021AD          0x88a8
 
 #define IP_PROTO_ICMP                 1
+#define IP_PROTO_IPIP                 4
 #define IP_PROTO_TCP                  6
 #define IP_PROTO_UDP                  17
 #define IP_PROTO_IP6                  41
+#define IP_PROTO_ROUTING              43
+#define IP_PROTO_FRAGMENT             44
+#define IP_PROTO_ESP                  50
+#define IP_PROTO_AH                   51
+#define IP_PROTO_NONE                 59
+#define IP_PROTO_DSTOPTS              60
+#define IP_PROTO_HOPOPTS              0
 #define IP6_PROTO_ICMP                58
 
 #define SLL_HDR_LEN                   16
@@ -64,10 +78,7 @@
 #define ETHERNET_8021Q_HEADER_LEN     18
 #define ETHERNET_802Q1MT_HEADER_LEN   22
 
-#define IP_PROTO_TCP                  6
-#define IP_PROTO_UDP                  17
-#define IP_PROTO_IP6                  41
-#define IP_PROTO_IP4                  94
+#define IP_PROTO_IP4                  94   /* Historical IP-in-IP value this code matched */
 
 #define TF_FIN                        0x01
 #define TF_SYN                        0x02
@@ -82,7 +93,11 @@
 #define ERROR                         1
 #define STDBUF                        1024
 
-#define BPFF "port 53"                          /* Default BPF filter */
+/* Keep port 53, IPv4 fragments, and IPv6 packets whose first next-header
+ * is hop-by-hop, routing, fragment, or destination options. A fragment
+ * has no port, and libpcap's port primitive does not look past an
+ * extension header, so those packets never reach reassembly otherwise. */
+#define BPFF "(port 53) or (ip[6:2] & 0x3fff != 0) or (ip6[6] = 0) or (ip6[6] = 43) or (ip6[6] = 44) or (ip6[6] = 60)"
 
 #if defined(__FreeBSD__) || defined(__APPLE__)
 #define s6_addr32   __u6_addr.__u6_addr32
@@ -231,6 +246,19 @@ typedef struct _udp_header {
 } udp_header;
 
 /*
+ * One direction of a TCP DNS stream. data is charged against the memory cap.
+ */
+
+typedef struct _tcp_buf {
+    uint8_t *data;
+    uint32_t len;
+    uint32_t cap;
+    uint32_t expect;
+    uint8_t have_seq;
+    size_t charged;
+} tcp_buf;
+
+/*
  * Structure for connections
  */
 
@@ -255,6 +283,8 @@ typedef struct _connection {
     uint8_t  d_tcpFlags;          /* TCP flags sent by destination */
     uint8_t  check;               /* Flags specifying checking */
     uint16_t plid;                /* Protocol layer ID (DNS TID) */
+    tcp_buf to_server;            /* Bytes from the first-seen source */
+    tcp_buf to_client;            /* Bytes in the opposite direction */
 } connection;
 #define CXT_DONT_CHECK_SERVER     0x01  /* Don't check server packets */
 #define CXT_DONT_CHECK_CLIENT     0x02  /* Don't check client packets */
@@ -395,6 +425,8 @@ typedef struct _packetinfo {
     const uint8_t   *end_ptr;         /* Paranoid end pointer of packet */
     const uint8_t   *payload;         /* Char pointer to transport payload */
     uint32_t        plen;             /* Transport payload length */
+    uint32_t        l4_off;           /* Offset from packet to the L4 header */
+    uint8_t         tunnel;           /* IP-in-IP depth */
     uint32_t        our;              /* Is the asset in our defined network */
     uint8_t         up;               /* Set if the asset has been updated */
     connection      *cxt;             /* Pointer to the cxt for this packet */
@@ -519,8 +551,10 @@ typedef struct _globalconfig {
     uint32_t            payload;           /* Dump how much of the payload ?  */
     uint32_t            curcxt;
     uint32_t            llcxt;
+    uint32_t            max_connections;   /* Hard cap on live flows */
+    int                 pid_fd;            /* Held open so the pid flock stays */
     uint64_t            mem_limit_max;     /* Try soft limit memory use */
-    uint64_t            mem_limit_size;    /* Current memory size */
+    uint64_t            mem_limit_size;    /* Bytes currently charged */
     uint32_t            dns_records;       /* Total number of DNS records in memory */
     uint32_t            dns_assets;        /* Total number of DNS assets in memory */
     uint64_t            cxtrackerid;       /* cxtracker ID counter */
@@ -577,4 +611,10 @@ typedef struct _globalconfig {
 int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
+int mem_charge(size_t n);
+void mem_refund(size_t n);
+
+#ifndef PACKAGE_VERSION
+#define PACKAGE_VERSION "1.2.2"
+#endif
 

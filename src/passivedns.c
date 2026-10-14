@@ -44,6 +44,7 @@
 #include <limits.h>
 #include "passivedns.h"
 #include "dns.h"
+#include "reasm.h"
 
 #ifdef HAVE_JSON
 #include <jansson.h>
@@ -70,12 +71,12 @@ void prepare_null (packetinfo *pi);
 void prepare_raw (packetinfo *pi);
 void prepare_sll (packetinfo *pi);
 void prepare_eth (packetinfo *pi);
-void prepare_ip4 (packetinfo *pi);
+int prepare_ip4 (packetinfo *pi);
 void prepare_ip4ip (packetinfo *pi);
-void prepare_ip6 (packetinfo *pi);
+int prepare_ip6 (packetinfo *pi);
 void prepare_ip6ip (packetinfo *pi);
-void prepare_udp (packetinfo *pi);
-void prepare_tcp (packetinfo *pi);
+int prepare_udp (packetinfo *pi);
+int prepare_tcp (packetinfo *pi);
 void parse_eth (packetinfo *pi);
 void parse_ip4 (packetinfo *pi);
 void parse_ip6 (packetinfo *pi);
@@ -103,6 +104,70 @@ void pfring_got_packet(const struct pfring_pkthdr *pfheader,
 #endif /* HAVE_PFRING */
 
 /* F U N C T I O N S  ********************************************************/
+
+static int pi_has(const packetinfo *pi, const uint8_t *p, size_t n)
+{
+    if (!pi->packet || !pi->end_ptr || !p)
+        return 0;
+    if (p < pi->packet || p > pi->end_ptr)
+        return 0;
+    if (n > (size_t)(pi->end_ptr - p))
+        return 0;
+    return 1;
+}
+
+int mem_charge(size_t n)
+{
+    if (n > config.mem_limit_max)
+        return 0;
+    if (config.mem_limit_size > config.mem_limit_max - n)
+        return 0;
+    config.mem_limit_size += n;
+    return 1;
+}
+
+void mem_refund(size_t n)
+{
+    if (n >= config.mem_limit_size)
+        config.mem_limit_size = 0;
+    else
+        config.mem_limit_size -= n;
+}
+
+static void secure_log(FILE *fp)
+{
+    if (fp && fp != stdout)
+        (void)fchmod(fileno(fp), S_IRUSR | S_IWUSR | S_IRGRP);
+}
+
+void reasm_continue(packetinfo *parent, int is_v6, uint8_t *buf, uint32_t len)
+{
+    packetinfo pi;
+    struct pcap_pkthdr hdr;
+
+    if (!parent || !buf || len < IP4_HEADER_LEN)
+        return;
+    memset(&pi, 0, sizeof(pi));
+    hdr = *parent->pheader;
+    hdr.caplen = len;
+    hdr.len = len;
+    pi.pheader = &hdr;
+    pi.packet = buf;
+    pi.end_ptr = buf + len;
+    pi.eth_hlen = 0;
+    pi.eth_hdr = parent->eth_hdr;
+    pi.tunnel = parent->tunnel;
+    if (!is_v6) {
+        if (!prepare_ip4(&pi))
+            return;
+        parse_ip4(&pi);
+    }
+    else {
+        if (!prepare_ip6(&pi))
+            return;
+        parse_ip6(&pi);
+    }
+}
 
 #ifdef HAVE_PFRING
 
@@ -161,12 +226,12 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
 
     switch (pi->eth_type) {
         case ETHERNET_TYPE_IP:
-            prepare_ip4(pi);
-            parse_ip4(pi);
+            if (prepare_ip4(pi))
+                parse_ip4(pi);
             break;
         case ETHERNET_TYPE_IPV6:
-            prepare_ip6(pi);
-            parse_ip6(pi);
+            if (prepare_ip6(pi))
+                parse_ip6(pi);
             break;
         default:
             config.p_s.otherl_recv++;
@@ -179,17 +244,20 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
 
 void prepare_null(packetinfo *pi)
 {
+    if (!pi_has(pi, pi->packet, LOOPBACK_HDR_LEN))
+        return;
     pi->eth_hlen = LOOPBACK_HDR_LEN;
-    if ((u_int32_t)*pi->packet == AF_INET) {
+    if ((u_int32_t)*pi->packet == AF_INET)
         pi->eth_type = ETHERNET_TYPE_IP;
-    } else {
+    else
         pi->eth_type = ETHERNET_TYPE_IPV6;
-    }
 }
 
 void prepare_raw(packetinfo *pi)
 {
     pi->eth_hlen = 0;
+    if (!pi_has(pi, pi->packet, 1))
+        return;
     if (IP_V((ip4_header *)pi->packet) == 4)
         pi->eth_type = ETHERNET_TYPE_IP;
     else
@@ -199,7 +267,8 @@ void prepare_raw(packetinfo *pi)
 void prepare_sll(packetinfo *pi)
 {
     pi->eth_hlen = SLL_HDR_LEN;
-
+    if (!pi_has(pi, pi->packet + SLL_HDR_LEN, 1))
+        return;
     if (IP_V((ip4_header *)(pi->packet + SLL_HDR_LEN)) == 4)
         pi->eth_type = ETHERNET_TYPE_IP;
     else
@@ -219,21 +288,34 @@ void prepare_eth(packetinfo *pi)
 
 void check_vlan(packetinfo *pi)
 {
+    if (!pi->eth_hdr)
+        return;
+
     if (pi->eth_type == ETHERNET_TYPE_8021Q) {
+        if (!pi_has(pi, pi->packet, ETHERNET_8021Q_HEADER_LEN))
+            return;
         vlog(0x3, "[*] ETHERNET TYPE 8021Q\n");
         config.p_s.vlan_recv++;
         pi->vlan = pi->eth_hdr->eth_8_vid;
         pi->eth_type = ntohs(pi->eth_hdr->eth_8_ip_type);
         pi->eth_hlen += 4;
-        if ( pi->eth_type == ETHERNET_TYPE_8021Q ) {
+        if (pi->eth_type == ETHERNET_TYPE_8021Q) {
+            if (!pi_has(pi, pi->packet, ETHERNET_802Q1MT_HEADER_LEN)) {
+                pi->eth_type = 0;
+                return;
+            }
             vlog(0x3, "[*] ETHERNET TYPE 8021Q in 8021Q\n");
             pi->eth_type = ntohs(pi->eth_hdr->eth_82_ip_type);
             pi->eth_hlen += 4;
             pi->vlan = pi->eth_hdr->eth_82_vid;
         }
     }
-    else if (pi->eth_type == (ETHERNET_TYPE_802Q1MT  | ETHERNET_TYPE_802Q1MT2 |
-                              ETHERNET_TYPE_802Q1MT3 | ETHERNET_TYPE_8021AD)) {
+    else if (pi->eth_type == ETHERNET_TYPE_802Q1MT ||
+             pi->eth_type == ETHERNET_TYPE_802Q1MT2 ||
+             pi->eth_type == ETHERNET_TYPE_802Q1MT3 ||
+             pi->eth_type == ETHERNET_TYPE_8021AD) {
+        if (!pi_has(pi, pi->packet, ETHERNET_802Q1MT_HEADER_LEN))
+            return;
         vlog(0x3, "[*] ETHERNET TYPE 802Q1MT\n");
         pi->mvlan = pi->eth_hdr->eth_82_mvid;
         pi->eth_type = ntohs(pi->eth_hdr->eth_82_ip_type);
@@ -241,190 +323,347 @@ void check_vlan(packetinfo *pi)
     }
 }
 
-void prepare_ip4(packetinfo *pi)
+int prepare_ip4(packetinfo *pi)
 {
-    config.p_s.ip4_recv++;
+    const uint8_t *p;
+    uint8_t ihl;
+    uint16_t ip_len;
+
+    p = pi->packet + pi->eth_hlen;
+    if (!pi_has(pi, p, IP4_HEADER_LEN))
+        return 0;
+    pi->ip4 = (ip4_header *)p;
+    if (IP_V(pi->ip4) != 4)
+        return 0;
+    ihl = IP_HL(pi->ip4);
+    if (ihl < 5)
+        return 0;
+    if (!pi_has(pi, p, (size_t)ihl * 4))
+        return 0;
+    ip_len = ntohs(pi->ip4->ip_len);
+    if (ip_len < (uint16_t)ihl * 4)
+        return 0;
     pi->af = AF_INET;
-    pi->ip4 = (ip4_header *) (pi->packet + pi->eth_hlen);
-    pi->packet_bytes = (pi->ip4->ip_len - (IP_HL(pi->ip4) * 4));
+    pi->packet_bytes = (uint16_t)(ip_len - (uint16_t)ihl * 4);
+    pi->l4_off = pi->eth_hlen + (uint32_t)ihl * 4;
+    config.p_s.ip4_recv++;
+    return 1;
+}
+
+static int l4_ready(packetinfo *pi, uint8_t proto)
+{
+    if (proto == IP_PROTO_TCP) {
+        if (!prepare_tcp(pi))
+            return 0;
+        parse_tcp(pi);
+        return 1;
+    }
+    if (proto == IP_PROTO_UDP) {
+        if (!prepare_udp(pi))
+            return 0;
+        parse_udp(pi);
+        return 1;
+    }
+    return 0;
 }
 
 void parse_ip4(packetinfo *pi)
 {
-    /* Paranoia */
-    if (((pi->packet + pi->eth_hlen) + (IP_HL(pi->ip4) * 4)) > pi->end_ptr) {
-        dlog("[D] Refusing to parse IPv4 packet: IPv4-hdr passed end_ptr\n");
+    uint16_t foff;
+
+    if (!pi->ip4)
+        return;
+    foff = ntohs(pi->ip4->ip_off);
+    if (foff & (IP_MF | IP_OFFMASK)) {
+        ip4_defrag(pi);
         return;
     }
 
     switch (pi->ip4->ip_p) {
         case IP_PROTO_TCP:
-            prepare_tcp(pi);
-            parse_tcp(pi);
-            break;
         case IP_PROTO_UDP:
-            prepare_udp(pi);
-            parse_udp(pi);
+            l4_ready(pi, pi->ip4->ip_p);
             break;
+        case IP_PROTO_IPIP:
         case IP_PROTO_IP4:
-            prepare_ip4ip(pi);
-            break;
         case IP_PROTO_IP6:
             prepare_ip4ip(pi);
             break;
         default:
             break;
+    }
+}
+
+static void tunnel_into(packetinfo *pi, const uint8_t *inner, uint8_t proto)
+{
+    packetinfo pipi;
+
+    if (!inner || inner <= pi->packet + pi->eth_hlen)
+        return;
+    if (pi->tunnel >= MAX_IP_TUNNEL)
+        return;
+    if (!pi_has(pi, inner, 1))
+        return;
+    memset(&pipi, 0, sizeof(pipi));
+    pipi.pheader = pi->pheader;
+    pipi.packet = inner;
+    pipi.end_ptr = pi->end_ptr;
+    pipi.eth_hlen = 0;
+    pipi.eth_hdr = pi->eth_hdr;
+    pipi.tunnel = (uint8_t)(pi->tunnel + 1);
+    if (proto == IP_PROTO_IP6) {
+        config.p_s.ip6ip_recv++;
+        if (prepare_ip6(&pipi))
+            parse_ip6(&pipi);
+    }
+    else {
+        config.p_s.ip4ip_recv++;
+        if (prepare_ip4(&pipi))
+            parse_ip4(&pipi);
     }
 }
 
 void prepare_ip6ip(packetinfo *pi)
 {
-    packetinfo pipi;
-    memset(&pipi, 0, sizeof(packetinfo));
-    config.p_s.ip6ip_recv++;
-    pipi.pheader = pi->pheader;
-    pipi.packet = (pi->packet + pi->eth_hlen + IP6_HEADER_LEN);
-    pipi.end_ptr = pi->end_ptr;
-
-    if (pi->ip6->next == IP_PROTO_IP4) {
-        prepare_ip4(&pipi);
-        parse_ip4(&pipi);
-    }
-    else {
-        prepare_ip6(&pipi);
-        parse_ip6(&pipi);
-    }
+    tunnel_into(pi, pi->packet + pi->l4_off, pi->proto == IP_PROTO_IP6 ?
+                IP_PROTO_IP6 : IP_PROTO_IPIP);
 }
 
 void prepare_ip4ip(packetinfo *pi)
 {
-    packetinfo pipi;
-    memset(&pipi, 0, sizeof(packetinfo));
-    config.p_s.ip4ip_recv++;
-    pipi.pheader = pi->pheader;
-    pipi.packet = (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4));
-    pipi.end_ptr = pi->end_ptr;
-
-    if (pi->ip4->ip_p == IP_PROTO_IP4) {
-        prepare_ip4(&pipi);
-        parse_ip4(&pipi);
-    }
-    else {
-        prepare_ip6(&pipi);
-        parse_ip6(&pipi);
-    }
+    const uint8_t *inner = pi->packet + pi->l4_off;
+    uint8_t inner_proto = (pi->ip4 && pi->ip4->ip_p == IP_PROTO_IP6) ?
+                          IP_PROTO_IP6 : IP_PROTO_IPIP;
+    tunnel_into(pi, inner, inner_proto);
 }
 
-void prepare_ip6(packetinfo *pi)
+int prepare_ip6(packetinfo *pi)
 {
-    config.p_s.ip6_recv++;
+    const uint8_t *p;
+    uint16_t plen;
+
+    p = pi->packet + pi->eth_hlen;
+    if (!pi_has(pi, p, IP6_HEADER_LEN))
+        return 0;
+    pi->ip6 = (ip6_header *)p;
+    if (((ntohl(pi->ip6->vcl) >> 28) & 0xf) != 6)
+        return 0;
+    plen = ntohs(pi->ip6->len);
     pi->af = AF_INET6;
-    pi->ip6 = (ip6_header *) (pi->packet + pi->eth_hlen);
-    pi->packet_bytes = pi->ip6->len;
+    pi->packet_bytes = plen;
+    pi->l4_off = pi->eth_hlen + IP6_HEADER_LEN;
+    config.p_s.ip6_recv++;
+    return 1;
+}
+
+static const uint8_t *ip6_limit(packetinfo *pi)
+{
+    const uint8_t *start = pi->packet + pi->eth_hlen;
+    const uint8_t *claimed = start + IP6_HEADER_LEN + ntohs(pi->ip6->len);
+
+    if (claimed < start)
+        return pi->end_ptr;
+    if (claimed < pi->end_ptr)
+        return claimed;
+    return pi->end_ptr;
 }
 
 void parse_ip6(packetinfo *pi)
 {
-    switch (pi->ip6->next) {
-        case IP_PROTO_TCP:
-            prepare_tcp(pi);
-            parse_tcp(pi);
-            break;
-        case IP_PROTO_UDP:
-            prepare_udp(pi);
-            parse_udp(pi);
-            break;
-        case IP_PROTO_IP4:
+    const uint8_t *cur;
+    const uint8_t *end;
+    const uint8_t *nh_ptr;
+    uint8_t nxt;
+    int depth = 0;
+
+    if (!pi->ip6)
+        return;
+    nxt = pi->ip6->next;
+    cur = pi->packet + pi->eth_hlen + IP6_HEADER_LEN;
+    end = ip6_limit(pi);
+    nh_ptr = ((const uint8_t *)pi->ip6) + 6;
+
+    while (depth++ < 8) {
+        if (nxt == IP_PROTO_TCP || nxt == IP_PROTO_UDP) {
+            if (cur < pi->packet)
+                return;
+            pi->l4_off = (uint32_t)(cur - pi->packet);
+            l4_ready(pi, nxt);
+            return;
+        }
+        if (nxt == IP_PROTO_IPIP || nxt == IP_PROTO_IP4 || nxt == IP_PROTO_IP6) {
+            if (cur < pi->packet)
+                return;
+            pi->l4_off = (uint32_t)(cur - pi->packet);
+            pi->proto = nxt;
             prepare_ip6ip(pi);
-            break;
-        case IP_PROTO_IP6:
-            prepare_ip6ip(pi);
-            break;
-        default:
-            break;
+            return;
+        }
+        if (nxt == IP_PROTO_HOPOPTS || nxt == IP_PROTO_DSTOPTS ||
+            nxt == IP_PROTO_ROUTING) {
+            uint32_t skip;
+            if (!pi_has(pi, cur, 2) || cur + 2 > end)
+                return;
+            skip = ((uint32_t)cur[1] + 1) * 8;
+            if (!pi_has(pi, cur, skip) || cur + skip > end)
+                return;
+            nh_ptr = cur;
+            nxt = cur[0];
+            cur += skip;
+            continue;
+        }
+        if (nxt == IP_PROTO_AH) {
+            uint32_t skip;
+            if (!pi_has(pi, cur, 2) || cur + 2 > end)
+                return;
+            skip = ((uint32_t)cur[1] + 2) * 4;
+            if (!pi_has(pi, cur, skip) || cur + skip > end)
+                return;
+            nh_ptr = cur;
+            nxt = cur[0];
+            cur += skip;
+            continue;
+        }
+        if (nxt == IP_PROTO_FRAGMENT) {
+            uint16_t offm;
+            uint16_t off_bytes;
+            uint32_t id;
+            int more;
+            const uint8_t *frag;
+            const uint8_t *unfrag;
+            uint16_t unfrag_len;
+            uint16_t nh_at;
+            uint16_t fraglen;
+
+            if (!pi_has(pi, cur, 8) || cur + 8 > end)
+                return;
+            offm = (uint16_t)((cur[2] << 8) | cur[3]);
+            off_bytes = (uint16_t)((offm >> 3) * 8);
+            more = offm & 0x1;
+            memcpy(&id, cur + 4, sizeof(id));
+            id = ntohl(id);
+            frag = cur + 8;
+            if (frag > end)
+                return;
+            fraglen = (uint16_t)(end - frag);
+            if (off_bytes == 0 && !more) {
+                nh_ptr = cur;
+                nxt = cur[0];
+                cur = frag;
+                continue;
+            }
+            unfrag = pi->packet + pi->eth_hlen;
+            if (cur < unfrag || (size_t)(cur - unfrag) > 65535)
+                return;
+            unfrag_len = (uint16_t)(cur - unfrag);
+            nh_at = (uint16_t)(nh_ptr - unfrag);
+            ip6_defrag(pi, unfrag, unfrag_len, nh_at, cur[0], id,
+                       off_bytes, more, frag, fraglen);
+            return;
+        }
+        return;
     }
 }
 
 void set_pkt_end_ptr(packetinfo *pi)
 {
-    /* Paranoia! */
-    if (pi->pheader->len <= SNAPLENGTH)
-        pi->end_ptr = (pi->packet + pi->pheader->len);
-    else
-        pi->end_ptr = (pi->packet + SNAPLENGTH);
+    /* caplen is the number of bytes libpcap actually provided. */
+    pi->end_ptr = pi->packet + pi->pheader->caplen;
 }
 
-void prepare_tcp(packetinfo *pi)
+/* End of the IP datagram, never past the captured bytes.
+ * Ethernet padding and a short snaplen stay outside the L4 length. */
+static const uint8_t *datagram_end(packetinfo *pi)
 {
-    config.p_s.tcp_recv++;
-    if (pi->af == AF_INET) {
-        vlog(0x3, "[*] IPv4 PROTOCOL TYPE TCP:\n");
-        pi->tcph = (tcp_header *) (pi->packet + pi->eth_hlen +
-                   (IP_HL(pi->ip4) * 4));
-        pi->plen = (pi->pheader->caplen - (TCP_OFFSET(pi->tcph)) * 4 -
-                   (IP_HL(pi->ip4) * 4) - pi->eth_hlen);
-        pi->payload = (pi->packet + pi->eth_hlen + (IP_HL(pi->ip4) * 4) +
-                      (TCP_OFFSET(pi->tcph) * 4));
-    }
-    else if (pi->af == AF_INET6) {
-        vlog(0x3, "[*] IPv6 PROTOCOL TYPE TCP:\n");
-        pi->tcph = (tcp_header *) (pi->packet + pi->eth_hlen + IP6_HEADER_LEN);
-        pi->plen = (pi->pheader->caplen - (TCP_OFFSET(pi->tcph)) * 4 -
-                   IP6_HEADER_LEN - pi->eth_hlen);
-        pi->payload = (pi->packet + pi->eth_hlen + IP6_HEADER_LEN +
-                      (TCP_OFFSET(pi->tcph)*4));
-    }
-    pi->proto  = IP_PROTO_TCP;
+    const uint8_t *base;
+    uint32_t span;
+
+    if (!pi->packet || !pi->end_ptr || pi->end_ptr < pi->packet)
+        return pi->end_ptr;
+    base = pi->packet + pi->eth_hlen;
+    if (base < pi->packet || base > pi->end_ptr)
+        return pi->end_ptr;
+    if (pi->af == AF_INET && pi->ip4)
+        span = ntohs(pi->ip4->ip_len);
+    else if (pi->af == AF_INET6 && pi->ip6)
+        span = (uint32_t)IP6_HEADER_LEN + ntohs(pi->ip6->len);
+    else
+        return pi->end_ptr;
+    if (span > (uint32_t)(pi->end_ptr - base))
+        return pi->end_ptr;
+    return base + span;
+}
+
+int prepare_tcp(packetinfo *pi)
+{
+    const uint8_t *th;
+    const uint8_t *dend;
+    unsigned doff;
+
+    th = pi->packet + pi->l4_off;
+    if (!pi_has(pi, th, TCP_HEADER_LEN))
+        return 0;
+    pi->tcph = (tcp_header *)th;
+    doff = TCP_OFFSET(pi->tcph);
+    if (doff < 5)
+        return 0;
+    if (!pi_has(pi, th, (size_t)doff * 4))
+        return 0;
+    pi->payload = th + (size_t)doff * 4;
+    dend = datagram_end(pi);
+    if (pi->payload > dend)
+        return 0;
+    pi->plen = (uint32_t)(dend - pi->payload);
+    pi->proto = IP_PROTO_TCP;
     pi->s_port = pi->tcph->src_port;
     pi->d_port = pi->tcph->dst_port;
+    config.p_s.tcp_recv++;
     connection_tracking(pi);
+    return pi->cxt != NULL;
 }
 
-void prepare_udp(packetinfo *pi)
+int prepare_udp(packetinfo *pi)
 {
-    config.p_s.udp_recv++;
-    if (pi->af == AF_INET) {
-        vlog(0x3, "[*] IPv4 PROTOCOL TYPE UDP:\n");
-        pi->udph = (udp_header *) (pi->packet + pi->eth_hlen +
-                   (IP_HL(pi->ip4) * 4));
-        pi->plen = pi->pheader->caplen - UDP_HEADER_LEN -
-                    (IP_HL(pi->ip4) * 4) - pi->eth_hlen;
-        pi->payload = (pi->packet + pi->eth_hlen +
-                        (IP_HL(pi->ip4) * 4) + UDP_HEADER_LEN);
-    }
-    else if (pi->af == AF_INET6) {
-        vlog(0x3, "[*] IPv6 PROTOCOL TYPE UDP:\n");
-        pi->udph = (udp_header *) (pi->packet + pi->eth_hlen +
-                   IP6_HEADER_LEN);
-        pi->plen = pi->pheader->caplen - UDP_HEADER_LEN -
-                    IP6_HEADER_LEN - pi->eth_hlen;
-        pi->payload = (pi->packet + pi->eth_hlen +
-                        IP6_HEADER_LEN + UDP_HEADER_LEN);
-    }
-    pi->proto  = IP_PROTO_UDP;
+    const uint8_t *uh;
+    const uint8_t *dend;
+    uint16_t ulen;
+    uint32_t have;
+    uint32_t claimed;
+
+    uh = pi->packet + pi->l4_off;
+    if (!pi_has(pi, uh, UDP_HEADER_LEN))
+        return 0;
+    pi->udph = (udp_header *)uh;
+    ulen = ntohs(pi->udph->len);
+    if (ulen < UDP_HEADER_LEN)
+        return 0;
+    pi->payload = uh + UDP_HEADER_LEN;
+    dend = datagram_end(pi);
+    if (pi->payload > dend)
+        return 0;
+    have = (uint32_t)(dend - pi->payload);
+    claimed = (uint32_t)ulen - UDP_HEADER_LEN;
+    pi->plen = claimed < have ? claimed : have;
+    pi->proto = IP_PROTO_UDP;
     pi->s_port = pi->udph->src_port;
     pi->d_port = pi->udph->dst_port;
+    config.p_s.udp_recv++;
     connection_tracking(pi);
+    return pi->cxt != NULL;
 }
 
 void parse_tcp(packetinfo *pi)
 {
-    if (pi->plen <= 0) return;
-
-    /* Reliable traffic comes from the servers (normally on port 53 or 5353)
-     * and the client has sent at least one packet on that
-     * connecton (Maybe asking for an aswer :) */
+    if (!pi->tcph || !pi->cxt)
+        return;
     dlog("[D] Parsing TCP packet...\n");
-    dns_parser(pi);
+    tcp_reassemble(pi);
 }
 
 void parse_udp(packetinfo *pi)
 {
-    if (pi->plen <= 0) return;
-
-    /* Reliable traffic comes from the servers (normally on port 53 or 5353)
-     * and the client has sent at least one packet on that
-     * connecton (Maybe asking for an aswer :) */
+    if (!pi->udph || !pi->cxt || pi->plen < 12)
+        return;
     dlog("[D] Parsing UDP packet...\n");
     dns_parser(pi);
 }
@@ -511,6 +750,8 @@ int connection_tracking(packetinfo *pi)
     /* Bucket turned upside down didn't yield anything. New connection */
     dlog("[D] New connection.\n");
     cxt = cxt_new(pi);
+    if (cxt == NULL)
+        return 0;
 
     /* New connections are pushed on to the head of bucket[s_hash] */
     cxt->next = head;
@@ -529,8 +770,17 @@ connection *cxt_new(packetinfo *pi)
     struct in6_addr ips;
     struct in6_addr ipd;
     connection *cxt;
-    config.cxtrackerid++;
+
+    if (config.max_connections && config.curcxt >= config.max_connections)
+        return NULL;
+    if (!mem_charge(sizeof(connection)))
+        return NULL;
     cxt = (connection *) calloc(1, sizeof(connection));
+    if (!cxt) {
+        mem_refund(sizeof(connection));
+        return NULL;
+    }
+    config.cxtrackerid++;
     cxt->cxid = config.cxtrackerid;
     cxt->af = pi->af;
 
@@ -748,7 +998,9 @@ void del_connection(connection * cxt, connection ** bucket_ptr)
         next->prev = prev;
     }
 
-    /* Free and set to NULL */
+    tcp_buf_free(&cxt->to_server);
+    tcp_buf_free(&cxt->to_client);
+    mem_refund(sizeof(connection));
     free(cxt);
     cxt = NULL;
     config.curcxt--;
@@ -796,6 +1048,7 @@ void sig_alarm_handler()
     dlog("[D] Got SIG ALRM: %lu\n", now_t);
     /* Each time check for timed out sessions */
     set_end_sessions();
+    reasm_expire(now_t);
 
     /* Only check for timed-out dns records each 10 minutes */
     if ((now_t - config.dnslastchk) >= 600) {
@@ -815,6 +1068,7 @@ void reopen_log_files()
         if (config.logfile_fd != NULL && config.logfile_fd != stdout)
             fclose(config.logfile_fd);
         config.logfile_fd = fopen(config.logfile, "a");
+        secure_log(config.logfile_fd);
     }
 
     if (config.output_log_nxd) {
@@ -825,6 +1079,7 @@ void reopen_log_files()
             if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
                 fclose(config.logfile_nxd_fd);
             config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
+            secure_log(config.logfile_nxd_fd);
         }
     }
     signal_reopen_log_files = 0;
@@ -855,93 +1110,122 @@ static int set_chroot(void)
 {
    char *absdir;
 
-   /* Change to the directory */
-   if (chdir(config.chroot_dir) != 0)
-       printf("set_chroot: Can not chdir to \"%s\": %s\n",
-              config.chroot_dir,strerror(errno));
+   if (chdir(config.chroot_dir) != 0) {
+       elog("set_chroot: Can not chdir to \"%s\": %s\n",
+            config.chroot_dir, strerror(errno));
+       return ERROR;
+   }
 
-   /* Always returns an absolute pathname */
    absdir = getcwd(NULL, 0);
+   if (absdir == NULL) {
+       elog("set_chroot: getcwd failed: %s\n", strerror(errno));
+       return ERROR;
+   }
 
-   /* Make the chroot call */
-   if (chroot(absdir) < 0)
-       printf("Could not chroot to \"%s\": absolute: %s: %s\n",
-              config.chroot_dir, absdir, strerror(errno));
+   if (chroot(absdir) < 0) {
+       elog("Could not chroot to \"%s\": absolute: %s: %s\n",
+            config.chroot_dir, absdir, strerror(errno));
+       free(absdir);
+       return ERROR;
+   }
+   free(absdir);
 
-   if (chdir("/") < 0)
-       printf("Could not chdir to \"/\" after chroot: %s\n", strerror(errno));
+   if (chdir("/") < 0) {
+       elog("Could not chdir to \"/\" after chroot: %s\n", strerror(errno));
+       return ERROR;
+   }
 
-   return 0;
+   return SUCCESS;
 }
 
 int drop_privs(void)
 {
     struct group *gr;
-    struct passwd *pw;
+    struct passwd *pw = NULL;
     char *endptr;
-    int i;
     int do_setuid = 0;
     int do_setgid = 0;
     unsigned long groupid = 0;
     unsigned long userid = 0;
+    uid_t was_root = geteuid() == 0;
+    const char *init_name = NULL;
 
     if (config.group_name != NULL) {
         do_setgid = 1;
-        if (!isdigit(config.group_name[0])) {
+        if (!isdigit((unsigned char)config.group_name[0])) {
             gr = getgrnam(config.group_name);
             if (!gr) {
-                if (config.chroot_dir) {
-                    elog("ERROR: you have chrooted and must set numeric group ID.\n");
-                    exit(1);
-                }
-                else {
-                    elog("ERROR: couldn't get ID for group %s, group does not exist.", config.group_name);
-                    exit(1);
-                }
+                elog("ERROR: couldn't get ID for group %s, group does not exist.\n",
+                     config.group_name);
+                exit(1);
             }
             groupid = gr->gr_gid;
         }
         else {
             groupid = strtoul(config.group_name, &endptr, 10);
+            if (endptr == config.group_name || *endptr != '\0') {
+                elog("ERROR: invalid group id %s\n", config.group_name);
+                exit(1);
+            }
         }
     }
 
     if (config.user_name != NULL) {
         do_setuid = 1;
-        do_setgid = 1;
-        if (isdigit(config.user_name[0]) == 0) {
+        if (!isdigit((unsigned char)config.user_name[0])) {
             pw = getpwnam(config.user_name);
-            if (pw != NULL) {
-                userid = pw->pw_uid;
+            if (pw == NULL) {
+                elog("[E] User %s not found!\n", config.user_name);
+                exit(1);
             }
-            else {
-                printf("[E] User %s not found!\n", config.user_name);
-            }
+            userid = pw->pw_uid;
+            init_name = pw->pw_name;
         }
         else {
             userid = strtoul(config.user_name, &endptr, 10);
-            pw = getpwuid(userid);
+            if (endptr == config.user_name || *endptr != '\0') {
+                elog("ERROR: invalid user id %s\n", config.user_name);
+                exit(1);
+            }
+            pw = getpwuid((uid_t)userid);
+            if (pw)
+                init_name = pw->pw_name;
         }
 
-        if (config.group_name == NULL && pw != NULL)
+        if (config.group_name == NULL && pw != NULL) {
             groupid = pw->pw_gid;
+            do_setgid = 1;
+        }
+    }
+
+    /* initgroups needs root, so it runs before the uid drop. */
+    if (do_setuid && was_root && init_name) {
+        if (initgroups(init_name, (gid_t)groupid) < 0) {
+            elog("Unable to init group names (%s/%lu): %s\n",
+                 init_name, groupid, strerror(errno));
+            exit(1);
+        }
     }
 
     if (do_setgid) {
-        if ((i = setgid(groupid)) < 0)
-            printf("Unable to set group ID: %s", strerror(i));
-   }
+        if (setgid((gid_t)groupid) < 0) {
+            elog("Unable to set group ID: %s\n", strerror(errno));
+            exit(1);
+        }
+    }
 
     endgrent();
     endpwent();
 
     if (do_setuid) {
-        if (getuid() == 0 && initgroups(config.user_name, groupid) < 0)
-            printf("Unable to init group names (%s/%lu)", config.user_name,
-                   groupid);
-
-        if ((i = setuid(userid)) < 0)
-            printf("Unable to set user ID: %s\n", strerror(i));
+        if (setuid((uid_t)userid) < 0) {
+            elog("Unable to set user ID: %s\n", strerror(errno));
+            exit(1);
+        }
+        if (was_root && userid != 0 && setuid(0) == 0) {
+            elog("ERROR: privilege drop failed, still able to regain root\n");
+            exit(1);
+        }
     }
     return 0;
 }
@@ -950,12 +1234,26 @@ int is_valid_path(const char *path)
 {
     char dir[STDBUF];
     struct stat st;
+    size_t n;
+    char *slash;
 
     if (path == NULL)
         return 0;
 
-    memcpy(dir, path, strnlen(path, STDBUF));
-    dirname(dir);
+    n = strnlen(path, sizeof(dir));
+    if (n == 0 || n >= sizeof(dir))
+        return 0;
+    memcpy(dir, path, n);
+    dir[n] = '\0';
+    slash = strrchr(dir, '/');
+    if (slash == NULL) {
+        if (getcwd(dir, sizeof(dir)) == NULL)
+            return 0;
+    }
+    else if (slash == dir)
+        dir[1] = '\0';
+    else
+        *slash = '\0';
 
     if (stat(dir, &st) != 0)
         return 0;
@@ -1000,12 +1298,15 @@ int create_pid_file(const char *path)
         return ERROR;
     }
 
-    if (write(fd, pid_buffer, strlen(pid_buffer)) != 0) {
+    if (write(fd, pid_buffer, strlen(pid_buffer)) != (ssize_t)strlen(pid_buffer)) {
         close(fd);
         return ERROR;
     }
 
-    close(fd);
+    /* Leave fd open. Closing it drops the flock. */
+    if (config.pid_fd >= 0)
+        close(config.pid_fd);
+    config.pid_fd = fd;
     return SUCCESS;
 }
 
@@ -1033,8 +1334,10 @@ int daemonize()
         }
     }
 
-    if (config.pidfile)
-        return create_pid_file(config.pidfile);
+    if (config.pidfile && create_pid_file(config.pidfile) != SUCCESS) {
+        elog("[!] Failed to create pid file %s\n", config.pidfile);
+        exit(1);
+    }
 
     return SUCCESS;
 }
@@ -1060,6 +1363,7 @@ void game_over()
         }
 #endif /* HAVE_PFRING */
 
+        reasm_shutdown();
         end_all_sessions();
 
         if (config.logfile_fd != NULL && config.logfile_fd != stdout)
@@ -1150,7 +1454,7 @@ void usage()
 #endif /* HAVE_JSON */
     olog(" -f <fields>     Choose which fields to print (default: -f SMcsCQTAtn).\n");
     olog(" -s <file>       Print stats on signal (SIGUSR1) to this file.\n");
-    olog(" -b 'BPF'        Berkley Packet Filter (default: 'port 53').\n");
+    olog(" -b 'BPF'        Berkley Packet Filter (default: '%s').\n", BPFF);
     olog(" -p <file>       Name of pid file (default: /var/run/passivedns.pid).\n");
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default: %u).\n", DNSCACHETIMEOUT);
@@ -1193,7 +1497,7 @@ void usage()
 void show_version()
 {
     olog("\n");
-    olog("[*] PassiveDNS %s\n", VERSION);
+    olog("[*] PassiveDNS %s\n", PACKAGE_VERSION);
     olog("[*] By Edward Bjarte Fjellskål <edward.fjellskaal@gmail.com>\n");
     olog("[*] Using %s\n", pcap_lib_version());
     olog("[*] Using ldns version %s\n",ldns_version());
@@ -1225,6 +1529,8 @@ int main(int argc, char *argv[])
     int ch = 0; // verbose_already = 0;
     int daemon = 0;
     memset(&config, 0, sizeof(globalconfig));
+    config.pid_fd = -1;
+    config.max_connections = MAX_CONNECTIONS;
     config.inpacket = config.intr_flag = 0;
     config.dnslastchk = 0;
     config.bpff = BPFF;
@@ -1408,6 +1714,7 @@ int main(int argc, char *argv[])
                 elog("[!] Error opening log file %s\n", config.logfile);
                 exit(1);
             }
+            secure_log(config.logfile_fd);
         }
     }
 
@@ -1425,6 +1732,7 @@ int main(int argc, char *argv[])
                 elog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
                 exit(1);
             }
+            secure_log(config.logfile_nxd_fd);
         }
     }
 
@@ -1492,11 +1800,14 @@ int main(int argc, char *argv[])
         }
 
         if (daemon) {
-            if (!is_valid_path(config.pidfile))
+            if (!is_valid_path(config.pidfile)) {
                 elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
+                exit(1);
+            }
             openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
             olog("[*] Daemonizing...\n\n");
-            daemonize();
+            if (daemonize() != SUCCESS)
+                exit(1);
         }
 
         alarm(TIMEOUT);
@@ -1562,11 +1873,14 @@ int main(int argc, char *argv[])
         }
 
         if (daemon) {
-            if (!is_valid_path(config.pidfile))
+            if (!is_valid_path(config.pidfile)) {
                 elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
+                exit(1);
+            }
             openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
             olog("[*] Daemonizing...\n\n");
-            daemonize();
+            if (daemonize() != SUCCESS)
+                exit(1);
         }
 
     }

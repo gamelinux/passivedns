@@ -21,8 +21,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <time.h>
+#include <inttypes.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -43,6 +45,9 @@ extern globalconfig config;
 
 pdns_record *dbucket[DBUCKET_SIZE];
 
+/* Record currently being updated. Expiration must not free it. */
+static pdns_record *expire_keep = NULL;
+
 uint64_t hash(unsigned char *str)
 {
     uint64_t hash = 5381;
@@ -60,35 +65,12 @@ void dns_parser(packetinfo *pi)
 
     status = LDNS_STATUS_ERR;
 
-    /* In DNS tcp messages, the first 2 bytes signal the
-     * amount of data to expect. So we need to skip them in the read. */
-    if (pi->plen <= 2)
-        return;  /* The minimum bytes in a packet, else return */
+    /* TCP length prefix is removed by tcp_reassemble(). Both paths pass
+     * a bare DNS message whose length is already clamped to the buffer. */
+    if (pi->payload == NULL || pi->plen < 12)
+        return;
 
-    if (pi->af == AF_INET) {
-        switch (pi->ip4->ip_p) {
-            case IP_PROTO_TCP:
-                status = ldns_wire2pkt(&dns_pkt,pi->payload + 2, pi->plen - 2);
-                break;
-            case IP_PROTO_UDP:
-                status = ldns_wire2pkt(&dns_pkt,pi->payload, pi->plen);
-                break;
-            default:
-                break;
-        }
-    }
-    else if (pi->af == AF_INET6) {
-        switch (pi->ip6->next) {
-            case IP_PROTO_TCP:
-                status = ldns_wire2pkt(&dns_pkt,pi->payload + 2, pi->plen - 2);
-                break;
-            case IP_PROTO_UDP:
-                status = ldns_wire2pkt(&dns_pkt,pi->payload, pi->plen);
-                break;
-            default:
-                break;
-        }
-    }
+    status = ldns_wire2pkt(&dns_pkt, pi->payload, pi->plen);
 
     if (status != LDNS_STATUS_OK) {
         dlog("[D] ldns_wire2pkt status: %d\n", status);
@@ -303,12 +285,16 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             dlog("[D] Hash: %lu\n", dnshash);
             /* Check if the node exists, if not, make it */
             pr = get_pdns_record(dnshash, pi, domain_name);
+            if (pr == NULL) {
+                free(domain_name);
+                return -1;
+            }
 
             /* Set the SRC flag: */
             //lname_node->srcflag |= pdns_chk_dnsfe(rcode);
             dns_query_domains = ldns_pkt_question(dns_pkt);
             rr = ldns_rr_list_rr(dns_query_domains, 0);
-            if ((pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
+            if (rr && (pr->last_seen.tv_sec - pr->last_print.tv_sec) >= config.dnsprinttime) {
                 /* Print the SRC Error record */
                 print_passet(pr, NULL, rr, rdf_data, rcode);
             }
@@ -476,12 +462,18 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             rdomain_name = (char *) ldns_buffer2str(buff);
 
             if (rdomain_name == NULL)
-                continue;
+                break;
             len = strlen(rdomain_name) + 5;
 
             if (tmp1 != NULL)
                 len += strlen(tmp1);
             tmp2 = malloc(len);
+            if (tmp2 == NULL) {
+                free(tmp1);
+                free(rdomain_name);
+                free(domain_name);
+                return -1;
+            }
 
             if (tmp1 != NULL) {
                 tmp2 = strcpy(tmp2, tmp1);
@@ -499,10 +491,12 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
         rdomain_name = tmp1;
 
-        if (rname == NULL)
+        if (rname == NULL) {
+            free(rdomain_name);
             continue;
+        }
 
-        if (rdomain_name == NULL && offset <= 1) {
+        if (rdomain_name == NULL) {
             dlog("[D] ldns_buffer2str returned: NULL\n");
             continue;
         }
@@ -513,6 +507,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
             dlog("[D] Hash: %lu\n", dnshash);
             /* Check if the node exists, if not, make it */
             pr = get_pdns_record(dnshash, pi, domain_name);
+        }
+        if (pr == NULL) {
+            free(rdomain_name);
+            continue;
         }
 
         /* Update the pdns record with the pdns asset */
@@ -525,6 +523,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 free(domain_name);
                 len = strlen((char *)rdomain_name);
                 domain_name = calloc(1, (len + 1));
+                if (domain_name == NULL) {
+                    free(rdomain_name);
+                    break;
+                }
                 strncpy((char *)domain_name, (char *)rdomain_name, len);
                 dnshash = hash(domain_name);
                 dlog("[D] Hash: %lu\n", dnshash);
@@ -545,7 +547,6 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     pdns_asset *passet = pr->passet;
     pdns_asset *head = passet;
     ldns_rr *prr = NULL;
-    uint32_t len = 0;
 
     dlog("Searching: %u, %s, %s\n", rr->_rr_type, pr->qname, rdomain_name);
 
@@ -582,19 +583,43 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
 
     /* Else, we got a new passet :) */
     if (passet == NULL) {
+        size_t alen = strlen((char *)rdomain_name);
+        if (!mem_charge(sizeof(pdns_asset) + sizeof(ldns_rr) + alen + 1)) {
+            expire_keep = pr;
+            expire_dns_records();
+            expire_keep = NULL;
+            if (!mem_charge(sizeof(pdns_asset) + sizeof(ldns_rr) + alen + 1))
+                return;
+        }
         passet = (pdns_asset*) calloc(1, sizeof(pdns_asset));
-        dlog("[*] Allocated a new dns asset...\n");
-        config.p_s.dns_assets++;
-        config.dns_assets++;
         prr = (ldns_rr*) calloc(1, sizeof(ldns_rr));
-        prr->_owner = rr->_owner;
+        if (!passet || !prr) {
+            free(passet);
+            free(prr);
+            mem_refund(sizeof(pdns_asset) + sizeof(ldns_rr) + alen + 1);
+            return;
+        }
+        dlog("[*] Allocated a new dns asset...\n");
+        /* Type, class and TTL are values. The ldns packet that owns the
+         * name and rdata is freed when this function returns. */
+        prr->_owner = NULL;
         prr->_ttl = rr->_ttl;
-        prr->_rd_count = rr->_rd_count;
+        prr->_rd_count = 0;
         prr->_rr_type = rr->_rr_type;
         prr->_rr_class = rr->_rr_class;
-        prr->_rdata_fields = rr->_rdata_fields;
+        prr->_rdata_fields = NULL;
         passet->seen = 1;
         passet->rr = prr;
+        passet->answer = calloc(1, alen + 1);
+        if (!passet->answer) {
+            free(prr);
+            free(passet);
+            mem_refund(sizeof(pdns_asset) + sizeof(ldns_rr) + alen + 1);
+            return;
+        }
+        memcpy(passet->answer, rdomain_name, alen);
+        config.p_s.dns_assets++;
+        config.dns_assets++;
     }
     else
         dlog("[D] BAD\n");
@@ -617,9 +642,6 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
         memcpy(passet->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
     }
     passet->prev = NULL;
-    len = strlen((char *)rdomain_name);
-    passet->answer = calloc(1, (len + 1));
-    strncpy((char *)passet->answer, (char *)rdomain_name, len);
 
     dlog("[D] Adding: %u, %s, %s\n",passet->rr->_rr_type, pr->qname,
          rdomain_name);
@@ -647,6 +669,55 @@ const char *u_ntop(const struct in6_addr ip_addr, int af, char *dest)
     return dest;
 }
 
+typedef struct _outbuf {
+    char *data;
+    size_t len;
+    size_t cap;
+} outbuf;
+
+static int out_add(outbuf *o, const char *fmt, ...)
+{
+    va_list ap, aq;
+    int need;
+    char *grown;
+    size_t ncap;
+
+    va_start(ap, fmt);
+    va_copy(aq, ap);
+    need = vsnprintf(NULL, 0, fmt, ap);
+    va_end(ap);
+    if (need < 0 || o->len + (size_t)need >= LOG_LINE_MAX) {
+        va_end(aq);
+        return -1;
+    }
+    if (o->len + (size_t)need + 1 > o->cap) {
+        ncap = o->cap ? o->cap : 128;
+        while (o->len + (size_t)need + 1 > ncap) {
+            if (ncap > LOG_LINE_MAX / 2) {
+                ncap = o->len + (size_t)need + 1;
+                break;
+            }
+            ncap *= 2;
+        }
+        grown = (char *)realloc(o->data, ncap);
+        if (!grown) {
+            va_end(aq);
+            return -1;
+        }
+        o->data = grown;
+        o->cap = ncap;
+    }
+    vsnprintf(o->data + o->len, o->cap - o->len, fmt, aq);
+    va_end(aq);
+    o->len += (size_t)need;
+    return 0;
+}
+
+#define PADD(...) do { \
+    if (out_add(&ob, __VA_ARGS__) != 0) \
+        goto print_free; \
+} while (0)
+
 void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                   ldns_rdf *lname, uint16_t rcode)
 {
@@ -658,10 +729,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     char *rr_class;
     char *rr_type;
     char *rr_rcode;
-    char buffer[1000] = "";
-    char *output = buffer;
-    int offset = 0;
+    char *output = NULL;
+    outbuf ob;
+    int text_line = 0;
     uint8_t is_err_record = 0;
+
+    memset(&ob, 0, sizeof(ob));
 
 #ifdef HAVE_JSON
     json_t *jdata;
@@ -720,6 +793,8 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     rr_class = malloc(10);
     rr_type  = malloc(12);
     rr_rcode = malloc(20);
+    if (!proto || !rr_class || !rr_type || !rr_rcode)
+        goto print_free;
 
     switch (l->proto) {
         case IP_PROTO_TCP:
@@ -1020,10 +1095,11 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         output = json_dumps(jdata, data_flags);
         json_decref(jdata);
         if (output == NULL)
-            return;
+            goto print_free;
     }
     else {
 #endif /* HAVE_JSON */
+        text_line = 1;
         /* Print timestamp */
         if ((config.fieldsf & FIELD_TIMESTAMP_YMDHMS)) {
             struct tm *tmpTime;
@@ -1031,165 +1107,158 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             tmpTime = localtime(&l->last_seen.tv_sec);
             strftime(timestr, sizeof(timestr), "%Y-%m-%d %H:%M:%S", tmpTime);
             if (is_err_record)
-                offset += snprintf(output, sizeof(buffer) - offset, "%s.%06lu",
-                                   timestr, l->last_seen.tv_usec);
+                PADD("%s.%06lu", timestr, l->last_seen.tv_usec);
             else
-                offset += snprintf(output, sizeof(buffer) - offset, "%s.%06lu",
-                                   timestr, p->last_seen.tv_usec);
+                PADD("%s.%06lu", timestr, p->last_seen.tv_usec);
         }
         else if ((config.fieldsf & FIELD_TIMESTAMP_S) &&
                  (config.fieldsf & FIELD_TIMESTAMP_MS)) {
             if (is_err_record)
-                offset += snprintf(output, sizeof(buffer) - offset, "%lu.%06lu",
-                                   l->last_seen.tv_sec, l->last_seen.tv_usec);
+                PADD("%lu.%06lu", l->last_seen.tv_sec, l->last_seen.tv_usec);
             else
-                offset += snprintf(output, sizeof(buffer) - offset, "%lu.%06lu",
-                                   p->last_seen.tv_sec, p->last_seen.tv_usec);
+                PADD("%lu.%06lu", p->last_seen.tv_sec, p->last_seen.tv_usec);
         }
         else if (config.fieldsf & FIELD_TIMESTAMP_S) {
             if (is_err_record)
-                offset += snprintf(output, sizeof(buffer) - offset, "%lu", l->last_seen.tv_sec);
+                PADD("%lu", l->last_seen.tv_sec);
             else
-                offset += snprintf(output, sizeof(buffer) - offset, "%lu", p->last_seen.tv_sec);
+                PADD("%lu", p->last_seen.tv_sec);
         }
         else if (config.fieldsf & FIELD_TIMESTAMP_MS) {
             if (is_err_record)
-                offset += snprintf(output, sizeof(buffer) - offset, "%06lu", l->last_seen.tv_usec);
+                PADD("%06lu", l->last_seen.tv_usec);
             else
-                offset += snprintf(output, sizeof(buffer) - offset, "%06lu", p->last_seen.tv_usec);
+                PADD("%06lu", p->last_seen.tv_usec);
         }
 
         /* Print hostname */
         if (config.fieldsf & FIELD_HOSTNAME) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", config.hostname);
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%s", config.hostname);
         }
 
         /* Print client IP */
         if (config.fieldsf & FIELD_CLIENT) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_c);
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%s", ip_addr_c);
         }
 
-        /* Print client hardware address  */
-        if (config.fieldsf & FIELD_CLT_HWADDR) {
-            char buf[128];
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            snprintf(buf, 128, "%02x:%02x:%02x:%02x:%02x:%02x",
+        /* Print client hardware address. Error records have no asset. */
+        if ((config.fieldsf & FIELD_CLT_HWADDR) && p != NULL) {
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%02x:%02x:%02x:%02x:%02x:%02x",
                 p->cmac[0], p->cmac[1], p->cmac[2],
                 p->cmac[3], p->cmac[4], p->cmac[5]);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", buf);
         }
 
         /* Print server IP */
         if (config.fieldsf & FIELD_SERVER) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", ip_addr_s);
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%s", ip_addr_s);
         }
 
         /* Print server hardware address  */
-        if (config.fieldsf & FIELD_SRV_HWADDR) {
-            char buf[128];
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            snprintf(buf, 128, "%02x:%02x:%02x:%02x:%02x:%02x",
+        if ((config.fieldsf & FIELD_SRV_HWADDR) && p != NULL) {
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%02x:%02x:%02x:%02x:%02x:%02x",
                 p->smac[0], p->smac[1], p->smac[2],
                 p->smac[3], p->smac[4], p->smac[5]);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", buf);
         }
 
         /* Print protocol */
         if (config.fieldsf & FIELD_PROTO) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", proto);
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%s", proto);
         }
 
         /* Print class */
         if (config.fieldsf & FIELD_CLASS) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_class);
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%s", rr_class);
         }
 
         /* Print query */
         if (config.fieldsf & FIELD_QUERY) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", l->qname);
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%s", l->qname);
         }
 
         /* Print query length */
         if (config.fieldsf & FIELD_QUERY_LEN) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%zd", strlen(l->qname));
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%zd", strlen(l->qname));
         }
 
         /* Print type */
         if (config.fieldsf & FIELD_TYPE) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
-            offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_type);
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%s", rr_type);
         }
 
         /* Print answer */
         if (config.fieldsf & FIELD_ANSWER) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (ob.len != 0)
+                PADD("%s", d);
             if (is_err_record)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", rr_rcode);
+                PADD("%s", rr_rcode);
             else
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", p->answer);
+                PADD("%s", p->answer);
         }
 
         /* Print answer length*/
         if (config.fieldsf & FIELD_ANSWER_LEN) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (ob.len != 0)
+                PADD("%s", d);
             if (is_err_record)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%zd", strlen(rr_rcode));
+                PADD("%zd", strlen(rr_rcode));
             else
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%zd", strlen(p->answer));
+                PADD("%zd", strlen(p->answer));
         }
 
         /* Print TTL */
         if (config.fieldsf & FIELD_TTL) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (ob.len != 0)
+                PADD("%s", d);
             if (is_err_record)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%d", PASSET_ERR_TTL);
+                PADD("%d", PASSET_ERR_TTL);
             else
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%u", p->rr->_ttl);
+                PADD("%u", p->rr->_ttl);
         }
 
         /* Print count */
        if (config.fieldsf & FIELD_COUNT) {
-            if (offset != 0)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%s", d);
+            if (ob.len != 0)
+                PADD("%s", d);
             if (is_err_record)
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%d", PASSET_ERR_COUNT);
+                PADD("%d", PASSET_ERR_COUNT);
             else
-                offset += snprintf(output+offset, sizeof(buffer) - offset, "%"PRIu64, p->seen);
+                PADD("%"PRIu64, p->seen);
         }
+        output = ob.data;
 
 #ifdef HAVE_JSON
     }
 #endif /* HAVE_JSON */
 
     /* Print to log file */
-    if (fd) {
+    if (fd && output) {
         fprintf(fd, "%s\n", output);
         fflush(fd);
     }
 
     /* Print to syslog */
-    if ((is_err_record && config.output_syslog_nxd) ||
-            (!is_err_record && config.output_syslog)) {
+    if (output && ((is_err_record && config.output_syslog_nxd) ||
+            (!is_err_record && config.output_syslog))) {
         openlog(PDNS_IDENT, LOG_NDELAY, LOG_LOCAL7);
         syslog(LOG_INFO, "%s", output);
         closelog();
@@ -1199,17 +1268,18 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         l->last_print = l->last_seen;
         l->seen = 0;
     }
-    else {
+    else if (p) {
         p->last_print = p->last_seen;
         p->seen = 0;
     }
 
+print_free:
+    if (text_line)
+        free(ob.data);
 #ifdef HAVE_JSON
-    if ((is_err_record && config.use_json_nxd) ||
-        (!is_err_record && config.use_json)) {
-        /* json_dumps allocate memory that has to be freed */
+    else if ((is_err_record && config.use_json_nxd) ||
+        (!is_err_record && config.use_json))
         free(output);
-    }
 #endif /* HAVE_JSON */
 
     free(proto);
@@ -1224,7 +1294,6 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
 {
     pdns_record *pdnsr = dbucket[dnshash];
     pdns_record *head = pdnsr;
-    uint32_t len = 0;
 
     /* Search through the bucket */
     while (pdnsr != NULL)
@@ -1248,7 +1317,25 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
 
     /* Else, we got a new dnsr :) */
     if (pdnsr == NULL) {
+        size_t qlen = strlen((char *)domain_name);
+        size_t need = sizeof(pdns_record) + qlen + 1;
+        if (!mem_charge(need)) {
+            expire_dns_records();
+            if (!mem_charge(need))
+                return NULL;
+        }
         pdnsr = (pdns_record*) calloc(1, sizeof(pdns_record));
+        if (!pdnsr) {
+            mem_refund(need);
+            return NULL;
+        }
+        pdnsr->qname = calloc(1, qlen + 1);
+        if (!pdnsr->qname) {
+            free(pdnsr);
+            mem_refund(need);
+            return NULL;
+        }
+        memcpy(pdnsr->qname, domain_name, qlen);
         dlog("[*] Allocated a new dns record...\n");
         config.p_s.dns_records++;
         config.dns_records++;
@@ -1271,9 +1358,6 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
     pdnsr->prev = NULL;
     pdnsr->passet = NULL;
     pdnsr->proto = pi->proto;
-    len = strlen((char *)domain_name);
-    pdnsr->qname = calloc(1, (len + 1));
-    strncpy((char *)pdnsr->qname, (char *)domain_name, len);
 
     dbucket[dnshash] = pdnsr;
     return pdnsr;
@@ -1293,7 +1377,10 @@ void expire_dns_records()
     while (run == 0)
     {
         uint32_t iter;
+        uint32_t removed = 0;
+        uint64_t before;
         run = 1;
+        before = config.mem_limit_size;
         for (iter = 0; iter < DBUCKET_SIZE; iter++)
         {
             pdnsr = dbucket[iter];
@@ -1302,6 +1389,11 @@ void expire_dns_records()
                 if (pdnsr->last_seen.tv_sec < oldest)
                     /* Find the LRU asset timestamp */
                     oldest = pdnsr->last_seen.tv_sec;
+
+                if (pdnsr == expire_keep) {
+                    pdnsr = pdnsr->next;
+                    continue;
+                }
 
                 if (pdnsr->last_seen.tv_sec <= expire_t) {
                     /* Expire the record and all its assets */
@@ -1316,6 +1408,7 @@ void expire_dns_records()
                     pdnsr = pdnsr->next;
 
                     delete_dns_record(tmp, &dbucket[iter]);
+                    removed++;
                     if (pdnsr == NULL && tmp_prev == NULL)
                         dbucket[iter] = NULL;
                 }
@@ -1329,9 +1422,12 @@ void expire_dns_records()
 
         update_config_mem_counters();
         /* If we are using more memory than mem_limit_max
-         * decrease expire_t too the oldest seen asset at least
+         * decrease expire_t too the oldest seen asset at least.
+         * Stop when a pass frees nothing, so flows and fragment
+         * buffers cannot spin this loop.
          */
-        if (config.mem_limit_size > config.mem_limit_max) {
+        if (config.mem_limit_size > config.mem_limit_max &&
+            removed > 0 && config.mem_limit_size < before) {
             expire_t = (oldest + 300);  /* Oldest asset + 5 minutes */
             oldest = config.tstamp.tv_sec;
             run = 0;
@@ -1341,8 +1437,9 @@ void expire_dns_records()
 
 void update_config_mem_counters()
 {
-    config.mem_limit_size = (sizeof(pdns_record) * config.dns_records) +
-                            (sizeof(pdns_asset)  * config.dns_assets);
+    /* mem_limit_size is a running total of charged bytes. Rebuilding it
+     * from the struct counts used to drop the strings, the flows, and
+     * the reassembly buffers. */
 
     dlog("DNS and Memory stats:\n");
     dlog("DNS Records         :       %12u\n",        config.dns_records);
@@ -1425,6 +1522,9 @@ void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
     }
 
     /* Free and set to NULL */
+    if (pdnsr->qname)
+        mem_refund(strlen((char *)pdnsr->qname) + 1);
+    mem_refund(sizeof(pdns_record));
     free(pdnsr->qname);
     free(pdnsr);
     pdnsr = NULL;
@@ -1468,10 +1568,10 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
 
 void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
 {
-    dlog("[D] Deleting domain asset: %s\n", passet->answer);
-
     if (passet == NULL)
         return;
+
+    dlog("[D] Deleting domain asset: %s\n", passet->answer);
 
     pdns_asset *tmp_pa = NULL;
     pdns_asset *next_pa = NULL;
@@ -1498,6 +1598,10 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
         next_pa->prev = prev_pa;
     }
 
+    if (passet->answer)
+        mem_refund(strlen((char *)passet->answer) + 1);
+    mem_refund(sizeof(ldns_rr));
+    mem_refund(sizeof(pdns_asset));
     free(passet->rr);
     passet->rr = NULL;
     free(passet->answer);
@@ -1510,7 +1614,7 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
 void update_dns_stats(packetinfo *pi, uint8_t code)
 {
     if (pi->af == AF_INET) {
-        switch (pi->ip4->ip_p) {
+        switch (pi->proto) {
             case IP_PROTO_TCP:
                 config.p_s.ip4_dns_tcp++;
                 if (code == SUCCESS)
@@ -1530,7 +1634,7 @@ void update_dns_stats(packetinfo *pi, uint8_t code)
         }
     }
     else if (pi->af == AF_INET6) {
-        switch (pi->ip6->next) {
+        switch (pi->proto) {
             case IP_PROTO_TCP:
                  config.p_s.ip6_dns_tcp++;
                 if (code == SUCCESS)
