@@ -1,7 +1,7 @@
 /*
 ** This file is a part of PassiveDNS.
 **
-** Copyright (C) 2010-2013, Edward Fjellskål <edwardfjellskaal@gmail.com>
+** Copyright (C) 2010-2026, Edward Fjellskål <edwardfjellskaal@gmail.com>
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -102,8 +102,8 @@ void dns_parser(packetinfo *pi)
             return;
         }
         dlog("[D] DNS Answer\n");
-        /* Check the DNS TID */
-        if (pi->cxt->plid == ldns_pkt_id(dns_pkt)) {
+        /* plid 0 means the query id was missing or rejected. Id 0 must not match. */
+        if (pi->cxt->plid != 0 && pi->cxt->plid == ldns_pkt_id(dns_pkt)) {
             dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
         }
         else {
@@ -1660,7 +1660,7 @@ void parse_field_flags(char *args)
     int i;
     int ok = 0;
     int len = 0;
-    uint8_t tmpf;
+    uint32_t tmpf;
 
     tmpf = config.fieldsf;
     len = strlen(args);
@@ -1778,7 +1778,7 @@ void parse_dns_flags(char *args)
     int i;
     int ok = 0;
     int len = 0;
-    uint8_t tmpf;
+    uint64_t tmpf;
 
     tmpf = config.dnsf;
     len = strlen(args);

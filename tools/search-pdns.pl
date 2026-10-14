@@ -2,7 +2,7 @@
 
 # ----------------------------------------------------------------------
 # Search in PassiveDNS DB
-# Copyright (C) 2011-2012, Edward Fjellskål <edwardfjellskaal@gmail.com>
+# Copyright (C) 2011-2026, Edward Fjellskål <edwardfjellskaal@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -190,7 +190,7 @@ $dbh->disconnect();
 
 =head1 COPYRIGHT
 
-    Copyright (C) 2011, Edward Fjellskaal (edwardfjellskaal@gmail.com)
+    Copyright (C) 2011-2026, Edward Fjellskaal (edwardfjellskaal@gmail.com)
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by

@@ -1,7 +1,7 @@
 /*
 ** This file is a part of PassiveDNS.
 **
-** Copyright (C) 2010-2013, Edward Fjellskål <edwardfjellskaal@gmail.com>
+** Copyright (C) 2010-2026, Edward Fjellskål <edwardfjellskaal@gmail.com>
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -1230,6 +1230,22 @@ int drop_privs(void)
     return 0;
 }
 
+static void confine(void)
+{
+    if (config.chroot_dir) {
+        olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
+        if (set_chroot()) {
+            elog("[!] failed to chroot\n");
+            exit(1);
+        }
+    }
+
+    if (config.drop_privs_flag) {
+        olog("[*] Dropping privs...\n");
+        drop_privs();
+    }
+}
+
 int is_valid_path(const char *path)
 {
     char dir[STDBUF];
@@ -1786,18 +1802,7 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        if (config.chroot_dir) {
-            olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
-            if (set_chroot()) {
-                elog("[!] failed to chroot\n");
-                exit(1);
-            }
-        }
-
-        if (config.drop_privs_flag) {
-            olog("[*] Dropping privs...\n");
-            drop_privs();
-        }
+        confine();
 
         if (daemon) {
             if (!is_valid_path(config.pidfile)) {
@@ -1825,8 +1830,10 @@ int main(int argc, char *argv[])
         /* Read from PCAP file specified by '-r' switch. */
         olog("[*] Reading from file %s\n\n", config.pcap_file);
         if (!(config.handle = pcap_open_offline(config.pcap_file, config.errbuf))) {
-            elog("[*] Unable to open %s.  (%s)", config.pcap_file, config.errbuf);
+            elog("[*] Unable to open %s.  (%s)\n", config.pcap_file, config.errbuf);
+            exit(1);
         }
+        confine();
 
     }
     else {
@@ -1859,18 +1866,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        if (config.chroot_dir) {
-            olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
-            if(set_chroot()){
-                elog("[!] failed to chroot\n");
-                exit(1);
-            }
-        }
-
-        if (config.drop_privs_flag) {
-            olog("[*] Dropping privs...\n");
-            drop_privs();
-        }
+        confine();
 
         if (daemon) {
             if (!is_valid_path(config.pidfile)) {

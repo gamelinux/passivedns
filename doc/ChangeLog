@@ -1,3 +1,12 @@
+Changes with PassiveDNS 1.3.0
+
+- Extend copyright notices through 2026
+- Apply a requested user, group, or chroot when reading a pcap with -r
+- Exit with an error when -r cannot open the pcap
+- Do not accept a DNS answer whose id was not stored from a query, including id 0
+- Restore the full field and RR-type mask when -f or -X has no valid flag
+- Add regression tests for the decoder, the command line, and the Perl tools
+
 Changes with PassiveDNS 1.2.2
 
 - Reject short, wrapped, and zero-length IP headers before parsing

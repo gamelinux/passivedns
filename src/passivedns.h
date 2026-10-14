@@ -1,7 +1,7 @@
 /*
 ** This file is a part of PassiveDNS.
 **
-** Copyright (C) 2010-2013, Edward Fjellskål <edwardfjellskaal@gmail.com>
+** Copyright (C) 2010-2026, Edward Fjellskål <edwardfjellskaal@gmail.com>
 **
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -615,6 +615,6 @@ int mem_charge(size_t n);
 void mem_refund(size_t n);
 
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.2.2"
+#define PACKAGE_VERSION "1.3.0"
 #endif
 

@@ -1,6 +1,6 @@
 <?php
 # --------------------------------------------------------------------------
-# Copyright (C) 2013 Edward Fjellskål <edward.fjellskaal@gmail.com>
+# Copyright (C) 2013-2026 Edward Fjellskål <edward.fjellskaal@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
