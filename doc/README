@@ -31,8 +31,10 @@ Then you need to start up pdns2db.pl
 root@localhost: export PDNS_DB_PASSWORD='choose-a-password'
 root@localhost: perl pdns2db.pl --file /var/log/passivedns.log
 
-The web page in www/ is a local demo. It reads the same PDNS_DB_PASSWORD.
-Set PDNS_WEB_TOKEN as well if that page is reachable beyond localhost.
+The web page in www/ is a local demo. It reads the same PDNS_DB_PASSWORD,
+PDNS_DB_PORT, and PDNS_DB_TABLE. Set PDNS_WEB_TOKEN as well if that page
+is reachable beyond localhost. The table definition is sql/pdns.sql.
+Report a vulnerability through SECURITY.md.
 
 # Old School archiving of passivedns.log
 # While passivedns is running;

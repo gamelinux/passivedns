@@ -86,8 +86,9 @@ def perl_env(lib, capture, extra=None):
     return env
 
 
-def run(cmd, env, timeout=20):
-    return subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
+def run(cmd, env, timeout=20, cwd=None):
+    return subprocess.run(cmd, capture_output=True, text=True, env=env,
+                          timeout=timeout, cwd=cwd)
 
 
 def blocks(text):
@@ -162,6 +163,16 @@ def main():
                     "--alertlog", alert], nodb)
         report(proc.returncode == 0, "pdns2db-nodb", proc.stdout + proc.stderr)
 
+        pipe_name = "|not-a-command"
+        open(os.path.join(tmp, pipe_name), "w").close()
+        proc = run(["perl", PDNS2DB, "--nodb", "--batch", "--file", pipe_name], nodb, cwd=tmp)
+        report(proc.returncode == 0 and "Processing of |not-a-command is done" in (proc.stdout + proc.stderr),
+               "pdns2db-pipe-file", proc.stdout + proc.stderr)
+        proc = run(["perl", PDNS2DB, "--nodb", "--batch", "--file", logfile,
+                    "--whitelist", white], nodb)
+        report(proc.returncode == 0 and "Whitelist without Blacklist" in (proc.stdout + proc.stderr),
+               "pdns2db-whitelist-only", proc.stdout + proc.stderr)
+
         open(capture, "w").close()
         if os.path.exists(alert):
             os.remove(alert)
@@ -198,6 +209,19 @@ def main():
         proc = run(["perl", SEARCH, "-s", "example"], badname)
         report(proc.returncode != 0 and "identifier" in (proc.stdout + proc.stderr),
                "search-db-name", proc.stdout + proc.stderr)
+
+        badtable = perl_env(lib, capture, {"PDNS_DB_TABLE": "pdns;drop", "PDNS_DB_PASSWORD": "x"})
+        proc = run(["perl", SEARCH, "-s", "example"], badtable)
+        report(proc.returncode != 0 and "PDNS_DB_TABLE" in (proc.stdout + proc.stderr),
+               "search-table", proc.stdout + proc.stderr)
+        badport = perl_env(lib, capture, {"PDNS_DB_PORT": "nope", "PDNS_DB_PASSWORD": "x"})
+        proc = run(["perl", SEARCH, "-s", "example"], badport)
+        report(proc.returncode != 0 and "PDNS_DB_PORT" in (proc.stdout + proc.stderr),
+               "search-port", proc.stdout + proc.stderr)
+        badport = perl_env(lib, capture, {"PDNS_DB_PORT": "nope"})
+        proc = run(["perl", PDNS2DB, "--nodb", "--batch", "--file", logfile], badport)
+        report(proc.returncode != 0 and "PDNS_DB_PORT" in (proc.stdout + proc.stderr),
+               "pdns2db-port", proc.stdout + proc.stderr)
 
         dated = perl_env(lib, capture, {"PDNS_DB_PASSWORD": "s3cret"})
         proc = run(["perl", SEARCH, "-s", "example", "--first-seen", "yesterday"], dated)
@@ -243,6 +267,18 @@ def main():
         raw_ok = bool(execs) and execs[0][2:].count("%foo%") == 2
         report(proc.returncode == 0 and raw_ok, "search-raw",
                proc.stdout + proc.stderr + "\n" + cap)
+
+        custom = perl_env(lib, capture, {
+            "PDNS_DB_PASSWORD": "s3cret",
+            "PDNS_DB_PORT": "3307",
+            "PDNS_DB_TABLE": "records",
+        })
+        open(capture, "w").close()
+        proc = run(["perl", SEARCH, "-s", "example"], custom)
+        cap = open(capture, encoding="utf-8").read()
+        report(proc.returncode == 0 and "port=3307" in cap and "FROM pdns.records" in cap
+               and "FIRST_SEEN" in cap and "first_seen" not in cap,
+               "search-table-port", proc.stdout + proc.stderr + "\n" + cap)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return 1 if failed else 0

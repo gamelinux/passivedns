@@ -117,6 +117,17 @@ def main():
     report(code == 0 and "Record letters: F" in out and "FT" not in out,
            "spf-does-not-enable-txt", out + err)
 
+    code, out, err = run(["-S", "-1"], empty)
+    report(code != 0 and "memory limit" in (out + err), "mem-negative", out + err)
+    code, out, err = run(["-S", "nope"], empty)
+    report(code != 0 and "memory limit" in (out + err), "mem-text", out + err)
+    code, out, err = run(["-C", "-5"], empty)
+    report(code != 0 and "cache time" in (out + err), "cache-negative", out + err)
+    code, out, err = run(["-P", "12x"], empty)
+    report(code != 0 and "print interval" in (out + err), "print-text", out + err)
+    code, out, err = run(["-S", "1", "-f", "h"], empty)
+    report(code == 0 and "Record letters:" in out, "mem-and-hostname", out + err)
+
     if os.geteuid() != 0:
         code, out, err = run(["-T", "/tmp"], empty)
         report(code != 0 and "failed to chroot" in (out + err), "chroot-unpriv", out + err)

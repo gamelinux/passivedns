@@ -1,0 +1,22 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential autoconf automake libldns-dev libpcap-dev python3
+      - name: Build
+        run: |
+          autoreconf --install
+          ./configure
+          make
+      - name: Test
+        run: python3 tests/run.py

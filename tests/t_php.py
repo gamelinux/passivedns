@@ -40,7 +40,9 @@ def source_checks(text):
            and "hash_equals" in text, "php-uses-prepare-and-escape")
     report("ANSWER = ?" in text and "QUERY LIKE ?" in text
            and "ANSWER LIKE ?" in text, "php-placeholders")
-    report("PDNS_DB_PASSWORD" in text and "PDNS_WEB_TOKEN" in text, "php-env")
+    report("PDNS_DB_PASSWORD" in text and "PDNS_WEB_TOKEN" in text
+           and "PDNS_DB_TABLE" in text and "PDNS_DB_PORT" in text
+           and "FROM pdns WHERE" not in text, "php-env")
     report("ENT_QUOTES" in text and "utf8mb4" in text, "php-charset")
 
 

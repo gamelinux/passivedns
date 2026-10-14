@@ -122,9 +122,19 @@ $HASH_DBSKIPLIST->{'static'} = load_domain_list_static($DOMAIN_DBSKIPLIST_FILE) 
 $HASH_DBONLYLIST->{'pcre'}   = [load_domain_list_pcre($DOMAIN_DBONLYLIST_FILE_PCRE)] if $DOMAIN_DBONLYLIST_FILE_PCRE;
 $HASH_DBONLYLIST->{'static'} = load_domain_list_static($DOMAIN_DBONLYLIST_FILE)      if $DOMAIN_DBONLYLIST_FILE;
 
-if (($HASH_WHITELIST) && (not $HASH_BLACKLIST)){
+if ((not defined $HASH_BLACKLIST->{'static'}) && (not defined $HASH_BLACKLIST->{'pcre'})) {
+    $HASH_BLACKLIST = undef;
+}
+if ((not defined $HASH_WHITELIST->{'static'}) && (not defined $HASH_WHITELIST->{'pcre'})) {
+    $HASH_WHITELIST = undef;
+}
+if ((not defined $HASH_DBSKIPLIST->{'static'}) && (not defined $HASH_DBSKIPLIST->{'pcre'})) {
+    $HASH_DBSKIPLIST = undef;
+}
+
+if ($HASH_WHITELIST && not $HASH_BLACKLIST) {
     logger("[W] Whitelist without Blacklist does not make sense!");
-    $HASH_WHITELIST = undef; 
+    $HASH_WHITELIST = undef;
 }
 
 if ((not defined $HASH_DBONLYLIST->{'static'}) && (not defined $HASH_DBONLYLIST->{'pcre'})) {
@@ -147,18 +157,18 @@ logger("[*] Starting pdns2db.pl");
 if ( $DAEMON ) {
    logger("[*] Daemonizing...");
    chdir ("/") or die "chdir /: $!\n";
-   open (STDIN, "/dev/null") or die "open /dev/null: $!\n";
-   open (STDOUT, "> $LOGFILE") or die "open > $LOGFILE: $!\n";
+   open(STDIN, '<', '/dev/null') or die "open /dev/null: $!\n";
+   open(STDOUT, '>', $LOGFILE) or die "open > $LOGFILE: $!\n";
    defined (my $dpid = fork) or die "fork: $!\n";
    if ($dpid) {
       # Write PID file
-      open (PID, "> $PIDFILE") or die "open($PIDFILE): $!\n";
+      open(PID, '>', $PIDFILE) or die "open($PIDFILE): $!\n";
       print PID $dpid, "\n";
       close (PID);
       exit 0;
    }
    setsid ();
-   open (STDERR, ">&STDOUT");
+   open(STDERR, '>&', STDOUT) or die "open STDERR: $!\n";
 }
 
 db_from_env();
@@ -242,7 +252,7 @@ sub file_watch {
 
 sub parseLogfile {
     my ($fname, $start, $stop) = @_;
-    open (LOGFILE, $fname) or exit 3;
+    open(LOGFILE, '<', $fname) or exit 3;
     seek (LOGFILE, $start, 0) or exit 2;
 
     LINE:
@@ -272,7 +282,7 @@ sub parseLogfile {
            logger("[*] Whitelisted domain: $query or $answer") if $VERBOSE;
        } elsif (($HASH_BLACKLIST) && ($bret = match_domain($query, $answer, $HASH_BLACKLIST))) {
            logger("[*] Blacklisted domain: $query or $answer") if $VERBOSE;
-           if (open (ALOG, ">> $ALERTLOG") ) {
+           if (open(ALOG, '>>', $ALERTLOG)) {
                print ALOG $line, "\n";
                close (ALOG);
            } else {
@@ -294,7 +304,13 @@ sub parseLogfile {
 
 sub db_from_env {
     $DB_HOST = $ENV{PDNS_DB_HOST} if defined $ENV{PDNS_DB_HOST} && $ENV{PDNS_DB_HOST} ne '';
-    $DB_PORT = $ENV{PDNS_DB_PORT} if defined $ENV{PDNS_DB_PORT} && $ENV{PDNS_DB_PORT} =~ /^\d+$/;
+    if (defined $ENV{PDNS_DB_PORT} && $ENV{PDNS_DB_PORT} ne '') {
+        die "PDNS_DB_PORT must be 1..65535\n"
+            unless $ENV{PDNS_DB_PORT} =~ /^\d{1,5}$/
+                && $ENV{PDNS_DB_PORT} >= 1
+                && $ENV{PDNS_DB_PORT} <= 65535;
+        $DB_PORT = $ENV{PDNS_DB_PORT};
+    }
     $DB_NAME = $ENV{PDNS_DB_NAME} if defined $ENV{PDNS_DB_NAME} && $ENV{PDNS_DB_NAME} ne '';
     $DB_USERNAME = $ENV{PDNS_DB_USER} if defined $ENV{PDNS_DB_USER} && $ENV{PDNS_DB_USER} ne '';
     $TABLE_NAME = $ENV{PDNS_DB_TABLE} if defined $ENV{PDNS_DB_TABLE} && $ENV{PDNS_DB_TABLE} ne '';
@@ -441,7 +457,7 @@ sub load_domain_list_pcre {
         $line =~ s/\t//g;
         $line =~ s/ //g;
         next LINE unless($line); # empty line
-        # One should check for a more or less sane signature file.
+        # The operator supplies this file. Treat every pattern in it as trusted.
 
         logger("[D] $line") if $DEBUG;
         $signatures{$line} = [qr{$line}];

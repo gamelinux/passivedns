@@ -1,5 +1,11 @@
 Changes with PassiveDNS 1.3.0
 
+- Reject a non-numeric or negative -S, -C, -P, and PF_RING -c
+- NUL-terminate the hostname printed by -f h
+- Open operator paths in pdns2db.pl with three-argument open
+- Ignore an empty whitelist, blacklist, or skiplist, and warn when a whitelist has no blacklist
+- Make search-pdns.pl and the PHP demo honor PDNS_DB_TABLE and PDNS_DB_PORT
+- Add sql/pdns.sql, SECURITY.md, a root LICENSE link, and a GitHub Actions test run
 - Stop -X F from also enabling TXT
 - Add -s for the live snapshot length and raise the default from 1600 to 4096
 - Move the SIGUSR1 stats file option from -s to --stats-file

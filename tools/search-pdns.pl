@@ -31,7 +31,9 @@ use DBI;
 # Password comes from the environment. Host, user, and database name
 # fall back to localhost / pdns / pdns.
 my $db_host      = $ENV{PDNS_DB_HOST} // 'localhost';
+my $db_port      = '3306';
 my $DB           = $ENV{PDNS_DB_NAME} // 'pdns';
+my $db_table     = $ENV{PDNS_DB_TABLE} // 'pdns';
 my $db_user_name = $ENV{PDNS_DB_USER} // 'pdns';
 my $db_password  = $ENV{PDNS_DB_PASSWORD};
 my $DLIMIT       =    100;
@@ -94,6 +96,14 @@ if ($SEARCH eq "") {
 }
 
 die "PDNS_DB_NAME must be an identifier\n" unless $DB =~ /^[A-Za-z0-9_]+$/;
+die "PDNS_DB_TABLE must be an identifier\n" unless $db_table =~ /^[A-Za-z0-9_]+$/;
+if (defined $ENV{PDNS_DB_PORT} && $ENV{PDNS_DB_PORT} ne '') {
+    die "PDNS_DB_PORT must be 1..65535\n"
+        unless $ENV{PDNS_DB_PORT} =~ /^\d{1,5}$/
+            && $ENV{PDNS_DB_PORT} >= 1
+            && $ENV{PDNS_DB_PORT} <= 65535;
+    $db_port = $ENV{PDNS_DB_PORT};
+}
 die "Set PDNS_DB_PASSWORD\n" unless defined $db_password && $db_password ne '';
 
 my $from = '1970-01-01 00:00:01';
@@ -142,26 +152,26 @@ my $like = $RAW ? $SEARCH : '%' . like_escape($SEARCH) . '%';
 print "Searching for: $SEARCH\n" if $DEBUG;
 
 my @bind = ($from);
-my $where = 'first_seen > ?';
+my $where = 'FIRST_SEEN > ?';
 if (defined $to) {
-    $where .= ' AND last_seen < ?';
+    $where .= ' AND LAST_SEEN < ?';
     push @bind, $to;
 }
 if (defined $TYPE && $TYPE ne '') {
-    $where .= ' AND maptype = ?';
+    $where .= ' AND MAPTYPE = ?';
     push @bind, $TYPE;
 }
 
-my $QUERY = qq[SELECT query, answer, first_seen, last_seen, ttl, count, maptype FROM $DB.pdns WHERE $where AND query LIKE ?
+my $QUERY = qq[SELECT QUERY, ANSWER, FIRST_SEEN, LAST_SEEN, TTL, COUNT, MAPTYPE FROM $DB.$db_table WHERE $where AND QUERY LIKE ?
  UNION
- SELECT query, answer, first_seen, last_seen, ttl, count, maptype FROM $DB.pdns WHERE $where AND answer LIKE ?
- ORDER BY last_seen LIMIT $DLIMIT];
+ SELECT QUERY, ANSWER, FIRST_SEEN, LAST_SEEN, TTL, COUNT, MAPTYPE FROM $DB.$db_table WHERE $where AND ANSWER LIKE ?
+ ORDER BY LAST_SEEN LIMIT $DLIMIT];
 
 print "\nmysql> $QUERY;\n\n" if $DEBUG;
 
 exit 0 if $DEBUG > 1;
 
-my $dsn = "DBI:mysql:database=$DB;host=$db_host";
+my $dsn = "DBI:mysql:database=$DB;host=$db_host;port=$db_port";
 my $dbh = DBI->connect($dsn, $db_user_name, $db_password, {RaiseError => 1, PrintError => 0})
     or die "database connect failed: $DBI::errstr\n";
 

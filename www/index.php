@@ -18,17 +18,41 @@
 # --------------------------------------------------------------------------
 #
 # Local demo. Set PDNS_DB_PASSWORD before serving this page.
-# Optional: PDNS_DB_HOST, PDNS_DB_USER, PDNS_DB_NAME, PDNS_WEB_TOKEN.
+# Optional: PDNS_DB_HOST, PDNS_DB_PORT, PDNS_DB_USER, PDNS_DB_NAME,
+# PDNS_DB_TABLE, PDNS_WEB_TOKEN.
 # PDNS_WEB_TOKEN, when set, is required on every request as ?token=.
+# The table is sql/pdns.sql. The default name is pdns.
 
 $DBHOST = getenv('PDNS_DB_HOST');
 $DBUSER = getenv('PDNS_DB_USER');
 $DBNAME = getenv('PDNS_DB_NAME');
+$DBTABLE = getenv('PDNS_DB_TABLE');
+$DBPORT = getenv('PDNS_DB_PORT');
 $DBPASS = getenv('PDNS_DB_PASSWORD');
 $TOKEN  = getenv('PDNS_WEB_TOKEN');
 if ($DBHOST === false || $DBHOST === '') $DBHOST = '127.0.0.1';
 if ($DBUSER === false || $DBUSER === '') $DBUSER = 'pdns';
 if ($DBNAME === false || $DBNAME === '') $DBNAME = 'pdns';
+if ($DBTABLE === false || $DBTABLE === '') $DBTABLE = 'pdns';
+if (!preg_match('/^[A-Za-z0-9_]+$/', $DBTABLE)) {
+    http_response_code(500);
+    echo "PDNS_DB_TABLE must be an identifier";
+    exit;
+}
+$DBPORTN = 3306;
+if ($DBPORT !== false && $DBPORT !== '') {
+    if (!preg_match('/^[0-9]{1,5}$/', $DBPORT)) {
+        http_response_code(500);
+        echo "PDNS_DB_PORT must be 1..65535";
+        exit;
+    }
+    $DBPORTN = intval($DBPORT, 10);
+    if ($DBPORTN < 1 || $DBPORTN > 65535) {
+        http_response_code(500);
+        echo "PDNS_DB_PORT must be 1..65535";
+        exit;
+    }
+}
 
 if ($TOKEN !== false && $TOKEN !== '') {
     $given = isset($_GET['token']) ? (string)$_GET['token'] : '';
@@ -61,7 +85,7 @@ print_search_body($TOKEN);
 
 if ($query !== '') {
     echo "<center>";
-    $db = mysqli_connect($DBHOST, $DBUSER, $DBPASS, $DBNAME);
+    $db = mysqli_connect($DBHOST, $DBUSER, $DBPASS, $DBNAME, $DBPORTN);
     if (!$db) {
         echo "<b>Database unavailable.</b>";
     } else {
@@ -113,7 +137,7 @@ function like_escape($s) {
 function pdns_search($db, $query) {
     if (filter_var($query, FILTER_VALIDATE_IP)) {
         $sql = "SELECT FIRST_SEEN, LAST_SEEN, MAPTYPE, TTL, QUERY, ANSWER, COUNT
-                FROM pdns WHERE ANSWER = ? LIMIT 500";
+                FROM " . $DBTABLE . " WHERE ANSWER = ? LIMIT 500";
         $stmt = mysqli_prepare($db, $sql);
         if (!$stmt)
             return null;
@@ -123,7 +147,7 @@ function pdns_search($db, $query) {
         $like_q = $like;
         $like_a = $like;
         $sql = "SELECT FIRST_SEEN, LAST_SEEN, MAPTYPE, TTL, QUERY, ANSWER, COUNT
-                FROM pdns WHERE QUERY LIKE ? OR ANSWER LIKE ? LIMIT 500";
+                FROM " . $DBTABLE . " WHERE QUERY LIKE ? OR ANSWER LIKE ? LIMIT 500";
         $stmt = mysqli_prepare($db, $sql);
         if (!$stmt)
             return null;

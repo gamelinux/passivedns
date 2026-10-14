@@ -16,6 +16,7 @@ DNS answers in-memory, limiting the amount of data in the logfile without
 losing the essense in the DNS answer.
 
 Build instructions for Ubuntu 26.04 are in doc/INSTALL.
+Report a vulnerability through SECURITY.md.
 
 Example output from version 1.0.0->Current in the log file (/var/log/passivedns.log):
 

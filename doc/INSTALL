@@ -90,7 +90,11 @@ Database tools
 --------------
 
 pdns2db.pl and search-pdns.pl talk to MySQL or MariaDB. They read the
-password from PDNS_DB_PASSWORD and refuse to connect without it.
+password from PDNS_DB_PASSWORD and refuse to connect without it. Optional
+settings are PDNS_DB_HOST, PDNS_DB_PORT (default 3306), PDNS_DB_NAME,
+PDNS_DB_USER, and PDNS_DB_TABLE (default pdns). sql/pdns.sql is that table.
+A name or table that is not an identifier is refused. A port must be
+1..65535. The pcre list files are operator input and are treated as trusted.
 
     sudo apt install libdatetime-perl libdate-simple-perl libdbd-mysql-perl
 

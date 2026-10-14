@@ -80,6 +80,7 @@ static void show_version();
 static void show_record_letters();
 static void show_snapshot(int snaplen);
 static void warn_if_gro(const char *dev);
+static int parse_u32(const char *text, uint32_t *out);
 void check_vlan (packetinfo *pi);
 void prepare_null (packetinfo *pi);
 void prepare_raw (packetinfo *pi);
@@ -1621,6 +1622,27 @@ static void show_snapshot(int snaplen)
     olog("[*] Snapshot length: %d\n", snaplen);
 }
 
+static int parse_u32(const char *text, uint32_t *out)
+{
+    char *end = NULL;
+    unsigned long val;
+    const char *num = text;
+
+    if (text == NULL || text[0] == '\0' || text[0] == '-')
+        return -1;
+    if (text[0] == '+')
+        num = text + 1;
+    if (num[0] < '0' || num[0] > '9')
+        return -1;
+
+    errno = 0;
+    val = strtoul(num, &end, 10);
+    if (end == num || *end != '\0' || errno == ERANGE || val > UINT32_MAX)
+        return -1;
+    *out = (uint32_t)val;
+    return 0;
+}
+
 static void warn_if_gro(const char *dev)
 {
 #ifdef __linux__
@@ -1769,14 +1791,27 @@ int main(int argc, char *argv[])
             config.pidfile = optarg;
             break;
         case 'C':
-            config.dnscachetimeout = strtol(optarg, NULL, 0);
+            if (parse_u32(optarg, &config.dnscachetimeout) != 0) {
+                elog("[!] -C needs a cache time in seconds (0 or a positive integer)\n");
+                exit(1);
+            }
             break;
         case 'P':
-            config.dnsprinttime = strtol(optarg, NULL, 0);
+            if (parse_u32(optarg, &config.dnsprinttime) != 0) {
+                elog("[!] -P needs a print interval in seconds (0 or a positive integer)\n");
+                exit(1);
+            }
             break;
-        case 'S':
-            config.mem_limit_max = (strtol(optarg, NULL, 0) * 1024 * 1024);
+        case 'S': {
+            uint32_t megabytes = 0;
+
+            if (parse_u32(optarg, &megabytes) != 0) {
+                elog("[!] -S needs a memory limit in megabytes (0 or a positive integer)\n");
+                exit(1);
+            }
+            config.mem_limit_max = (uint64_t)megabytes * 1024 * 1024;
             break;
+        }
         case 's': {
             char *end = NULL;
             long snap;
@@ -1829,7 +1864,10 @@ int main(int argc, char *argv[])
             config.use_pfring = 1;
             break;
         case 'c':
-            config.cluster_id = strtol(optarg, NULL, 0);
+            if (parse_u32(optarg, &config.cluster_id) != 0) {
+                elog("[!] -c needs a cluster id (0 or a positive integer)\n");
+                exit(1);
+            }
             break;
 #endif /* HAVE_PFRING */
         case 'h':
@@ -1851,8 +1889,16 @@ int main(int argc, char *argv[])
     /* Get hostname if not specified by commandline */
     if (config.fieldsf & FIELD_HOSTNAME) {
         if (config.hostname == NULL) {
-            config.hostname = malloc(HOST_NAME_MAX + 1);
-            gethostname(config.hostname, HOST_NAME_MAX);
+            config.hostname = calloc(1, HOST_NAME_MAX + 1);
+            if (config.hostname == NULL) {
+                elog("[!] Failed to allocate hostname\n");
+                exit(1);
+            }
+            if (gethostname(config.hostname, HOST_NAME_MAX + 1) != 0) {
+                elog("[!] gethostname failed: %s\n", strerror(errno));
+                exit(1);
+            }
+            config.hostname[HOST_NAME_MAX] = '\0';
         }
     }
 
