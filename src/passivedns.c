@@ -1079,25 +1079,39 @@ void sig_hup_handler()
     signal_reopen_log_files = 1;
 }
 
+static int reopen_one(FILE **slot, const char *path)
+{
+    FILE *nf;
+
+    if (slot == NULL || path == NULL)
+        return -1;
+    /* stdout has nothing to rotate. */
+    if (path[0] == '-' && path[1] == '\0')
+        return 0;
+
+    nf = fopen(path, "a");
+    if (nf == NULL) {
+        elog("[!] Error reopening log file %s: %s\n", path, strerror(errno));
+        syslog(LOG_ERR, "Error reopening log file %s: %s", path, strerror(errno));
+        return -1;
+    }
+    secure_log(nf);
+    if (*slot != NULL && *slot != stdout)
+        fclose(*slot);
+    *slot = nf;
+    return 0;
+}
+
 void reopen_log_files()
 {
-    if (config.output_log) {
-        if (config.logfile_fd != NULL && config.logfile_fd != stdout)
-            fclose(config.logfile_fd);
-        config.logfile_fd = fopen(config.logfile, "a");
-        secure_log(config.logfile_fd);
-    }
+    if (config.output_log)
+        reopen_one(&config.logfile_fd, config.logfile);
 
     if (config.output_log_nxd) {
-        if (config.logfile_all) {
-            /* Do nothing, since both logs use the same file */
-        }
-        else {
-            if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
-                fclose(config.logfile_nxd_fd);
-            config.logfile_nxd_fd = fopen(config.logfile_nxd, "a");
-            secure_log(config.logfile_nxd_fd);
-        }
+        if (config.logfile_all)
+            config.logfile_nxd_fd = config.logfile_fd;
+        else
+            reopen_one(&config.logfile_nxd_fd, config.logfile_nxd);
     }
     signal_reopen_log_files = 0;
 }
@@ -1375,6 +1389,22 @@ int daemonize()
     return SUCCESS;
 }
 
+static void start_daemon_if_requested(int do_daemon)
+{
+    if (!do_daemon)
+        return;
+    /* Create the pidfile before chroot and before the privilege drop.
+     * /var/run is not writable by the user -u switches to. */
+    if (!is_valid_path(config.pidfile)) {
+        elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
+        exit(1);
+    }
+    openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
+    olog("[*] Daemonizing...\n\n");
+    if (daemonize() != SUCCESS)
+        exit(1);
+}
+
 void game_over()
 {
     if (config.inpacket == 0) {
@@ -1402,7 +1432,9 @@ void game_over()
         if (config.logfile_fd != NULL && config.logfile_fd != stdout)
             fclose(config.logfile_fd);
 
-        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout)
+        /* -l and -L can share one stream. Do not fclose it twice. */
+        if (config.logfile_nxd_fd != NULL && config.logfile_nxd_fd != stdout
+            && config.logfile_nxd_fd != config.logfile_fd)
             fclose(config.logfile_nxd_fd);
 
         free_config();
@@ -1928,6 +1960,7 @@ int main(int argc, char *argv[])
     if (config.output_log_nxd) {
         if (config.output_log && strcmp(config.logfile, config.logfile_nxd) == 0) {
             config.logfile_all = 1;
+            config.logfile_nxd_fd = config.logfile_fd;
         }
         else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
             config.logfile_nxd_fd = stdout;
@@ -1995,18 +2028,8 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
+        start_daemon_if_requested(daemon);
         confine();
-
-        if (daemon) {
-            if (!is_valid_path(config.pidfile)) {
-                elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
-                exit(1);
-            }
-            openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
-            olog("[*] Daemonizing...\n\n");
-            if (daemonize() != SUCCESS)
-                exit(1);
-        }
 
         alarm(TIMEOUT);
         olog("[*] Device: %s\n", config.dev);
@@ -2062,18 +2085,8 @@ int main(int argc, char *argv[])
             }
         }
 
+        start_daemon_if_requested(daemon);
         confine();
-
-        if (daemon) {
-            if (!is_valid_path(config.pidfile)) {
-                elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
-                exit(1);
-            }
-            openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
-            olog("[*] Daemonizing...\n\n");
-            if (daemonize() != SUCCESS)
-                exit(1);
-        }
 
     }
 

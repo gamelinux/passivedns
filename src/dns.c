@@ -789,18 +789,15 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     if (p == NULL)
         is_err_record = 1;
 
-    /* Use the correct file descriptor */
+    /* A missing file handle must not skip syslog. fprintf checks fd. */
     if (is_err_record && config.output_log_nxd) {
         if (config.logfile_all)
             fd = config.logfile_fd;
         else
             fd = config.logfile_nxd_fd;
-        if (fd == NULL)
-            return;
     }
     else if (!is_err_record && config.output_log) {
         fd = config.logfile_fd;
-        if (fd == NULL) return;
     }
 
     if (is_err_record) {

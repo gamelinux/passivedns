@@ -1,5 +1,7 @@
 Changes with PassiveDNS 1.3.0
 
+- Keep the open log if SIGHUP cannot reopen it, and still syslog that line
+- Create the pidfile before chroot and before dropping privileges
 - Reject a non-numeric or negative -S, -C, -P, and PF_RING -c
 - NUL-terminate the hostname printed by -f h
 - Open operator paths in pdns2db.pl with three-argument open

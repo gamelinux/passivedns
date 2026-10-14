@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Command-line checks: version, help, and fail-closed -u/-g/-T on -r."""
 
+import errno
 import os
 import shutil
+import signal
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 import regress
 
@@ -34,6 +39,100 @@ def run(args, pcap_packets=None):
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         return proc.returncode, proc.stdout, proc.stderr
     finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def pcap_bytes(packets):
+    raw = bytearray()
+    raw += struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, 65535, 1)
+    for i, pkt in enumerate(packets):
+        raw += struct.pack("<IIII", 1700000000, i, len(pkt), len(pkt))
+        raw += pkt
+    return bytes(raw)
+
+
+def split_packets(data, count):
+    off = 24
+    for _ in range(count):
+        incl = struct.unpack_from("<I", data, off + 8)[0]
+        off += 16 + incl
+    return data[:off], data[off:]
+
+
+def reopen_keeps_log():
+    """SIGHUP that cannot create the new log must keep writing to the old one."""
+    tmp = tempfile.mkdtemp(prefix="pdns-hup-")
+    proc = None
+    try:
+        log = os.path.join(tmp, "pdns.log")
+        rotated = log + ".1"
+        fifo = os.path.join(tmp, "in.pcap")
+        os.mkfifo(fifo)
+        one = regress.qa("10.0.0.1", "8.8.8.8", 40000, 7,
+                         "one.example.com", socket.inet_aton("1.1.1.1"))
+        two = regress.qa("10.0.0.1", "8.8.8.8", 40001, 8,
+                         "two.example.com", socket.inet_aton("2.2.2.2"))
+        first, second = split_packets(pcap_bytes(one + two), 2)
+        proc = subprocess.Popen(
+            [regress.find_binary(), "-q", "-r", fifo, "-l", log, "-L", log],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        writer_fd = None
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                writer_fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+                break
+            except OSError as exc:
+                if exc.errno != errno.ENXIO:
+                    raise
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.05)
+        if writer_fd is None:
+            print("log-reopen: capture did not open the fifo")
+            return False
+        writer = os.fdopen(writer_fd, "wb", buffering=0)
+        writer.write(first)
+        writer.flush()
+        seen = False
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if os.path.isfile(log):
+                with open(log, encoding="utf-8", errors="replace") as fh:
+                    if "one.example.com" in fh.read():
+                        seen = True
+                        break
+            if proc.poll() is not None:
+                break
+            time.sleep(0.05)
+        if not seen:
+            print("log-reopen: first line did not appear")
+            return False
+        os.rename(log, rotated)
+        os.mkdir(log)
+        proc.send_signal(signal.SIGHUP)
+        time.sleep(0.2)
+        writer.write(second)
+        writer.flush()
+        writer.close()
+        try:
+            out, err = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, err = proc.communicate()
+            print("log-reopen: timed out\n%s\n%s" % (out, err))
+            return False
+        body = open(rotated, encoding="utf-8", errors="replace").read()
+        ok = (proc.returncode == 0 and "one.example.com" in body
+              and "two.example.com" in body and "reopening" in err)
+        if not ok:
+            print("log-reopen: rc %s\n%s\n%s\nLOG:\n%s" % (
+                proc.returncode, out, err, body))
+        return ok
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -127,6 +226,8 @@ def main():
     report(code != 0 and "print interval" in (out + err), "print-text", out + err)
     code, out, err = run(["-S", "1", "-f", "h"], empty)
     report(code == 0 and "Record letters:" in out, "mem-and-hostname", out + err)
+
+    report(reopen_keeps_log(), "log-reopen-keeps-fd")
 
     if os.geteuid() != 0:
         code, out, err = run(["-T", "/tmp"], empty)
