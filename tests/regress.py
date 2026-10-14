@@ -155,11 +155,14 @@ def qa(src, dst, sport, tid, qname, rdata, qtype=1, ipttl=64):
 def find_binary():
     env = os.environ.get("PASSIVEDNS")
     if env:
-        return env
-    candidate = os.path.join(ROOT, "src", "passivedns")
-    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-        return candidate
-    sys.exit("set PASSIVEDNS to the passivedns binary")
+        if os.path.isfile(env) and os.access(env, os.X_OK):
+            return env
+        sys.exit("PASSIVEDNS is not an executable file: %s" % env)
+    for candidate in (os.path.join(ROOT, "src", "passivedns"),
+                      "/tmp/pdns-build/passivedns"):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    sys.exit("no passivedns binary. Run make, or set PASSIVEDNS.")
 
 
 def run_case(binary, packets, args, linktype=1, times=None):

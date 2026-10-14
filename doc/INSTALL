@@ -14,6 +14,10 @@ Build
     git clone https://github.com/gamelinux/passivedns.git
     cd passivedns
     autoreconf --install
+
+`autoreconf` comes from the autoconf package. If the shell says the
+command is not found, the apt line above has not been installed yet.
+There is no ./configure in a fresh git checkout until autoreconf runs.
     ./configure
     make
 

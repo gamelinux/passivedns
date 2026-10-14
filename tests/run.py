@@ -23,8 +23,14 @@ def main():
             if cand.is_file() and os.access(cand, os.X_OK):
                 env["PASSIVEDNS"] = str(cand)
                 break
-    if env.get("PASSIVEDNS"):
-        print("binary %s" % env["PASSIVEDNS"])
+    binary = env.get("PASSIVEDNS")
+    if binary and not (os.path.isfile(binary) and os.access(binary, os.X_OK)):
+        print("PASSIVEDNS is not an executable file: %s" % binary)
+        return 1
+    if not binary:
+        print("no passivedns binary. Run make, or set PASSIVEDNS.")
+        return 1
+    print("binary %s" % binary)
     failed = 0
     for name in ORDER:
         print("== %s" % name)
