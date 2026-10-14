@@ -43,7 +43,9 @@ def main():
            "version", out + err)
 
     code, out, err = run(["-h"])
-    report(code == 0 and "ip6[6] = 44" in out and "-u <uid>" in out,
+    report(code == 0 and "ip6[6] = 44" in out and "-u <uid>" in out
+           and "h:HTTPS" in out and "V:SVCB" in out and "0:NOERR" in out
+           and "i: Server IP TTL" in out and "46CDNPRShV" in out,
            "help", out + err)
 
     missing = tempfile.mkdtemp(prefix="pdns-missing-")

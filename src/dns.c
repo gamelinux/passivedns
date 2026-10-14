@@ -263,7 +263,10 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         dlog("[D] dns_answer_domain_cnt: %d\n",dns_answer_domain_cnt);
     }
 
-    if (dns_answer_domain_cnt == 0 && ldns_pkt_get_rcode(dns_pkt) != 0) {
+    /* rcode 0 with an empty answer is NODATA. It is logged only with -X 0. */
+    if (dns_answer_domain_cnt == 0 &&
+        (ldns_pkt_get_rcode(dns_pkt) != 0 ||
+         (config.dnsfe & DNS_SE_CHK_NOERR))) {
         uint16_t rcode = ldns_pkt_get_rcode(dns_pkt);
         dlog("[D] Error return code: %d\n", rcode);
 
@@ -437,6 +440,22 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 if (config.dnsf & DNS_CHK_NS)
                     offset = 0;
                 break;
+#ifdef PDNS_HAVE_HTTPS
+            case LDNS_RR_TYPE_HTTPS:
+                if (config.dnsf & DNS_CHK_HTTPS) {
+                    offset = 0;
+                    to_offset = (int)ldns_rr_rd_count(rr);
+                }
+                break;
+#endif
+#ifdef PDNS_HAVE_HTTPS
+            case LDNS_RR_TYPE_SVCB:
+                if (config.dnsf & DNS_CHK_SVCB) {
+                    offset = 0;
+                    to_offset = (int)ldns_rr_rd_count(rr);
+                }
+                break;
+#endif
             default:
                 offset = -1;
                 dlog("[D] ldns_rr_get_type: %d\n", ldns_rr_get_type(rr));
@@ -569,6 +588,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 passet->af        = pi->cxt->af;
                 passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
                 passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
+                passet->sip_ttl   = pi->s_ttl;
                 if (rr->_ttl > passet->rr->_ttl)
                         passet->rr->_ttl = rr->_ttl;   /* Catch the highest TTL seen */
                 dlog("[*] DNS asset updated...\n");
@@ -637,6 +657,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     passet->af = pi->cxt->af;
     passet->cip = pi->cxt->s_ip; /* This should always be the client IP */
     passet->sip = pi->cxt->d_ip; /* This should always be the server IP */
+    passet->sip_ttl = pi->s_ttl;
     if (pi-> eth_hdr) {
         memcpy(passet->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
         memcpy(passet->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
@@ -733,6 +754,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     outbuf ob;
     int text_line = 0;
     uint8_t is_err_record = 0;
+    uint8_t server_ttl = 0;
 
     memset(&ob, 0, sizeof(ob));
 
@@ -744,6 +766,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     json_t *json_hostname;
     json_t *json_client;
     json_t *json_server;
+    json_t *json_server_ttl;
     json_t *json_proto;
     json_t *json_class;
     json_t *json_query;
@@ -783,10 +806,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     if (is_err_record) {
         u_ntop(l->sip, l->af, ip_addr_s);
         u_ntop(l->cip, l->af, ip_addr_c);
+        server_ttl = l->sip_ttl;
     }
     else {
         u_ntop(p->sip, p->af, ip_addr_s);
         u_ntop(p->cip, p->af, ip_addr_c);
+        server_ttl = p->sip_ttl;
     }
 
     proto    = malloc(4);
@@ -901,6 +926,16 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         case LDNS_RR_TYPE_MX:
             snprintf(rr_type, 10, "MX");
             break;
+#ifdef PDNS_HAVE_HTTPS
+        case LDNS_RR_TYPE_HTTPS:
+            snprintf(rr_type, 10, "HTTPS");
+            break;
+#endif
+#ifdef PDNS_HAVE_HTTPS
+        case LDNS_RR_TYPE_SVCB:
+            snprintf(rr_type, 10, "SVCB");
+            break;
+#endif
         default:
             if (is_err_record)
                 snprintf(rr_type, 10, "%d", ldns_rdf_get_type(lname));
@@ -911,6 +946,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
     if (is_err_record) {
         switch (rcode) {
+            case 0:
+                snprintf(rr_rcode, 20, "NOERROR");
+                break;
             case 1:
                 snprintf(rr_rcode, 20, "FORMERR");
                 break;
@@ -996,6 +1034,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             json_server = json_string(ip_addr_s);
             json_object_set(jdata, JSON_SERVER, json_server);
             json_decref(json_server);
+        }
+
+        if (config.fieldsf & FIELD_SERVER_TTL) {
+            json_server_ttl = json_integer((json_int_t)server_ttl);
+            json_object_set(jdata, JSON_SERVER_TTL, json_server_ttl);
+            json_decref(json_server_ttl);
         }
 
         /* Print protocol */
@@ -1161,6 +1205,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
             PADD("%s", ip_addr_s);
         }
 
+        if (config.fieldsf & FIELD_SERVER_TTL) {
+            if (ob.len != 0)
+                PADD("%s", d);
+            PADD("%u", (unsigned)server_ttl);
+        }
+
         /* Print server hardware address  */
         if ((config.fieldsf & FIELD_SRV_HWADDR) && p != NULL) {
             if (ob.len != 0)
@@ -1306,6 +1356,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
             pdnsr->af = pi->cxt->af;
             pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
             pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
+            pdnsr->sip_ttl = pi->s_ttl;
             if (pi->eth_hdr){
                 memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
                 memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
@@ -1350,6 +1401,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
     pdnsr->nxflag = 0;
     pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
     pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
+    pdnsr->sip_ttl = pi->s_ttl;
     if (pi->eth_hdr) {
         memcpy(pdnsr->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
         memcpy(pdnsr->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
@@ -1761,6 +1813,11 @@ void parse_field_flags(char *args)
                 dlog("[D] Enabling field: FIELD_SRV_HWADDR\n");
                 ok++;
                 break;
+            case 'i': /* IP TTL of the reply */
+                config.fieldsf |= FIELD_SERVER_TTL;
+                dlog("[D] Enabling field: FIELD_SERVER_TTL\n");
+                ok++;
+                break;
             default:
                plog("[*] Unknown field '%c'\n",args[i]);
                break;
@@ -1878,6 +1935,20 @@ void parse_dns_flags(char *args)
                dlog("[D] Enabling flag: DNS_CHK_NS\n");
                ok++;
                break;
+#ifdef PDNS_HAVE_HTTPS
+            case 'h': /* HTTPS */
+               config.dnsf |= DNS_CHK_HTTPS;
+               dlog("[D] Enabling flag: DNS_CHK_HTTPS\n");
+               ok++;
+               break;
+#endif
+#ifdef PDNS_HAVE_HTTPS
+            case 'V': /* SVCB */
+               config.dnsf |= DNS_CHK_SVCB;
+               dlog("[D] Enabling flag: DNS_CHK_SVCB\n");
+               ok++;
+               break;
+#endif
             case 'f': /* FORMERR */
                config.dnsfe |= DNS_SE_CHK_FORMERR;
                dlog("[D] Enabling flag: DNS_SE_CHK_FORMERR\n");
@@ -1929,6 +2000,11 @@ void parse_dns_flags(char *args)
                dlog("[D] Enabling flag: DNS_SE_CHK_NOTZONE\n");
                ok++;
                break;
+            case '0': /* empty NOERROR / NODATA */
+               config.dnsfe |= DNS_SE_CHK_NOERR;
+               dlog("[D] Enabling flag: DNS_SE_CHK_NOERR\n");
+               ok++;
+               break;
             case '\0':
                dlog("[W] Bad DNS flag - ending flag checks!\n");
                ok = 0;
@@ -1950,6 +2026,9 @@ uint16_t pdns_chk_dnsfe(uint16_t rcode)
     uint16_t retcode = 0x0000;
 
     switch (rcode) {
+        case 0:
+            retcode = DNS_SE_CHK_NOERR;
+            break;
         case 1:
             retcode = DNS_SE_CHK_FORMERR;
             break;

@@ -52,13 +52,15 @@ DNSDUPE=
 #  H: YMD-HMS Stamp S: Timestamp(s)  M: Timestamp(ms)  c: Client IP  
 #  s: Server IP     C: Class         Q: Query          T: Type       
 #  A: Answer        t: TTL           n: Count
+#  i: Server IP TTL (not in the default field mask)
 LOGFIELDS=SMcsCQTAtn
 
 #Manually set DNS RR Types to care about
 # FLAGS:
 #  4:A    6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA
 #  P:PTR  R:RP    S:SRV    T:TXT    M:MX     n:NS
-#  x:NXD
+#  h:HTTPS V:SVCB
+#  x:NXD  0:NOERR (empty answer)
 DNSRRTYPES=
 
 #Directory to chroot into

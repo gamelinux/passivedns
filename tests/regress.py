@@ -47,21 +47,21 @@ def txt_rdata(text):
     return out
 
 
-def ipv4(src, dst, proto, payload, ident=1, off=0, total=None):
+def ipv4(src, dst, proto, payload, ident=1, off=0, total=None, ttl=64):
     ver_ihl = (4 << 4) | 5
     if total is None:
         total = 20 + len(payload)
     return struct.pack(
         ">BBHHHBBH4s4s",
-        ver_ihl, 0, total, ident, off, 64, proto, 0,
+        ver_ihl, 0, total, ident, off, ttl, proto, 0,
         socket.inet_aton(src), socket.inet_aton(dst),
     ) + payload
 
 
-def ipv6(src, dst, nxt, payload):
+def ipv6(src, dst, nxt, payload, hop=64):
     return struct.pack(
         ">IHBB16s16s",
-        6 << 28, len(payload), nxt, 64,
+        6 << 28, len(payload), nxt, hop,
         socket.inet_pton(socket.AF_INET6, src),
         socket.inet_pton(socket.AF_INET6, dst),
     ) + payload
@@ -101,6 +101,34 @@ def dns_nxdomain(tid, qname):
     return hdr + name(qname) + struct.pack(">HH", 1, 1)
 
 
+def dns_nodata(tid, qname, qtype=1):
+    hdr = struct.pack(">HHHHHH", tid, 0x8180, 1, 0, 0, 0)
+    return hdr + name(qname) + struct.pack(">HH", qtype, 1)
+
+
+def svc_param(key, value):
+    return struct.pack(">HH", key, len(value)) + value
+
+
+def svc_alpn(*labels):
+    raw = b""
+    for label in labels:
+        piece = label.encode()
+        raw += bytes([len(piece)]) + piece
+    return svc_param(1, raw)
+
+
+def svc_ipv4hint(*addrs):
+    raw = b"".join(socket.inet_aton(addr) for addr in addrs)
+    return svc_param(4, raw)
+
+
+def https_rdata(priority, target, params):
+    # A root target is one zero byte. name(".") would emit two.
+    tname = b"\x00" if target in (".", "") else name(target)
+    return struct.pack(">H", priority) + tname + params
+
+
 def dns_answers(tid, qname, qtype, answers):
     hdr = struct.pack(">HHHHHH", tid, 0x8180, 1, len(answers), 0, 0)
     question = name(qname) + struct.pack(">HH", qtype, 1)
@@ -115,12 +143,12 @@ def eth_vlan(payload, vid=100):
     return b"\x00" * 12 + struct.pack(">HHH", 0x8100, tci, 0x0800) + payload
 
 
-def qa(src, dst, sport, tid, qname, rdata, qtype=1):
+def qa(src, dst, sport, tid, qname, rdata, qtype=1, ipttl=64):
     q = dns_query(tid, qname, qtype)
     a = dns_response(tid, qname, rdata, qtype)
     return [
         eth(ipv4(src, dst, 17, udp(sport, 53, q))),
-        eth(ipv4(dst, src, 17, udp(53, sport, a))),
+        eth(ipv4(dst, src, 17, udp(53, sport, a), ttl=ipttl)),
     ]
 
 
@@ -481,6 +509,55 @@ def cases():
     yield ("ip-total-short", [eth(tiny)], None, None)
 
     yield ("empty-pcap", [], None, None)
+
+    hr = https_rdata(1, ".", svc_alpn("h2", "h3") + svc_ipv4hint("104.18.39.85"))
+    https_pkts = qa("10.10.0.1", "10.10.0.2", 50000, 0x7C01, "https.example.com", hr, 65)
+    https_line = "https.example.com.||HTTPS||1 . alpn=h2,h3 ipv4hint=104.18.39.85"
+    yield ("https", https_pkts, https_line, None)
+    yield ("https-flag", https_pkts, https_line, ["-X", "h"])
+    yield ("https-off", https_pkts, None, ["-X", "4"])
+
+    sr = https_rdata(1, "target.example.com", svc_alpn("h2"))
+    svcb_pkts = qa("10.10.0.1", "10.10.0.2", 50001, 0x7C02, "svcb.example.com", sr, 64)
+    yield ("svcb", svcb_pkts, "svcb.example.com.||SVCB||1 target.example.com. alpn=h2", None)
+    yield ("svcb-off", svcb_pkts, None, ["-X", "h"])
+
+    qnd = dns_query(0x7D01, "nodata.example.com")
+    nd = dns_nodata(0x7D01, "nodata.example.com")
+    ndpkts = [
+        eth(ipv4("10.10.1.1", "10.10.1.2", 17, udp(50010, 53, qnd))),
+        eth(ipv4("10.10.1.2", "10.10.1.1", 17, udp(53, 50010, nd), ttl=53)),
+    ]
+    yield ("nodata", ndpkts, "nodata.example.com.||A||NOERROR", ["-X", "0"])
+    yield ("nodata-off", ndpkts, None, None)
+    yield ("nodata-ttl", ndpkts,
+           "10.10.1.2||53||IN||nodata.example.com.||A||NOERROR",
+           ["-X", "0", "-f", "SMcsCQTAtni"])
+
+    ttl_pkts = qa("10.10.2.1", "10.10.2.2", 50020, 0x7E01, "ipttl.example.com",
+                  socket.inet_aton("9.9.9.9"), ipttl=53)
+    yield ("server-ttl", ttl_pkts, "10.10.2.2||53||IN||ipttl.example.com.||A||",
+           ["-f", "SMcsCQTAtni"])
+    yield ("server-ttl-off", ttl_pkts, "ipttl.example.com.||A||9.9.9.9", None, 1, ("||53||",))
+
+    same = (1700000000, 0)
+    dup_ttl = (
+        qa("10.10.2.1", "10.10.2.2", 50021, 0x7E02, "ipttldup.example.com",
+           socket.inet_aton("9.9.9.9"), ipttl=53)
+        + qa("10.10.2.1", "10.10.2.2", 50021, 0x7E02, "ipttldup.example.com",
+             socket.inet_aton("9.9.9.9"), ipttl=19)
+    )
+    yield ("server-ttl-dup", dup_ttl, "10.10.2.2||53||IN||ipttldup.example.com.||A||",
+           ["-f", "SMcsCQTAtni"], 1, ("||19||",), [same, same, same, same])
+
+    hop_q = dns_query(0x7E03, "hop.example.com")
+    hop_a = dns_response(0x7E03, "hop.example.com", socket.inet_aton("9.9.9.9"))
+    hop_pkts = [
+        eth(ipv6("2001:db8:1::1", "2001:db8:1::2", 17, udp(50030, 53, hop_q)), 0x86DD),
+        eth(ipv6("2001:db8:1::2", "2001:db8:1::1", 17, udp(53, 50030, hop_a), hop=41), 0x86DD),
+    ]
+    yield ("server-ttl6", hop_pkts, "2001:db8:1::2||41||IN||hop.example.com.||A||",
+           ["-f", "SMcsCQTAtni"])
 
 
 def main():

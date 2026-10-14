@@ -344,6 +344,7 @@ int prepare_ip4(packetinfo *pi)
     if (ip_len < (uint16_t)ihl * 4)
         return 0;
     pi->af = AF_INET;
+    pi->s_ttl = pi->ip4->ip_ttl;
     pi->packet_bytes = (uint16_t)(ip_len - (uint16_t)ihl * 4);
     pi->l4_off = pi->eth_hlen + (uint32_t)ihl * 4;
     config.p_s.ip4_recv++;
@@ -450,6 +451,7 @@ int prepare_ip6(packetinfo *pi)
         return 0;
     plen = ntohs(pi->ip6->len);
     pi->af = AF_INET6;
+    pi->s_ttl = pi->ip6->hop_lmt;
     pi->packet_bytes = plen;
     pi->l4_off = pi->eth_hlen + IP6_HEADER_LEN;
     config.p_s.ip6_recv++;
@@ -1475,7 +1477,11 @@ void usage()
     olog(" -S <mem>        Soft memory limit in MB (default: 256).\n");
     olog(" -C <sec>        Seconds to cache DNS objects in memory (default: %u).\n", DNSCACHETIMEOUT);
     olog(" -P <sec>        Seconds between printing duplicate DNS info (default %u).\n", DNSPRINTTIME);
+#ifdef PDNS_HAVE_HTTPS
+    olog(" -X <flags>      Manually set DNS RR Types to care about (default: -X 46CDNPRShV).\n");
+#else
     olog(" -X <flags>      Manually set DNS RR Types to care about (default: -X 46CDNPRS).\n");
+#endif
     olog(" -N              Set interface to non promisc. mode.\n");
     olog(" -u <uid>        User ID to drop privileges to.\n");
     olog(" -g <gid>        Group ID to drop privileges to.\n");
@@ -1490,13 +1496,16 @@ void usage()
     olog("   s: Server IP     C: Class         Q: Query          T: Type       \n");
     olog("   A: Answer        t: TTL           p: Protocol       n: Count      \n");
     olog("   h: hostname      L: QueryLength   l: AnswerLength   w: Client MAC \n");
-    olog("   W: Server MAC                                                     \n");
+    olog("   W: Server MAC    i: Server IP TTL                                 \n");
     olog("\n");
     olog(" FLAGS:\n");
     olog("\n");
     olog(" * For Record Types:\n");
     olog("   4:A      6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA  L:LOC   F:SPF   I:HINFO\n");
     olog("   P:PTR    R:RP    S:SRV    T:TXT    M:MX     n:NS   d:DNSEC H:SSHFP\n");
+#ifdef PDNS_HAVE_HTTPS
+    olog("   h:HTTPS  V:SVCB\n");
+#endif
     olog("   L also enables GPOS\n");
 #ifdef LDNS_RR_TYPE_NSEC3PARAM
     olog("   d enables DS, DNSKEY, NSEC, NSEC3, RRSIG\n");
@@ -1507,6 +1516,7 @@ void usage()
     olog(" * For Server Return Code (SRC) Errors:\n");
     olog("   f:FORMERR   s:SERVFAIL  x:NXDOMAIN  o:NOTIMPL  r:REFUSED\n");
     olog("   y:YXDOMAIN  e:YXRRSET   t:NXRRSET   a:NOTAUTH  z:NOTZONE\n");
+    olog("   0:NOERR\n");
     olog("\n");
 }
 
@@ -1584,6 +1594,10 @@ int main(int argc, char *argv[])
     config.dnsf |= DNS_CHK_NAPTR;
     config.dnsf |= DNS_CHK_RP;
     config.dnsf |= DNS_CHK_SRV;
+#ifdef PDNS_HAVE_HTTPS
+    config.dnsf |= DNS_CHK_HTTPS;
+    config.dnsf |= DNS_CHK_SVCB;
+#endif
 #ifdef HAVE_PFRING
     config.cluster_id = 0;
     u_int32_t flags = 0;

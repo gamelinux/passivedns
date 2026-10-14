@@ -24,6 +24,12 @@
 
 #include <ldns/ldns.h>
 
+/* HTTPS and SVCB are ldns enum values, so a preprocessor ifdef cannot
+ * see them. ldns 1.8.3 parses the service-binding rdata. */
+#if defined(LDNS_REVISION) && LDNS_REVISION >= ((1 << 16) | (8 << 8) | 3)
+#define PDNS_HAVE_HTTPS 1
+#endif
+
 /* Default flags for types to handle */
 #define DNS_CHK_AAAA        0x00000001
 #define DNS_CHK_A           0x00000002
@@ -42,6 +48,8 @@
 #define DNS_CHK_SPF         0x00004000
 #define DNS_CHK_SSHFP       0x00008000
 #define DNS_CHK_HINFO       0x00010000
+#define DNS_CHK_HTTPS       0x00020000
+#define DNS_CHK_SVCB        0x00040000
 #define DNS_CHK_ALL         0x80000000
 /* Default flags for Server Errors to handle */
 #define DNS_SE_CHK_FORMERR  0x0001
@@ -54,6 +62,7 @@
 #define DNS_SE_CHK_NXRRSET  0x0080
 #define DNS_SE_CHK_NOTAUTH  0x0100
 #define DNS_SE_CHK_NOTZONE  0x0200
+#define DNS_SE_CHK_NOERR    0x0400
 #define DNS_SE_CHK_ALL      0x8000
 
 /* Flag for indicating an NXDOMAIN */
@@ -77,6 +86,7 @@
 #define FIELD_ANSWER_LEN   0x04000
 #define FIELD_CLT_HWADDR   0x08000
 #define FIELD_SRV_HWADDR   0x10000
+#define FIELD_SERVER_TTL   0x20000
 
 /* Static values for print_passet() */
 #define PASSET_ERR_TTL     0
@@ -101,6 +111,7 @@
 #define JSON_TTL           "ttl"
 #define JSON_COUNT         "count"
 #define JSON_HOSTNAME      "hostname"
+#define JSON_SERVER_TTL    "server_ttl"
 
 /* To avoid spaming the logfile with duplicate dns info
  * we only print a dns record one time each 24H. This way
@@ -139,6 +150,7 @@ typedef struct _pdns_asset {
     unsigned char          *answer;    /* Answer, like 8.8.8.8 or 2001:67c:21e0::16 */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
+    uint8_t                sip_ttl;    /* IP TTL or hop limit of the reply */
     u_char                 smac[6];    /* DNS Server MAC address */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
     u_char                 cmac[6];    /* DNS Client MAC address */
@@ -155,6 +167,7 @@ typedef struct _pdns_record {
     uint8_t                nxflag;     /* Flag to indicate if this is a NXDOMAIN */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
+    uint8_t                sip_ttl;    /* IP TTL or hop limit of the reply */
     u_char                 smac[6];    /* DNS Server MAC address */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
     u_char                 cmac[6];    /* DNS Client MAC address */

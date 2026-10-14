@@ -12,7 +12,7 @@
 #  -S <mem>        Soft memory limit in MB (default: 256).
 #  -C <sec>        Seconds to cache DNS objects in memory (default 43200).
 #  -P <sec>        Seconds between printing duplicate DNS info (default 86400).
-#  -X <flags>      Manually set DNS RR Types to care about(Default -X 46CDNPRS).
+#  -X <flags>      Manually set DNS RR Types to care about(Default -X 46CDNPRShV).
 #  -u <uid>        User ID to drop privileges to.
 #  -g <gid>        Group ID to drop privileges to.
 #  -T <dir>        Directory to chroot into.
@@ -24,7 +24,8 @@
 # 
 #   4:A    6:AAAA  C:CNAME  D:DNAME  N:NAPTR  O:SOA
 #   P:PTR  R:RP    S:SRV    T:TXT    M:MX     n:NS
-#   x:NXD
+#   h:HTTPS V:SVCB
+#   x:NXD  0:NOERR (empty answer)
 # 
 ## Default values
 NAME=passivedns
@@ -39,7 +40,7 @@ LOGSYSLOG=""
 NXSYSLOG=""
 MAXMEM="-S 256"
 PRINT="-P 86400"
-RRTYPES="-X 46CDNOPRSTMnx"
+RRTYPES="-X 46CDNOPRSTMnxhV"
 # Drop is fail-closed: if -u or -g names an account that does not exist,
 # passivedns exits. Leave these commented until that account exists.
 #UID="-u passivedns"
