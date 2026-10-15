@@ -424,9 +424,6 @@ def cases():
         eth(ipv4("10.7.0.2", "10.7.0.1", 17, udp(80, 40000, a))),
     ], None, None)
 
-    yield ("mem-zero", qa("10.8.0.1", "10.8.0.2", 46000, 0x7111, "mem.example.com",
-                          socket.inet_aton("9.9.9.9")), None, ["-S", "0"])
-
     yield ("fields-qt", qa("10.8.0.1", "10.8.0.2", 46001, 0x7222, "fields.example.com",
                            socket.inet_aton("9.9.9.9")),
            "fields.example.com.||A", ["-f", "QT"], 1, ("10.8.0.1", "9.9.9.9"))

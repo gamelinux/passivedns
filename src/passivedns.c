@@ -1169,20 +1169,32 @@ static int set_chroot(void)
    return SUCCESS;
 }
 
-int drop_privs(void)
+static int privs_resolved;
+static int drop_do_setuid;
+static int drop_do_setgid;
+static int drop_was_root;
+static uid_t drop_uid;
+static gid_t drop_gid;
+static int daemon_pid_fd = -1;
+static int daemon_null_fd = -1;
+
+static void resolve_privs(void)
 {
     struct group *gr;
     struct passwd *pw = NULL;
     char *endptr;
-    int do_setuid = 0;
-    int do_setgid = 0;
     unsigned long groupid = 0;
     unsigned long userid = 0;
-    uid_t was_root = geteuid() == 0;
     const char *init_name = NULL;
 
+    if (privs_resolved || !config.drop_privs_flag)
+        return;
+
+    /* Look up names before chroot. An empty jail has no /etc/passwd. */
+    drop_was_root = geteuid() == 0;
+
     if (config.group_name != NULL) {
-        do_setgid = 1;
+        drop_do_setgid = 1;
         if (!isdigit((unsigned char)config.group_name[0])) {
             gr = getgrnam(config.group_name);
             if (!gr) {
@@ -1202,7 +1214,7 @@ int drop_privs(void)
     }
 
     if (config.user_name != NULL) {
-        do_setuid = 1;
+        drop_do_setuid = 1;
         if (!isdigit((unsigned char)config.user_name[0])) {
             pw = getpwnam(config.user_name);
             if (pw == NULL) {
@@ -1225,12 +1237,12 @@ int drop_privs(void)
 
         if (config.group_name == NULL && pw != NULL) {
             groupid = pw->pw_gid;
-            do_setgid = 1;
+            drop_do_setgid = 1;
         }
     }
 
-    /* initgroups needs root, so it runs before the uid drop. */
-    if (do_setuid && was_root && init_name) {
+    /* initgroups needs root and the host group file. */
+    if (drop_do_setuid && drop_was_root && init_name) {
         if (initgroups(init_name, (gid_t)groupid) < 0) {
             elog("Unable to init group names (%s/%lu): %s\n",
                  init_name, groupid, strerror(errno));
@@ -1238,42 +1250,35 @@ int drop_privs(void)
         }
     }
 
-    if (do_setgid) {
-        if (setgid((gid_t)groupid) < 0) {
+    endgrent();
+    endpwent();
+    drop_uid = (uid_t)userid;
+    drop_gid = (gid_t)groupid;
+    privs_resolved = 1;
+}
+
+static void apply_privs(void)
+{
+    if (!config.drop_privs_flag)
+        return;
+    resolve_privs();
+
+    if (drop_do_setgid) {
+        if (setgid(drop_gid) < 0) {
             elog("Unable to set group ID: %s\n", strerror(errno));
             exit(1);
         }
     }
 
-    endgrent();
-    endpwent();
-
-    if (do_setuid) {
-        if (setuid((uid_t)userid) < 0) {
+    if (drop_do_setuid) {
+        if (setuid(drop_uid) < 0) {
             elog("Unable to set user ID: %s\n", strerror(errno));
             exit(1);
         }
-        if (was_root && userid != 0 && setuid(0) == 0) {
+        if (drop_was_root && drop_uid != 0 && setuid(0) == 0) {
             elog("ERROR: privilege drop failed, still able to regain root\n");
             exit(1);
         }
-    }
-    return 0;
-}
-
-static void confine(void)
-{
-    if (config.chroot_dir) {
-        olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
-        if (set_chroot()) {
-            elog("[!] failed to chroot\n");
-            exit(1);
-        }
-    }
-
-    if (config.drop_privs_flag) {
-        olog("[*] Dropping privs...\n");
-        drop_privs();
     }
 }
 
@@ -1311,98 +1316,115 @@ int is_valid_path(const char *path)
     return 1;
 }
 
-int create_pid_file(const char *path)
+static void open_daemon_fds(void)
+{
+    /* Open as root, before chroot. The child locks and writes its pid
+     * after fork; a POSIX lock taken here would not be inherited. */
+    if (!is_valid_path(config.pidfile)) {
+        elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
+        exit(1);
+    }
+
+    daemon_pid_fd = open(config.pidfile, O_CREAT | O_WRONLY,
+                          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (daemon_pid_fd < 0) {
+        elog("[!] Failed to create pid file %s: %s\n",
+             config.pidfile, strerror(errno));
+        exit(1);
+    }
+
+    daemon_null_fd = open("/dev/null", O_RDWR);
+    if (daemon_null_fd < 0) {
+        elog("[!] Failed to open /dev/null: %s\n", strerror(errno));
+        exit(1);
+    }
+}
+
+static void write_pid_fd(int fd)
 {
     char pid_buffer[12];
     struct flock lock;
-    int fd;
 
-    if (!path)
-        path = config.pidfile;
-
-    if (!is_valid_path(path))
-        printf("PID path \"%s\" aint writable", path);
-
-    if ((fd = open(path, O_CREAT | O_WRONLY,
-                   S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1)
-        return ERROR;
-
-    /* PID file locking */
     lock.l_type = F_WRLCK;
     lock.l_start = 0;
     lock.l_whence = SEEK_SET;
     lock.l_len = 0;
 
     if (fcntl(fd, F_SETLK, &lock) == -1) {
-        close(fd);
-        return ERROR;
+        elog("[!] Failed to lock pid file %s: %s\n",
+             config.pidfile, strerror(errno));
+        exit(1);
     }
 
     snprintf(pid_buffer, sizeof(pid_buffer), "%d\n", (int)getpid());
 
-    if (ftruncate(fd, 0) != 0) {
-        close(fd);
-        return ERROR;
-    }
-
-    if (write(fd, pid_buffer, strlen(pid_buffer)) != (ssize_t)strlen(pid_buffer)) {
-        close(fd);
-        return ERROR;
+    if (ftruncate(fd, 0) != 0 ||
+        write(fd, pid_buffer, strlen(pid_buffer)) != (ssize_t)strlen(pid_buffer)) {
+        elog("[!] Failed to write pid file %s: %s\n",
+             config.pidfile, strerror(errno));
+        exit(1);
     }
 
     /* Leave fd open. Closing it drops the flock. */
     if (config.pid_fd >= 0)
         close(config.pid_fd);
     config.pid_fd = fd;
-    return SUCCESS;
 }
 
-int daemonize()
+static void finish_daemon(void)
 {
     pid_t pid;
-    int fd;
 
     pid = fork();
-
+    if (pid < 0) {
+        elog("[!] Failed to fork: %s\n", strerror(errno));
+        exit(1);
+    }
     if (pid > 0)
-        exit(0);    /* Parent */
+        exit(0);
 
-    if (pid < 0)
-        return ERROR;
+    if (setsid() < 0)
+        exit(1);
 
-    setsid();
+    if (daemon_null_fd >= 0) {
+        dup2(daemon_null_fd, 0);
+        dup2(daemon_null_fd, 1);
+        dup2(daemon_null_fd, 2);
+        if (daemon_null_fd > 2)
+            close(daemon_null_fd);
+    }
 
-    if ((fd = open("/dev/null", O_RDWR)) >= 0) {
-        dup2(fd, 0);
-        dup2(fd, 1);
-        dup2(fd, 2);
-        if (fd > 2) {
-            close(fd);
+    if (daemon_pid_fd >= 0)
+        write_pid_fd(daemon_pid_fd);
+}
+
+static void start_capture_session(int do_daemon)
+{
+    /* Chroot and setuid run in the foreground. A failure still has a
+     * terminal and a non-zero status. The fork happens only after both. */
+    resolve_privs();
+
+    if (do_daemon) {
+        open_daemon_fds();
+        openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
+        olog("[*] Daemonizing...\n\n");
+    }
+
+    if (config.chroot_dir) {
+        olog("[*] Chrooting to dir '%s'..\n", config.chroot_dir);
+        if (set_chroot()) {
+            elog("[!] failed to chroot\n");
+            exit(1);
         }
     }
 
-    if (config.pidfile && create_pid_file(config.pidfile) != SUCCESS) {
-        elog("[!] Failed to create pid file %s\n", config.pidfile);
-        exit(1);
+    if (config.drop_privs_flag) {
+        olog("[*] Dropping privs...\n");
+        apply_privs();
     }
 
-    return SUCCESS;
-}
-
-static void start_daemon_if_requested(int do_daemon)
-{
-    if (!do_daemon)
-        return;
-    /* Create the pidfile before chroot and before the privilege drop.
-     * /var/run is not writable by the user -u switches to. */
-    if (!is_valid_path(config.pidfile)) {
-        elog("[*] Unable to create pidfile '%s'\n", config.pidfile);
-        exit(1);
-    }
-    openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
-    olog("[*] Daemonizing...\n\n");
-    if (daemonize() != SUCCESS)
-        exit(1);
+    if (do_daemon)
+        finish_daemon();
 }
 
 void game_over()
@@ -1558,11 +1580,7 @@ void usage()
     olog("   h:HTTPS  V:SVCB\n");
 #endif
     olog("   L also enables GPOS\n");
-#ifdef LDNS_RR_TYPE_NSEC3PARAM
-    olog("   d enables DS, DNSKEY, NSEC, NSEC3, RRSIG\n");
-#else
     olog("   d enables DS, DNSKEY, NSEC, NSEC3, NSEC3PARAM, RRSIG\n");
-#endif /* LDNS_RR_TYPE_NSEC3PARAM */
     olog("\n");
     olog(" * For Server Return Code (SRC) Errors:\n");
     olog("   f:FORMERR   s:SERVFAIL  x:NXDOMAIN  o:NOTIMPL  r:REFUSED\n");
@@ -1837,8 +1855,8 @@ int main(int argc, char *argv[])
         case 'S': {
             uint32_t megabytes = 0;
 
-            if (parse_u32(optarg, &megabytes) != 0) {
-                elog("[!] -S needs a memory limit in megabytes (0 or a positive integer)\n");
+            if (parse_u32(optarg, &megabytes) != 0 || megabytes == 0) {
+                elog("[!] -S needs a memory limit in megabytes (a positive integer)\n");
                 exit(1);
             }
             config.mem_limit_max = (uint64_t)megabytes * 1024 * 1024;
@@ -1934,6 +1952,10 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* A missing account is reported before logs are opened and before
+     * a capture device is required. */
+    resolve_privs();
+
     /* Fall back to log file if syslog is not used */
     if (config.output_syslog == 0)
         config.output_log = 1;
@@ -2028,8 +2050,7 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        start_daemon_if_requested(daemon);
-        confine();
+        start_capture_session(daemon);
 
         alarm(TIMEOUT);
         olog("[*] Device: %s\n", config.dev);
@@ -2050,7 +2071,7 @@ int main(int argc, char *argv[])
             exit(1);
         }
         show_snapshot(pcap_snapshot(config.handle));
-        confine();
+        start_capture_session(0);
 
     }
     else {
@@ -2085,8 +2106,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        start_daemon_if_requested(daemon);
-        confine();
+        start_capture_session(daemon);
 
     }
 

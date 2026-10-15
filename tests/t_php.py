@@ -44,6 +44,9 @@ def source_checks(text):
            and "PDNS_DB_TABLE" in text and "PDNS_DB_PORT" in text
            and "FROM pdns WHERE" not in text, "php-env")
     report("ENT_QUOTES" in text and "utf8mb4" in text, "php-charset")
+    report("function pdns_search($db, $query, $table)" in text
+           and "pdns_search($db, $query, $DBTABLE)" in text
+           and "FROM \" . $DBTABLE" not in text, "php-table-arg")
 
 
 def run_php(php, env, prelude):

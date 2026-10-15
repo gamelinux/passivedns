@@ -47,8 +47,9 @@ PRINT="-P 86400"
 RRTYPES="-X 46CDNOPRSTMnxhV"
 # Drop is fail-closed: if -u or -g names an account that does not exist,
 # passivedns exits. Leave these commented until that account exists.
-#UID="-u passivedns"
-#GID="-g passivedns"
-#CHROOT="/usr/lib/passivedns/"
+# Bash treats UID as readonly, so the option variable is DROPUSER.
+#DROPUSER="-u passivedns"
+#DROPGROUP="-g passivedns"
+#CHROOT="-T /usr/lib/passivedns"
 DEAMON="-D"
-ARGS="$INTERFACE $LOGFILE $NXLOGFILE $LOGSYSLOG $NXSYSLOG $MAXMEM $PRINT $RRTYPES $DEAMON"
+ARGS="$INTERFACE $LOGFILE $NXLOGFILE $LOGSYSLOG $NXSYSLOG $MAXMEM $PRINT $RRTYPES $DROPUSER $DROPGROUP $CHROOT $DEAMON"

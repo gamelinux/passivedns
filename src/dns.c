@@ -347,14 +347,12 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
                 }
                 break;
 
-#ifdef LDNS_RR_TYPE_NSEC3PARAM
             case LDNS_RR_TYPE_NSEC3PARAM:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
                     to_offset = 4;
                 }
                 break;
-#endif /* LDNS_RR_TYPE_NSEC3PARAM */
             case LDNS_RR_TYPE_NSEC3:
                 if (config.dnsf & DNS_CHK_DNSSEC) {
                     offset = 0;
@@ -867,11 +865,9 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         case LDNS_RR_TYPE_DNSKEY:
             snprintf(rr_type, 10, "DNSKEY");
             break;
-#ifdef LDNS_RR_TYPE_NSEC3PARAM
         case LDNS_RR_TYPE_NSEC3PARAM:
             snprintf(rr_type, 11, "NSEC3PARAM");
             break;
-#endif /* LDNS_RR_TYPE_NSEC3PARAM */
         case LDNS_RR_TYPE_NSEC3:
             snprintf(rr_type, 10, "NSEC3");
             break;

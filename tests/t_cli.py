@@ -216,8 +216,12 @@ def main():
     report(code == 0 and "Record letters: F" in out and "FT" not in out,
            "spf-does-not-enable-txt", out + err)
 
+    code, out, err = run(["-S", "0"], empty)
+    report(code != 0 and "memory limit" in (out + err), "mem-zero", out + err)
     code, out, err = run(["-S", "-1"], empty)
     report(code != 0 and "memory limit" in (out + err), "mem-negative", out + err)
+    code, out, err = run(["-D", "-u", "nosuch-pdns-user", "-i", "lo"])
+    report(code != 0 and "not found" in (out + err), "daemon-user-missing", out + err)
     code, out, err = run(["-S", "nope"], empty)
     report(code != 0 and "memory limit" in (out + err), "mem-text", out + err)
     code, out, err = run(["-C", "-5"], empty)

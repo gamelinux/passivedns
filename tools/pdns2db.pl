@@ -295,8 +295,6 @@ sub parseLogfile {
            put_dns_to_db(@elements) if $NODB == 0;
        } elsif (not defined $HASH_DBONLYLIST) {
            put_dns_to_db(@elements) if $NODB == 0;
-       } else {
-           put_dns_to_db(@elements) if $NODB == 0;
        }
     }
     close(LOGFILE);

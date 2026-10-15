@@ -198,6 +198,21 @@ def main():
         report("bad.example.com" in alert_text and "good.example.com" not in alert_text,
                "pdns2db-alert", alert_text)
 
+        only = os.path.join(tmp, "only.txt")
+        with open(only, "w", encoding="utf-8") as fh:
+            fh.write("good.example.com\n")
+        open(capture, "w").close()
+        proc = run(["perl", PDNS2DB, "--batch", "--file", logfile, "--onlylist", only], loaded)
+        cap = open(capture, encoding="utf-8").read() if os.path.exists(capture) else ""
+        binds = ["\n".join(b[2:]) for b in blocks(cap) if b and b[0] == "EXEC"]
+        joined_bind = "\n".join(binds)
+        report(proc.returncode == 0
+               and "good.example.com" in joined_bind
+               and "bad.example.com" not in joined_bind
+               and "skip.example.com" not in joined_bind
+               and "evil" not in joined_bind,
+               "pdns2db-onlylist", proc.stdout + proc.stderr + "\n" + cap)
+
         proc = run(["perl", SEARCH, "-s", ""], env)
         report(proc.returncode == 0 and "need to search" in (proc.stdout + proc.stderr),
                "search-empty", proc.stdout + proc.stderr)

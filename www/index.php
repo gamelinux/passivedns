@@ -90,7 +90,7 @@ if ($query !== '') {
         echo "<b>Database unavailable.</b>";
     } else {
         mysqli_set_charset($db, 'utf8mb4');
-        $rows = pdns_search($db, $query);
+        $rows = pdns_search($db, $query, $DBTABLE);
         if ($rows === null) {
             echo "<b>Search failed.</b>";
         } elseif (count($rows) === 0) {
@@ -134,10 +134,10 @@ function like_escape($s) {
     return str_replace(array('\\', '%', '_'), array('\\\\', '\\%', '\\_'), $s);
 }
 
-function pdns_search($db, $query) {
+function pdns_search($db, $query, $table) {
     if (filter_var($query, FILTER_VALIDATE_IP)) {
         $sql = "SELECT FIRST_SEEN, LAST_SEEN, MAPTYPE, TTL, QUERY, ANSWER, COUNT
-                FROM " . $DBTABLE . " WHERE ANSWER = ? LIMIT 500";
+                FROM " . $table . " WHERE ANSWER = ? LIMIT 500";
         $stmt = mysqli_prepare($db, $sql);
         if (!$stmt)
             return null;
@@ -147,7 +147,7 @@ function pdns_search($db, $query) {
         $like_q = $like;
         $like_a = $like;
         $sql = "SELECT FIRST_SEEN, LAST_SEEN, MAPTYPE, TTL, QUERY, ANSWER, COUNT
-                FROM " . $DBTABLE . " WHERE QUERY LIKE ? OR ANSWER LIKE ? LIMIT 500";
+                FROM " . $table . " WHERE QUERY LIKE ? OR ANSWER LIKE ? LIMIT 500";
         $stmt = mysqli_prepare($db, $sql);
         if (!$stmt)
             return null;
