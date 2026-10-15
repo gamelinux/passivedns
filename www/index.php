@@ -85,6 +85,8 @@ print_search_body($TOKEN);
 
 if ($query !== '') {
     echo "<center>";
+    /* PHP 8.1+ throws on connect failure. Keep the false-return path. */
+    mysqli_report(MYSQLI_REPORT_OFF);
     $db = mysqli_connect($DBHOST, $DBUSER, $DBPASS, $DBNAME, $DBPORTN);
     if (!$db) {
         echo "<b>Database unavailable.</b>";
