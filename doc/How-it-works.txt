@@ -42,6 +42,14 @@
   DNS Transaction ID is also stored, to verify
   that the client sent a request, and that the
   server answered the right TID request :)
+* A UDP flow is removed when that answer matches.
+  A query that never gets an answer still expires
+  after 60 seconds (UDP_TIMEOUT).
+* A TCP flow stays after the DNS answer, because the
+  same socket can carry another query. It is removed
+  when both sides have sent FIN, or either side has
+  sent RST. A TCP flow that never closes expires
+  after 300 seconds (TCP_TIMEOUT).
 
 ## Domain caching
 * When a DNS question and answer is received, it is stored

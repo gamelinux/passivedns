@@ -1,3 +1,10 @@
+Changes with PassiveDNS 1.4.0
+
+- Free a UDP connection when its answer matches, instead of after 60 seconds
+- Close a TCP connection on FIN/FIN or RST without the extra five-second wait
+- Record the server side of an IPv4 flow on the server flags, so a server FIN is visible
+- Print how many connections are still open at shutdown
+
 Changes with PassiveDNS 1.3.0
 
 - Require -g and clear root's groups for a numeric -u with no account

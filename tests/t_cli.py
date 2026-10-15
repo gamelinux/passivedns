@@ -138,7 +138,7 @@ def reopen_keeps_log():
 
 def main():
     code, out, err = run(["-V"])
-    report(code == 0 and "PassiveDNS 1.3.0" in out and "Edward Bjarte Fjellskål" in out,
+    report(code == 0 and "PassiveDNS 1.4.0" in out and "Edward Bjarte Fjellskål" in out,
            "version", out + err)
 
     code, out, err = run(["-h"])

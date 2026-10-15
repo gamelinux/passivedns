@@ -739,17 +739,16 @@ int connection_tracking(packetinfo *pi)
                 return cxt_update_client(cxt, pi);
             }
             else if (CMP_CXT4(cxt, IP4ADDR(ip_dst), dst_port, IP4ADDR(ip_src), src_port)) {
-
-                if (pi->sc == SC_SERVER) {
-                    /* This is a server */
+                /* pi->sc is still unset here. A reversed tuple is the other
+                 * side of the flow. After a query has stored its id, that
+                 * side is the server. Before that, the first packet was the
+                 * answer and this packet is the query. */
+                if (cxt->plid != 0) {
                     dlog("[D] Found existing v4 server connection.\n");
                     return cxt_update_server(cxt, pi);
                 }
-                else {
-                    /* This is a client, where we saw a mid-stream DNS response first */
-                    dlog("[D] Found existing unknown v4 server connection.\n");
-                    return cxt_update_client(cxt, pi);
-                }
+                dlog("[D] Found existing unknown v4 server connection.\n");
+                return cxt_update_client(cxt, pi);
             }
         }
         else if (af == AF_INET6) {
@@ -896,6 +895,29 @@ int cxt_update_server(connection *cxt, packetinfo *pi)
     return SC_SERVER;
 }
 
+/* Drop a flow whose DNS answer has already been matched. The bucket
+ * hash is symmetric, so the stored ends find the same chain the first
+ * packet was inserted on. */
+void cxt_release(packetinfo *pi)
+{
+    connection *cxt;
+    uint32_t hash;
+
+    if (pi == NULL || pi->cxt == NULL)
+        return;
+    cxt = pi->cxt;
+    if (cxt->af == AF_INET)
+        hash = CXT_HASH4(IP4ADDR(&cxt->s_ip), IP4ADDR(&cxt->d_ip),
+                         cxt->s_port, cxt->d_port, cxt->proto);
+    else if (cxt->af == AF_INET6)
+        hash = CXT_HASH6(&cxt->s_ip, &cxt->d_ip,
+                         cxt->s_port, cxt->d_port, cxt->proto);
+    else
+        return;
+    pi->cxt = NULL;
+    del_connection(cxt, &bucket[hash]);
+}
+
 void end_all_sessions()
 {
     connection *cxt;
@@ -943,13 +965,10 @@ void end_sessions()
             config.llcxt++;
             /* TCP */
             if (cxt->proto == IP_PROTO_TCP) {
-                /* FIN from both sides */
-                if (cxt->s_tcpFlags & TF_FIN && cxt->d_tcpFlags & TF_FIN
-                        && (check_time - cxt->last_pkt_time) > 5)
+                /* FIN from both sides, or RST from either side. */
+                if (cxt->s_tcpFlags & TF_FIN && cxt->d_tcpFlags & TF_FIN)
                     ended = 1;
-                /* RST from either side */
-                else if ((cxt->s_tcpFlags & TF_RST || cxt->d_tcpFlags & TF_RST)
-                        && (check_time - cxt->last_pkt_time) > 5)
+                else if (cxt->s_tcpFlags & TF_RST || cxt->d_tcpFlags & TF_RST)
                     ended = 1;
                 else if ((check_time - cxt->last_pkt_time) > TCP_TIMEOUT)
                     expired = 1;
@@ -1471,6 +1490,9 @@ static void start_capture_session(int do_daemon)
 void game_over()
 {
     if (config.inpacket == 0) {
+        /* Apply FIN, RST, and idle rules at the last packet time so the
+         * open count below is what a live sweep would have removed. */
+        end_sessions();
         expire_all_dns_records();
         print_pdns_stats();
 
@@ -1548,6 +1570,8 @@ void print_pdns_stats()
          config.p_s.ip4_dec_udp_er + config.p_s.ip6_dec_udp_er);
     flog(handle, "-- Total packets received from libpcap    :%12u\n",
          config.p_s.got_packets);
+    flog(handle, "-- Connections open at shutdown           :%12u\n",
+         config.curcxt);
     flog(handle, "-- Total Ethernet packets received        :%12u\n",
          config.p_s.eth_recv);
     flog(handle, "-- Total VLAN packets received            :%12u\n",

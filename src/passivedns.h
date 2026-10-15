@@ -615,10 +615,11 @@ typedef struct _globalconfig {
 int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
+void cxt_release(packetinfo *pi);
 int mem_charge(size_t n);
 void mem_refund(size_t n);
 
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.3.0"
+#define PACKAGE_VERSION "1.4.0"
 #endif
 

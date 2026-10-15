@@ -7,6 +7,7 @@ Otherwise this looks for src/passivedns next to the tests directory.
 """
 
 import os
+import re
 import shutil
 import socket
 import struct
@@ -175,20 +176,20 @@ def run_case(binary, packets, args, linktype=1, times=None):
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         except subprocess.TimeoutExpired:
-            return 124, "", "timeout", False
+            return 124, "", "timeout", False, ""
         text = ""
         mode_ok = False
         if os.path.exists(log):
             mode_ok = (os.stat(log).st_mode & 0o777) == 0o640
             with open(log, encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
-        return proc.returncode, text, proc.stderr, mode_ok
+        return proc.returncode, text, proc.stderr, mode_ok, proc.stdout
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
 def expect_logged(binary, label, packets, needle, args=None, linktype=1, absent=(), times=None):
-    code, text, err, mode_ok = run_case(binary, packets, args or [], linktype, times)
+    code, text, err, mode_ok, _out = run_case(binary, packets, args or [], linktype, times)
     lines = [ln for ln in text.splitlines() if needle in ln]
     if code != 0 or not mode_ok or len(lines) != 1:
         return False, "%s: exit %s mode %s lines %d\n%s\n%s" % (
@@ -200,7 +201,7 @@ def expect_logged(binary, label, packets, needle, args=None, linktype=1, absent=
 
 
 def expect_many(binary, label, packets, needles, args=None, linktype=1):
-    code, text, err, mode_ok = run_case(binary, packets, args or [], linktype)
+    code, text, err, mode_ok, _out = run_case(binary, packets, args or [], linktype)
     lines = [ln for ln in text.splitlines() if ln.strip()]
     found = [n for n in needles if any(n in ln for ln in lines)]
     if code != 0 or not mode_ok or len(lines) != len(needles) or len(found) != len(needles):
@@ -210,10 +211,28 @@ def expect_many(binary, label, packets, needles, args=None, linktype=1):
 
 
 def expect_quiet(binary, label, packets, args=None, linktype=1):
-    code, text, err, mode_ok = run_case(binary, packets, args or [], linktype)
+    code, text, err, mode_ok, _out = run_case(binary, packets, args or [], linktype)
     if code != 0 or not mode_ok or text.strip():
         return False, "%s: exit %s mode %s\n%s\n%s" % (label, code, mode_ok, text, err)
     return True, "quiet"
+
+
+def open_count(stdout):
+    match = re.search(r"Connections open at shutdown\s+:\s*(\d+)", stdout)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def expect_open(binary, label, packets, count, needle=None, args=None):
+    code, text, err, mode_ok, out = run_case(binary, packets, args or [])
+    got = open_count(out)
+    logged = needle is None or needle in text
+    quiet = needle is not None or not text.strip()
+    if code != 0 or not mode_ok or got != count or not logged or not quiet:
+        return False, "%s: exit %s mode %s open %s\n%s\n%s\n%s" % (
+            label, code, mode_ok, got, text, out, err)
+    return True, "open %s" % got
 
 
 def cases():
@@ -559,6 +578,59 @@ def cases():
     yield ("server-ttl6", hop_pkts, "2001:db8:1::2||41||IN||hop.example.com.||A||",
            ["-f", "SMcsCQTAtni"])
 
+    free_q = dns_query(0x1401, "free.example.com")
+    free_a = dns_response(0x1401, "free.example.com", socket.inet_aton("9.9.9.9"))
+    yield ("udp-free", [
+        eth(ipv4("10.14.0.1", "10.14.0.2", 17, udp(41400, 53, free_q))),
+        eth(ipv4("10.14.0.2", "10.14.0.1", 17, udp(53, 41400, free_a))),
+    ], ("open", 0, "free.example.com.||A||9.9.9.9"), None)
+
+    yield ("udp-unanswered", [
+        eth(ipv4("10.14.0.1", "10.14.0.2", 17, udp(41401, 53,
+                 dns_query(0x1402, "wait.example.com")))),
+    ], ("open", 1, None), None)
+
+    again_q1 = dns_query(0x1403, "again.example.com")
+    again_a1 = dns_response(0x1403, "again.example.com", socket.inet_aton("1.2.3.4"))
+    again_q2 = dns_query(0x1404, "again.example.com")
+    again_a2 = dns_response(0x1404, "again.example.com", socket.inet_aton("5.6.7.8"))
+    yield ("udp-reuse", [
+        eth(ipv4("10.14.0.1", "10.14.0.2", 17, udp(41402, 53, again_q1))),
+        eth(ipv4("10.14.0.2", "10.14.0.1", 17, udp(53, 41402, again_a1))),
+        eth(ipv4("10.14.0.1", "10.14.0.2", 17, udp(41402, 53, again_q2))),
+        eth(ipv4("10.14.0.2", "10.14.0.1", 17, udp(53, 41402, again_a2))),
+    ], ("open", 0, "5.6.7.8"), None)
+
+    tq = dns_query(0x1405, "tcpstay.example.com")
+    ta = dns_response(0x1405, "tcpstay.example.com", socket.inet_aton("9.9.9.9"))
+    tqmsg = struct.pack(">H", len(tq)) + tq
+    tamsg = struct.pack(">H", len(ta)) + ta
+    yield ("tcp-stays", [
+        eth(ipv4("10.14.1.1", "10.14.1.2", 6, tcp(41410, 53, 1000, tqmsg))),
+        eth(ipv4("10.14.1.2", "10.14.1.1", 6, tcp(53, 41410, 5000, tamsg))),
+    ], ("open", 1, "tcpstay.example.com.||A||9.9.9.9"), None)
+
+    fq = dns_query(0x1406, "tcpfin.example.com")
+    fa = dns_response(0x1406, "tcpfin.example.com", socket.inet_aton("9.9.9.9"))
+    fqmsg = struct.pack(">H", len(fq)) + fq
+    famsg = struct.pack(">H", len(fa)) + fa
+    yield ("tcp-fin", [
+        eth(ipv4("10.14.1.1", "10.14.1.2", 6, tcp(41411, 53, 1000, fqmsg))),
+        eth(ipv4("10.14.1.2", "10.14.1.1", 6, tcp(53, 41411, 5000, famsg))),
+        eth(ipv4("10.14.1.1", "10.14.1.2", 6, tcp(41411, 53, 1000 + len(fqmsg), b"", 0x11))),
+        eth(ipv4("10.14.1.2", "10.14.1.1", 6, tcp(53, 41411, 5000 + len(famsg), b"", 0x11))),
+    ], ("open", 0, "tcpfin.example.com.||A||9.9.9.9"), None)
+
+    rq = dns_query(0x1407, "tcprst.example.com")
+    ra = dns_response(0x1407, "tcprst.example.com", socket.inet_aton("9.9.9.9"))
+    rqmsg = struct.pack(">H", len(rq)) + rq
+    ramsg = struct.pack(">H", len(ra)) + ra
+    yield ("tcp-rst", [
+        eth(ipv4("10.14.1.1", "10.14.1.2", 6, tcp(41412, 53, 2000, rqmsg))),
+        eth(ipv4("10.14.1.2", "10.14.1.1", 6, tcp(53, 41412, 6000, ramsg))),
+        eth(ipv4("10.14.1.2", "10.14.1.1", 6, tcp(53, 41412, 6000 + len(ramsg), b"", 0x04))),
+    ], ("open", 0, "tcprst.example.com.||A||9.9.9.9"), None)
+
 
 def main():
     binary = find_binary()
@@ -570,6 +642,8 @@ def main():
         times = case[6] if len(case) > 6 else None
         if needle is None:
             ok, detail = expect_quiet(binary, label, packets, args, linktype)
+        elif isinstance(needle, tuple) and needle and needle[0] == "open":
+            ok, detail = expect_open(binary, label, packets, needle[1], needle[2], args)
         elif isinstance(needle, tuple):
             ok, detail = expect_many(binary, label, packets, needle, args, linktype)
         else:

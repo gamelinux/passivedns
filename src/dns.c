@@ -146,6 +146,11 @@ void dns_parser(packetinfo *pi)
         /* Send it off for processing */
         if (process_dns_answer(pi, dns_pkt) < 0)
             dlog("[D] process_dns_answer() returned -1\n");
+        /* The query and this answer have been paired. UDP has no FIN,
+         * so drop the flow now instead of holding it for UDP_TIMEOUT.
+         * TCP can carry another query before it closes. */
+        if (pi->proto == IP_PROTO_UDP)
+            cxt_release(pi);
     }
     else {
         /* We need to get the DNS TID from the Query to later match with the
