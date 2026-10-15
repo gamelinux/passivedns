@@ -1173,6 +1173,7 @@ static int privs_resolved;
 static int drop_do_setuid;
 static int drop_do_setgid;
 static int drop_was_root;
+static int drop_clear_supp;
 static uid_t drop_uid;
 static gid_t drop_gid;
 static int daemon_pid_fd = -1;
@@ -1241,6 +1242,14 @@ static void resolve_privs(void)
         }
     }
 
+    /* A numeric uid with no passwd entry has no primary group. Staying
+     * in gid 0 would keep root's group after setuid. */
+    if (drop_was_root && drop_do_setuid && !drop_do_setgid) {
+        elog("[!] -g is required to drop root's group for uid %s\n",
+             config.user_name);
+        exit(1);
+    }
+
     /* initgroups needs root and the host group file. */
     if (drop_do_setuid && drop_was_root && init_name) {
         if (initgroups(init_name, (gid_t)groupid) < 0) {
@@ -1249,6 +1258,8 @@ static void resolve_privs(void)
             exit(1);
         }
     }
+    else if (drop_was_root && drop_do_setuid)
+        drop_clear_supp = 1;
 
     endgrent();
     endpwent();
@@ -1262,6 +1273,12 @@ static void apply_privs(void)
     if (!config.drop_privs_flag)
         return;
     resolve_privs();
+
+    /* Clear root's supplementary groups before the uid drop. */
+    if (drop_clear_supp && setgroups(0, NULL) < 0) {
+        elog("Unable to drop supplementary groups: %s\n", strerror(errno));
+        exit(1);
+    }
 
     if (drop_do_setgid) {
         if (setgid(drop_gid) < 0) {
@@ -1277,6 +1294,10 @@ static void apply_privs(void)
         }
         if (drop_was_root && drop_uid != 0 && setuid(0) == 0) {
             elog("ERROR: privilege drop failed, still able to regain root\n");
+            exit(1);
+        }
+        if (drop_was_root && drop_uid != 0 && drop_gid != 0 && setgid(0) == 0) {
+            elog("ERROR: privilege drop failed, still able to regain the root group\n");
             exit(1);
         }
     }
@@ -1336,6 +1357,25 @@ static void open_daemon_fds(void)
     daemon_null_fd = open("/dev/null", O_RDWR);
     if (daemon_null_fd < 0) {
         elog("[!] Failed to open /dev/null: %s\n", strerror(errno));
+        exit(1);
+    }
+}
+
+static void refuse_locked_pidfile(int fd)
+{
+    struct flock lock;
+
+    memset(&lock, 0, sizeof(lock));
+    lock.l_type = F_WRLCK;
+    lock.l_whence = SEEK_SET;
+    if (fcntl(fd, F_GETLK, &lock) == -1) {
+        elog("[!] Failed to check pid file %s: %s\n",
+             config.pidfile, strerror(errno));
+        exit(1);
+    }
+    if (lock.l_type != F_UNLCK) {
+        elog("[!] pid file %s is already locked by pid %d\n",
+             config.pidfile, (int)lock.l_pid);
         exit(1);
     }
 }
@@ -1406,6 +1446,7 @@ static void start_capture_session(int do_daemon)
 
     if (do_daemon) {
         open_daemon_fds();
+        refuse_locked_pidfile(daemon_pid_fd);
         openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
         olog("[*] Daemonizing...\n\n");
     }

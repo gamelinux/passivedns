@@ -1,12 +1,15 @@
 Changes with PassiveDNS 1.3.0
 
+- Require -g and clear root's groups for a numeric -u with no account
+- Report a locked pidfile before the daemon forks
+- Rotate logs with copytruncate so a dropped user keeps the open file
 - Pass the database table into the PHP search function
 - Report chroot and privilege-drop failures before the daemon forks
 - Reject -S 0, which matched no records
 - Insert only the domains named by pdns2db.pl --onlylist
 - Log NSEC3PARAM answers when -X d is set
 - Include the Debian drop-user, drop-group, and chroot options in ARGS
-- Rotate the NXDOMAIN log and create the new log file before SIGHUP
+- Rotate the NXDOMAIN log together with the answer log
 - Keep the open log if SIGHUP cannot reopen it, and still syslog that line
 - Create the pidfile before chroot and before dropping privileges
 - Reject a non-numeric or negative -S, -C, -P, and PF_RING -c

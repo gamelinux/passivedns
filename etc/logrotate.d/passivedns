@@ -1,6 +1,6 @@
-# SIGHUP reopens these paths. create makes the new inode before the signal.
-# If the daemon drops privileges, change the owner to that user and group.
-# With -T, the log path has to exist inside the chroot.
+# copytruncate keeps the inode the daemon already holds. A new root-owned
+# file cannot be reopened after -u, and a path outside -T cannot be
+# reopened at all. A few lines can be lost between the copy and the truncate.
 /var/log/passivedns.log /var/log/passivedns-nx.log {
     daily
     rotate 30
@@ -8,10 +8,7 @@
     notifempty
     compress
     delaycompress
-    create 0640 root root
-    postrotate
-        /bin/kill -HUP `pgrep passivedns 2>/dev/null` 2>/dev/null || true
-    endscript
+    copytruncate
     su root syslog
 }
 
