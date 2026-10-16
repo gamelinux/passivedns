@@ -30,6 +30,9 @@
 #include <netinet/in.h>
 #include <syslog.h>
 #include <pcap.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/uio.h>
 #include "passivedns.h"
 #include "dns.h"
 
@@ -143,8 +146,13 @@ void dns_parser(packetinfo *pi)
             return;
         }
 
-        /* Send it off for processing */
-        if (process_dns_answer(pi, dns_pkt) < 0)
+        /* Send it off for processing. Capture threads hand the answer
+         * to the one cache thread. -W 1 updates the cache here. */
+        if (config.workers > 1) {
+            if (pdns_cache_submit(pi, dns_pkt) != 0)
+                update_dns_stats(pi, ERROR);
+        }
+        else if (process_dns_answer(pi, dns_pkt) < 0)
             dlog("[D] process_dns_answer() returned -1\n");
         /* The query and this answer have been paired. UDP has no FIN,
          * so drop the flow now instead of holding it for UDP_TIMEOUT.
@@ -641,8 +649,8 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
             return;
         }
         memcpy(passet->answer, rdomain_name, alen);
-        config.p_s.dns_assets++;
-        config.dns_assets++;
+        PDNS_U32_INC(config.p_s.dns_assets);
+        PDNS_U32_INC(config.dns_assets);
     }
     else
         dlog("[D] BAD\n");
@@ -742,10 +750,29 @@ static int out_add(outbuf *o, const char *fmt, ...)
         goto print_free; \
 } while (0)
 
+/* One syscall so concurrent workers cannot split a line in the file. */
+void write_log_line(int fd, const char *line)
+{
+    struct iovec iov[2];
+    char nl = '\n';
+    ssize_t n;
+
+    if (fd < 0 || line == NULL)
+        return;
+    iov[0].iov_base = (void *)line;
+    iov[0].iov_len = strlen(line);
+    iov[1].iov_base = &nl;
+    iov[1].iov_len = 1;
+    do {
+        n = writev(fd, iov, 2);
+    } while (n < 0 && errno == EINTR);
+}
+
 void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
                   ldns_rdf *lname, uint16_t rcode)
 {
     FILE *fd = NULL;
+    int raw = -1;
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
     char *d = config.log_delimiter;
@@ -794,13 +821,18 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
 
     /* A missing file handle must not skip syslog. fprintf checks fd. */
     if (is_err_record && config.output_log_nxd) {
-        if (config.logfile_all)
+        if (config.logfile_all) {
             fd = config.logfile_fd;
-        else
+            raw = config.logfile_raw;
+        }
+        else {
             fd = config.logfile_nxd_fd;
+            raw = config.logfile_nxd_raw;
+        }
     }
     else if (!is_err_record && config.output_log) {
         fd = config.logfile_fd;
+        raw = config.logfile_raw;
     }
 
     if (is_err_record) {
@@ -1298,8 +1330,12 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 #endif /* HAVE_JSON */
 
-    /* Print to log file */
-    if (fd && output) {
+    /* The writer thread owns the log fd when capture is threaded. */
+    if (output && config.workers > 1)
+        pdns_log_submit(raw, output);
+    else if (output && raw >= 0)
+        write_log_line(raw, output);
+    else if (fd && output) {
         fprintf(fd, "%s\n", output);
         fflush(fd);
     }
@@ -1386,8 +1422,8 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         }
         memcpy(pdnsr->qname, domain_name, qlen);
         dlog("[*] Allocated a new dns record...\n");
-        config.p_s.dns_records++;
-        config.dns_records++;
+        PDNS_U32_INC(config.p_s.dns_records);
+        PDNS_U32_INC(config.dns_records);
     }
     if (head != NULL)
         head->prev = pdnsr;
@@ -1578,7 +1614,7 @@ void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
     free(pdnsr->qname);
     free(pdnsr);
     pdnsr = NULL;
-    config.dns_records--;
+    PDNS_U32_DEC(config.dns_records);
 }
 
 void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
@@ -1658,7 +1694,7 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
     passet->answer = NULL;
     free(passet);
     passet = NULL;
-    config.dns_assets--;
+    PDNS_U32_DEC(config.dns_assets);
 }
 
 void update_dns_stats(packetinfo *pi, uint8_t code)
@@ -1666,18 +1702,18 @@ void update_dns_stats(packetinfo *pi, uint8_t code)
     if (pi->af == AF_INET) {
         switch (pi->proto) {
             case IP_PROTO_TCP:
-                config.p_s.ip4_dns_tcp++;
+                PDNS_U32_INC(config.p_s.ip4_dns_tcp);
                 if (code == SUCCESS)
-                    config.p_s.ip4_dec_tcp_ok++;
+                    PDNS_U32_INC(config.p_s.ip4_dec_tcp_ok);
                 else
-                    config.p_s.ip4_dec_tcp_er++;
+                    PDNS_U32_INC(config.p_s.ip4_dec_tcp_er);
                 break;
             case IP_PROTO_UDP:
-                config.p_s.ip4_dns_udp++;
+                PDNS_U32_INC(config.p_s.ip4_dns_udp);
                 if (code == SUCCESS)
-                    config.p_s.ip4_dec_udp_ok++;
+                    PDNS_U32_INC(config.p_s.ip4_dec_udp_ok);
                 else
-                    config.p_s.ip4_dec_udp_er++;
+                    PDNS_U32_INC(config.p_s.ip4_dec_udp_er);
                 break;
             default:
                break;
@@ -1686,18 +1722,18 @@ void update_dns_stats(packetinfo *pi, uint8_t code)
     else if (pi->af == AF_INET6) {
         switch (pi->proto) {
             case IP_PROTO_TCP:
-                 config.p_s.ip6_dns_tcp++;
+                 PDNS_U32_INC(config.p_s.ip6_dns_tcp);
                 if (code == SUCCESS)
-                    config.p_s.ip6_dec_tcp_ok++;
+                    PDNS_U32_INC(config.p_s.ip6_dec_tcp_ok);
                 else
-                    config.p_s.ip6_dec_tcp_er++;
+                    PDNS_U32_INC(config.p_s.ip6_dec_tcp_er);
                 break;
             case IP_PROTO_UDP:
-                config.p_s.ip6_dns_udp++;
+                PDNS_U32_INC(config.p_s.ip6_dns_udp);
                 if (code == SUCCESS)
-                    config.p_s.ip6_dec_udp_ok++;
+                    PDNS_U32_INC(config.p_s.ip6_dec_udp_ok);
                 else
-                    config.p_s.ip6_dec_udp_er++;
+                    PDNS_U32_INC(config.p_s.ip6_dec_udp_er);
                 break;
             default:
                 break;

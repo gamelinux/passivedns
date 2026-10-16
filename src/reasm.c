@@ -69,8 +69,9 @@ typedef struct _ipfrag {
     size_t charged;
 } ipfrag;
 
-static ipfrag *frags = NULL;
-static uint32_t nfrags = 0;
+/* One list per capture thread. Hash fanout keeps one datagram together. */
+static __thread ipfrag *frags = NULL;
+static __thread uint32_t nfrags = 0;
 
 static int bit_test(const uint8_t *b, uint32_t i)
 {

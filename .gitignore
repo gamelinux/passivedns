@@ -26,3 +26,11 @@ src/Makefile
 src/Makefile.in
 src/stamp-h1
 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local captures. Not part of the source.
+*.pcap
+

@@ -580,6 +580,12 @@ typedef struct _globalconfig {
     char                *user_name;        /* User to drop privileges too */
     char                *pidfile;          /* Pidfile */
     char                *configpath;       /* Path to config directory */
+    uint16_t            workers;           /* Live workers. 1 does not fan out. */
+    uint16_t            worker_id;         /* 1..workers inside one fanout worker. */
+    uint16_t            fanout_group;      /* AF_PACKET fanout group id. */
+    uint8_t             fanout_group_set;  /* --fanout-group was given. */
+    int                 logfile_raw;       /* O_APPEND fd, or -1 when FILE* is used. */
+    int                 logfile_nxd_raw;   /* O_APPEND fd for the NXDOMAIN log. */
     uint32_t            dnsprinttime;      /* Minimum time between printing duplicate DNS info */
     uint32_t            dnscachetimeout;   /* Time before a DNS record/asset times out if not updated */
 } globalconfig;
@@ -592,6 +598,9 @@ typedef struct _globalconfig {
 #define ISSET_INTERRUPT_END(config)     ((config).intr_flag & INTERRUPT_END)
 #define ISSET_INTERRUPT_SESSION(config) ((config).intr_flag & INTERRUPT_SESSION)
 #define ISSET_INTERRUPT_DNS(config)     ((config).intr_flag & INTERRUPT_DNS)
+
+/* Live AF_PACKET workers. 1 keeps the single-process capture path. */
+#define PDNS_WORKERS_MAX                64
 
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 #define flog(h, fmt, ...) \
@@ -612,14 +621,37 @@ typedef struct _globalconfig {
 #define vlog(fmt, ...) do { ; } while(0)
 #endif
 
+extern globalconfig config;
+
+/* Plain increments on the one-worker path. Atomics when capture threads
+ * share these counters with the cache thread. */
+#define PDNS_U32_INC(p) do { \
+    if (config.workers > 1) \
+        __atomic_fetch_add((uint32_t *)&(p), 1u, __ATOMIC_RELAXED); \
+    else \
+        (p)++; \
+} while (0)
+#define PDNS_U32_DEC(p) do { \
+    if (config.workers > 1) \
+        __atomic_fetch_sub((uint32_t *)&(p), 1u, __ATOMIC_RELAXED); \
+    else \
+        (p)--; \
+} while (0)
+#define PDNS_U32_GET(p) \
+    (config.workers > 1 ? __atomic_load_n((uint32_t *)&(p), __ATOMIC_RELAXED) : (uint32_t)(p))
+
 int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
 void cxt_release(packetinfo *pi);
 int mem_charge(size_t n);
 void mem_refund(size_t n);
+struct ldns_struct_pkt;
+void write_log_line(int fd, const char *line);
+int pdns_cache_submit(packetinfo *pi, struct ldns_struct_pkt *pkt);
+void pdns_log_submit(int fd, const char *line);
 
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.4.0"
+#define PACKAGE_VERSION "1.5.0"
 #endif
 

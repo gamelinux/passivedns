@@ -1,3 +1,14 @@
+Changes with PassiveDNS 1.5.0
+
+- Add -W for live AF_PACKET fanout, hash mode only
+- Default one worker, which is the same single-process capture as 1.4.0
+- More than one worker is capture threads in one process, plus one
+  DNS cache thread and one log writer thread
+- Add --fanout-group. The default group is the interface index
+- Reject -W together with -r, PF_RING -n, or interface "any"
+- Open one capture socket per thread before chroot and before the privilege drop
+- Keep one pid file and one log file
+
 Changes with PassiveDNS 1.4.0
 
 - Free a UDP connection when its answer matches, instead of after 60 seconds

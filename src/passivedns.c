@@ -48,10 +48,15 @@
 #include <limits.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/wait.h>
+#include <pthread.h>
+#include <stdint.h>
 #ifdef __linux__
 #include <net/if.h>
 #include <linux/sockios.h>
 #include <linux/ethtool.h>
+#include <linux/if_packet.h>
+#include <sys/prctl.h>
 #endif /* __linux__ */
 #include "passivedns.h"
 #include "dns.h"
@@ -72,7 +77,16 @@
 /*  G L O B A L S  *** (or candidates for refactoring, as we say)***********/
 globalconfig config;
 connection *bucket[BUCKET_SIZE];
+/* Capture threads keep a private flow table. NULL uses the global one. */
+static __thread connection **tl_bucket;
+static __thread struct timeval tl_tstamp;
+static __thread int tl_tstamp_set;
 static volatile sig_atomic_t signal_reopen_log_files = 0;
+
+static connection **flow_buckets(void)
+{
+    return tl_bucket != NULL ? tl_bucket : bucket;
+}
 
 /*  I N T E R N A L   P R O T O T Y P E S  ***********************************/
 static void usage();
@@ -131,22 +145,35 @@ static int pi_has(const packetinfo *pi, const uint8_t *p, size_t n)
     return 1;
 }
 
+static pthread_mutex_t mem_mu = PTHREAD_MUTEX_INITIALIZER;
+
 int mem_charge(size_t n)
 {
+    int ok = 1;
+
+    if (config.workers > 1)
+        pthread_mutex_lock(&mem_mu);
     if (n > config.mem_limit_max)
-        return 0;
-    if (config.mem_limit_size > config.mem_limit_max - n)
-        return 0;
-    config.mem_limit_size += n;
-    return 1;
+        ok = 0;
+    else if (config.mem_limit_size > config.mem_limit_max - n)
+        ok = 0;
+    else
+        config.mem_limit_size += n;
+    if (config.workers > 1)
+        pthread_mutex_unlock(&mem_mu);
+    return ok;
 }
 
 void mem_refund(size_t n)
 {
+    if (config.workers > 1)
+        pthread_mutex_lock(&mem_mu);
     if (n >= config.mem_limit_size)
         config.mem_limit_size = 0;
     else
         config.mem_limit_size -= n;
+    if (config.workers > 1)
+        pthread_mutex_unlock(&mem_mu);
 }
 
 static void secure_log(FILE *fp)
@@ -205,21 +232,25 @@ void pfring_got_packet(const struct pfring_pkthdr *pfheader,
 void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
                 const u_char *packet)
 {
-    config.p_s.got_packets++;
+    PDNS_U32_INC(config.p_s.got_packets);
     packetinfo pstruct = {0};
     packetinfo *pi = &pstruct;
     pi->packet = packet;
     pi->pheader = pheader;
     set_pkt_end_ptr (pi);
-    memcpy( &config.tstamp, &pi->pheader->ts, sizeof( struct timeval ) ); /* Global */
-
-    if (signal_reopen_log_files)
-        reopen_log_files();
-
-    if (config.intr_flag != 0) {
-        check_interrupt();
+    /* The cache thread owns config.tstamp. Capture threads keep their own. */
+    if (config.workers > 1) {
+        tl_tstamp = pi->pheader->ts;
+        tl_tstamp_set = 1;
     }
-    config.inpacket = 1;
+    else {
+        memcpy(&config.tstamp, &pi->pheader->ts, sizeof(struct timeval));
+        if (signal_reopen_log_files)
+            reopen_log_files();
+        if (config.intr_flag != 0)
+            check_interrupt();
+        config.inpacket = 1;
+    }
 
     switch (config.linktype) {
         case DLT_NULL:
@@ -249,12 +280,13 @@ void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
                 parse_ip6(pi);
             break;
         default:
-            config.p_s.otherl_recv++;
+            PDNS_U32_INC(config.p_s.otherl_recv);
             //vlog(0x3, "[*] ETHERNET TYPE : %x\n",pi->eth_hdr->eth_ip_type);
             break;
     }
 
-    config.inpacket = 0;
+    if (config.workers <= 1)
+        config.inpacket = 0;
 }
 
 void prepare_null(packetinfo *pi)
@@ -295,7 +327,7 @@ void prepare_eth(packetinfo *pi)
     if (pi->packet + ETHERNET_HEADER_LEN > pi->end_ptr)
         return;
 
-    config.p_s.eth_recv++;
+    PDNS_U32_INC(config.p_s.eth_recv);
     pi->eth_hdr = (ether_header *) (pi->packet);
     pi->eth_type = ntohs(pi->eth_hdr->eth_ip_type);
     pi->eth_hlen = ETHERNET_HEADER_LEN;
@@ -310,7 +342,7 @@ void check_vlan(packetinfo *pi)
         if (!pi_has(pi, pi->packet, ETHERNET_8021Q_HEADER_LEN))
             return;
         vlog(0x3, "[*] ETHERNET TYPE 8021Q\n");
-        config.p_s.vlan_recv++;
+        PDNS_U32_INC(config.p_s.vlan_recv);
         pi->vlan = pi->eth_hdr->eth_8_vid;
         pi->eth_type = ntohs(pi->eth_hdr->eth_8_ip_type);
         pi->eth_hlen += 4;
@@ -362,7 +394,7 @@ int prepare_ip4(packetinfo *pi)
     pi->s_ttl = pi->ip4->ip_ttl;
     pi->packet_bytes = (uint16_t)(ip_len - (uint16_t)ihl * 4);
     pi->l4_off = pi->eth_hlen + (uint32_t)ihl * 4;
-    config.p_s.ip4_recv++;
+    PDNS_U32_INC(config.p_s.ip4_recv);
     return 1;
 }
 
@@ -428,12 +460,12 @@ static void tunnel_into(packetinfo *pi, const uint8_t *inner, uint8_t proto)
     pipi.eth_hdr = pi->eth_hdr;
     pipi.tunnel = (uint8_t)(pi->tunnel + 1);
     if (proto == IP_PROTO_IP6) {
-        config.p_s.ip6ip_recv++;
+        PDNS_U32_INC(config.p_s.ip6ip_recv);
         if (prepare_ip6(&pipi))
             parse_ip6(&pipi);
     }
     else {
-        config.p_s.ip4ip_recv++;
+        PDNS_U32_INC(config.p_s.ip4ip_recv);
         if (prepare_ip4(&pipi))
             parse_ip4(&pipi);
     }
@@ -469,7 +501,7 @@ int prepare_ip6(packetinfo *pi)
     pi->s_ttl = pi->ip6->hop_lmt;
     pi->packet_bytes = plen;
     pi->l4_off = pi->eth_hlen + IP6_HEADER_LEN;
-    config.p_s.ip6_recv++;
+    PDNS_U32_INC(config.p_s.ip6_recv);
     return 1;
 }
 
@@ -634,7 +666,7 @@ int prepare_tcp(packetinfo *pi)
     pi->proto = IP_PROTO_TCP;
     pi->s_port = pi->tcph->src_port;
     pi->d_port = pi->tcph->dst_port;
-    config.p_s.tcp_recv++;
+    PDNS_U32_INC(config.p_s.tcp_recv);
     connection_tracking(pi);
     return pi->cxt != NULL;
 }
@@ -664,7 +696,7 @@ int prepare_udp(packetinfo *pi)
     pi->proto = IP_PROTO_UDP;
     pi->s_port = pi->udph->src_port;
     pi->d_port = pi->udph->dst_port;
-    config.p_s.udp_recv++;
+    PDNS_U32_INC(config.p_s.udp_recv);
     connection_tracking(pi);
     return pi->cxt != NULL;
 }
@@ -725,7 +757,7 @@ int connection_tracking(packetinfo *pi)
         return 0;
     }
 
-    cxt = bucket[hash];
+    cxt = flow_buckets()[hash];
     head = cxt;
 
     /* Search through the bucket */
@@ -775,7 +807,7 @@ int connection_tracking(packetinfo *pi)
         /* Are we double linked? */
         head->prev = cxt;
 
-    bucket[hash] = cxt;
+    flow_buckets()[hash] = cxt;
     pi->cxt = cxt;
     return cxt_update_unknown(cxt, pi);
 }
@@ -787,7 +819,7 @@ connection *cxt_new(packetinfo *pi)
     struct in6_addr ipd;
     connection *cxt;
 
-    if (config.max_connections && config.curcxt >= config.max_connections)
+    if (config.max_connections && PDNS_U32_GET(config.curcxt) >= config.max_connections)
         return NULL;
     if (!mem_charge(sizeof(connection)))
         return NULL;
@@ -796,8 +828,12 @@ connection *cxt_new(packetinfo *pi)
         mem_refund(sizeof(connection));
         return NULL;
     }
-    config.cxtrackerid++;
-    cxt->cxid = config.cxtrackerid;
+    if (config.workers > 1)
+        cxt->cxid = __atomic_add_fetch(&config.cxtrackerid, 1, __ATOMIC_RELAXED);
+    else {
+        config.cxtrackerid++;
+        cxt->cxid = config.cxtrackerid;
+    }
     cxt->af = pi->af;
 
     if (pi->tcph)
@@ -828,7 +864,7 @@ connection *cxt_new(packetinfo *pi)
 
     cxt->check = 0x00;
     cxt->reversed = 0;
-    config.curcxt++;
+    PDNS_U32_INC(config.curcxt);
 
     return cxt;
 }
@@ -915,7 +951,7 @@ void cxt_release(packetinfo *pi)
     else
         return;
     pi->cxt = NULL;
-    del_connection(cxt, &bucket[hash]);
+    del_connection(cxt, &flow_buckets()[hash]);
 }
 
 void end_all_sessions()
@@ -926,7 +962,7 @@ void end_all_sessions()
 
     for (cxkey = 0; cxkey < BUCKET_SIZE; cxkey++)
     {
-        cxt = bucket[cxkey];
+        cxt = flow_buckets()[cxkey];
         while (cxt != NULL)
         {
             config.llcxt++;
@@ -937,9 +973,9 @@ void end_all_sessions()
             connection *tmp = cxt;
 
             cxt = cxt->next;
-            del_connection(tmp, &bucket[cxkey]);
+            del_connection(tmp, &flow_buckets()[cxkey]);
             if (cxt == NULL)
-                bucket[cxkey] = NULL;
+                flow_buckets()[cxkey] = NULL;
         }
     }
     dlog("CXT in list before cleaning: %10u\n", config.llcxt);
@@ -950,7 +986,7 @@ void end_sessions()
 {
     connection *cxt;
     time_t check_time;
-    check_time = config.tstamp.tv_sec;
+    check_time = tl_tstamp_set ? tl_tstamp.tv_sec : config.tstamp.tv_sec;
     int ended, expired = 0;
     config.llcxt = 0;
 
@@ -958,7 +994,7 @@ void end_sessions()
 
     for (iter = 0; iter < BUCKET_SIZE; iter++)
     {
-        cxt = bucket[iter];
+        cxt = flow_buckets()[iter];
         while (cxt != NULL)
         {
             ended = 0;
@@ -1000,9 +1036,9 @@ void end_sessions()
 
                 cxt = cxt->next;
 
-                del_connection(tmp, &bucket[iter]);
+                del_connection(tmp, &flow_buckets()[iter]);
                 if (cxt == NULL && tmp_pre == NULL)
-                    bucket[iter] = NULL;
+                    flow_buckets()[iter] = NULL;
             }
             else
                 cxt = cxt->next;
@@ -1039,7 +1075,7 @@ void del_connection(connection * cxt, connection ** bucket_ptr)
     mem_refund(sizeof(connection));
     free(cxt);
     cxt = NULL;
-    config.curcxt--;
+    PDNS_U32_DEC(config.curcxt);
 }
 
 const char *u_ntop_src(packetinfo *pi, char *dest)
@@ -1121,8 +1157,70 @@ static int reopen_one(FILE **slot, const char *path)
     return 0;
 }
 
+/* One O_APPEND fd per process. A later write() of a whole line does not
+ * share a stdio buffer with the other workers. */
+static int open_append_log(const char *path)
+{
+    int fd;
+
+    if (path == NULL)
+        return -1;
+    if (path[0] == '-' && path[1] == '\0')
+        return STDOUT_FILENO;
+
+    fd = open(path, O_CREAT | O_WRONLY | O_APPEND,
+              S_IRUSR | S_IWUSR | S_IRGRP);
+    if (fd < 0)
+        return -1;
+    if (fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP) != 0) {
+        /* Mode is best-effort, same as secure_log(). */
+    }
+    return fd;
+}
+
+static int reopen_raw(int *slot, const char *path)
+{
+    int fd;
+
+    if (slot == NULL || path == NULL)
+        return -1;
+    if (path[0] == '-' && path[1] == '\0')
+        return 0;
+
+    fd = open_append_log(path);
+    if (fd < 0) {
+        elog("[!] Error reopening log file %s: %s\n", path, strerror(errno));
+        syslog(LOG_ERR, "Error reopening log file %s: %s", path, strerror(errno));
+        return -1;
+    }
+    if (*slot >= 0 && *slot != STDOUT_FILENO && *slot != fd) {
+        if (dup2(fd, *slot) < 0) {
+            elog("[!] Error reopening log file %s: %s\n", path, strerror(errno));
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
+    else
+        *slot = fd;
+    return 0;
+}
+
 void reopen_log_files()
 {
+    if (config.logfile_raw >= 0 || config.logfile_nxd_raw >= 0) {
+        if (config.output_log)
+            reopen_raw(&config.logfile_raw, config.logfile);
+        if (config.output_log_nxd) {
+            if (config.logfile_all)
+                config.logfile_nxd_raw = config.logfile_raw;
+            else
+                reopen_raw(&config.logfile_nxd_raw, config.logfile_nxd);
+        }
+        signal_reopen_log_files = 0;
+        return;
+    }
+
     if (config.output_log)
         reopen_one(&config.logfile_fd, config.logfile);
 
@@ -1522,6 +1620,12 @@ void game_over()
             && config.logfile_nxd_fd != config.logfile_fd)
             fclose(config.logfile_nxd_fd);
 
+        if (config.logfile_raw >= 0 && config.logfile_raw != STDOUT_FILENO)
+            close(config.logfile_raw);
+        if (config.logfile_nxd_raw >= 0 && config.logfile_nxd_raw != STDOUT_FILENO
+            && config.logfile_nxd_raw != config.logfile_raw)
+            close(config.logfile_nxd_raw);
+
         free_config();
         olog("\n[*] passivedns ended.\n");
         exit(0);
@@ -1549,33 +1653,36 @@ void print_pdns_stats()
 
     flog(handle, "\n");
     flog(handle, "-- Total DNS records allocated            :%12u\n",
-         config.p_s.dns_records);
+         PDNS_U32_GET(config.p_s.dns_records));
     flog(handle, "-- Total DNS assets allocated             :%12u\n",
-         config.p_s.dns_assets);
+         PDNS_U32_GET(config.p_s.dns_assets));
     flog(handle, "-- Total DNS packets over IPv4/TCP        :%12u\n",
-         config.p_s.ip4_dns_tcp);
+         PDNS_U32_GET(config.p_s.ip4_dns_tcp));
     flog(handle, "-- Total DNS packets over IPv6/TCP        :%12u\n",
-         config.p_s.ip6_dns_tcp);
+         PDNS_U32_GET(config.p_s.ip6_dns_tcp));
     flog(handle, "-- Total DNS packets over TCP decoded     :%12u\n",
-         config.p_s.ip4_dec_tcp_ok + config.p_s.ip6_dec_tcp_ok);
+         PDNS_U32_GET(config.p_s.ip4_dec_tcp_ok) + PDNS_U32_GET(config.p_s.ip6_dec_tcp_ok));
     flog(handle, "-- Total DNS packets over TCP failed      :%12u\n",
-         config.p_s.ip4_dec_tcp_er + config.p_s.ip6_dec_tcp_er);
+         PDNS_U32_GET(config.p_s.ip4_dec_tcp_er) + PDNS_U32_GET(config.p_s.ip6_dec_tcp_er));
     flog(handle, "-- Total DNS packets over IPv4/UDP        :%12u\n",
-         config.p_s.ip4_dns_udp);
+         PDNS_U32_GET(config.p_s.ip4_dns_udp));
     flog(handle, "-- Total DNS packets over IPv6/UDP        :%12u\n",
-         config.p_s.ip6_dns_udp);
+         PDNS_U32_GET(config.p_s.ip6_dns_udp));
     flog(handle, "-- Total DNS packets over UDP decoded     :%12u\n",
-         config.p_s.ip4_dec_udp_ok + config.p_s.ip6_dec_udp_ok);
+         PDNS_U32_GET(config.p_s.ip4_dec_udp_ok) + PDNS_U32_GET(config.p_s.ip6_dec_udp_ok));
     flog(handle, "-- Total DNS packets over UDP failed      :%12u\n",
-         config.p_s.ip4_dec_udp_er + config.p_s.ip6_dec_udp_er);
+         PDNS_U32_GET(config.p_s.ip4_dec_udp_er) + PDNS_U32_GET(config.p_s.ip6_dec_udp_er));
     flog(handle, "-- Total packets received from libpcap    :%12u\n",
-         config.p_s.got_packets);
+         PDNS_U32_GET(config.p_s.got_packets));
     flog(handle, "-- Connections open at shutdown           :%12u\n",
-         config.curcxt);
+         PDNS_U32_GET(config.curcxt));
+    if (config.workers > 1)
+        flog(handle, "-- Capture threads                        :%12u\n",
+             config.workers);
     flog(handle, "-- Total Ethernet packets received        :%12u\n",
-         config.p_s.eth_recv);
+         PDNS_U32_GET(config.p_s.eth_recv));
     flog(handle, "-- Total VLAN packets received            :%12u\n",
-         config.p_s.vlan_recv);
+         PDNS_U32_GET(config.p_s.vlan_recv));
 
     if (config.use_stats_file) {
         fclose(handle);
@@ -1589,6 +1696,12 @@ void usage()
     olog(" $ passivedns [options]\n\n");
     olog(" OPTIONS:\n\n");
     olog(" -i <iface>      Network device <iface> (default: eth0).\n");
+    olog(" -W <n>          Live workers (default: 1, maximum: %d).\n",
+         PDNS_WORKERS_MAX);
+    olog("                 More than one uses AF_PACKET fanout hash.\n");
+    olog("                 Capture threads share one DNS cache and one log.\n");
+    olog("                 Not with -r, -n, or interface \"any\".\n");
+    olog(" --fanout-group <id>  Fanout group (default: interface index).\n");
     olog(" -r <file>       Read pcap <file>.\n");
     olog(" -H <hostname>   Choose hostname to print in record.\n");
 #ifdef HAVE_PFRING
@@ -1789,6 +1902,767 @@ static void warn_if_gro(const char *dev)
 #endif /* __linux__ */
 }
 
+#ifdef __linux__
+
+#define CACHE_Q_MAX 8192
+#define LOG_Q_MAX 8192
+
+static pcap_t *fanout_handles[PDNS_WORKERS_MAX];
+static int fanout_nhandles;
+static connection **fanout_buckets[PDNS_WORKERS_MAX];
+static pthread_t cap_th[PDNS_WORKERS_MAX];
+static pthread_t cache_th;
+static pthread_t writer_th;
+static int cap_up;
+static int cache_up;
+static int writer_up;
+static volatile sig_atomic_t fanout_stop;
+static volatile sig_atomic_t fanout_tick;
+static volatile sig_atomic_t fanout_reopen;
+static volatile sig_atomic_t fanout_expire_all;
+
+struct cache_job {
+    struct cache_job *next;
+    ldns_pkt *pkt;
+    struct pcap_pkthdr hdr;
+    ether_header eth;
+    int have_eth;
+    uint32_t af;
+    struct in6_addr cip;
+    struct in6_addr sip;
+    uint8_t s_ttl;
+    uint8_t proto;
+};
+
+struct log_job {
+    struct log_job *next;
+    int fd;
+    char *line;
+};
+
+struct cache_q {
+    pthread_mutex_t mu;
+    pthread_cond_t cv;
+    struct cache_job *head;
+    struct cache_job *tail;
+    int count;
+    int closed;
+};
+
+struct log_q {
+    pthread_mutex_t mu;
+    pthread_cond_t cv;
+    struct log_job *head;
+    struct log_job *tail;
+    int count;
+    int closed;
+};
+
+static struct cache_q cache_q;
+static struct log_q log_q;
+static int queues_ready;
+
+static void queues_init(void)
+{
+    if (queues_ready)
+        return;
+    pthread_mutex_init(&cache_q.mu, NULL);
+    pthread_cond_init(&cache_q.cv, NULL);
+    pthread_mutex_init(&log_q.mu, NULL);
+    pthread_cond_init(&log_q.cv, NULL);
+    queues_ready = 1;
+}
+
+static int cache_push(struct cache_job *job)
+{
+    pthread_mutex_lock(&cache_q.mu);
+    while (cache_q.count >= CACHE_Q_MAX && !cache_q.closed)
+        pthread_cond_wait(&cache_q.cv, &cache_q.mu);
+    if (cache_q.closed) {
+        pthread_mutex_unlock(&cache_q.mu);
+        return -1;
+    }
+    job->next = NULL;
+    if (cache_q.tail != NULL)
+        cache_q.tail->next = job;
+    else
+        cache_q.head = job;
+    cache_q.tail = job;
+    cache_q.count++;
+    pthread_cond_signal(&cache_q.cv);
+    pthread_mutex_unlock(&cache_q.mu);
+    return 0;
+}
+
+static struct cache_job *cache_pop(int *closed)
+{
+    struct cache_job *job = NULL;
+    struct timespec ts;
+
+    *closed = 0;
+    pthread_mutex_lock(&cache_q.mu);
+    if (cache_q.head == NULL && !cache_q.closed) {
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 1;
+        pthread_cond_timedwait(&cache_q.cv, &cache_q.mu, &ts);
+    }
+    job = cache_q.head;
+    if (job != NULL) {
+        cache_q.head = job->next;
+        if (cache_q.head == NULL)
+            cache_q.tail = NULL;
+        cache_q.count--;
+        job->next = NULL;
+        pthread_cond_signal(&cache_q.cv);
+    }
+    if (job == NULL && cache_q.closed)
+        *closed = 1;
+    pthread_mutex_unlock(&cache_q.mu);
+    return job;
+}
+
+static void cache_close(void)
+{
+    pthread_mutex_lock(&cache_q.mu);
+    cache_q.closed = 1;
+    pthread_cond_broadcast(&cache_q.cv);
+    pthread_mutex_unlock(&cache_q.mu);
+}
+
+static int log_push(struct log_job *job)
+{
+    pthread_mutex_lock(&log_q.mu);
+    while (log_q.count >= LOG_Q_MAX && !log_q.closed)
+        pthread_cond_wait(&log_q.cv, &log_q.mu);
+    if (log_q.closed) {
+        pthread_mutex_unlock(&log_q.mu);
+        return -1;
+    }
+    job->next = NULL;
+    if (log_q.tail != NULL)
+        log_q.tail->next = job;
+    else
+        log_q.head = job;
+    log_q.tail = job;
+    log_q.count++;
+    pthread_cond_signal(&log_q.cv);
+    pthread_mutex_unlock(&log_q.mu);
+    return 0;
+}
+
+static struct log_job *log_pop(int *closed)
+{
+    struct log_job *job = NULL;
+    struct timespec ts;
+
+    *closed = 0;
+    pthread_mutex_lock(&log_q.mu);
+    if (log_q.head == NULL && !log_q.closed) {
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 1;
+        pthread_cond_timedwait(&log_q.cv, &log_q.mu, &ts);
+    }
+    job = log_q.head;
+    if (job != NULL) {
+        log_q.head = job->next;
+        if (log_q.head == NULL)
+            log_q.tail = NULL;
+        log_q.count--;
+        job->next = NULL;
+        pthread_cond_signal(&log_q.cv);
+    }
+    if (job == NULL && log_q.closed)
+        *closed = 1;
+    pthread_mutex_unlock(&log_q.mu);
+    return job;
+}
+
+static void log_close(void)
+{
+    pthread_mutex_lock(&log_q.mu);
+    log_q.closed = 1;
+    pthread_cond_broadcast(&log_q.cv);
+    pthread_mutex_unlock(&log_q.mu);
+}
+
+int pdns_cache_submit(packetinfo *pi, struct ldns_struct_pkt *pkt)
+{
+    struct cache_job *job;
+    ldns_pkt *copy;
+
+    if (pi == NULL || pi->cxt == NULL || pi->pheader == NULL || pkt == NULL)
+        return -1;
+    copy = ldns_pkt_clone((ldns_pkt *)pkt);
+    if (copy == NULL)
+        return -1;
+    job = (struct cache_job *)calloc(1, sizeof(*job));
+    if (job == NULL) {
+        ldns_pkt_free(copy);
+        return -1;
+    }
+    job->pkt = copy;
+    job->hdr = *pi->pheader;
+    job->af = pi->cxt->af;
+    job->cip = pi->cxt->s_ip;
+    job->sip = pi->cxt->d_ip;
+    job->s_ttl = pi->s_ttl;
+    job->proto = pi->proto;
+    if (pi->eth_hdr != NULL) {
+        job->eth = *pi->eth_hdr;
+        job->have_eth = 1;
+    }
+    if (cache_push(job) != 0) {
+        ldns_pkt_free(copy);
+        free(job);
+        return -1;
+    }
+    return 0;
+}
+
+void pdns_log_submit(int fd, const char *line)
+{
+    struct log_job *job;
+    size_t n;
+
+    if (fd < 0 || line == NULL)
+        return;
+    n = strlen(line);
+    job = (struct log_job *)malloc(sizeof(*job));
+    if (job == NULL)
+        return;
+    job->line = (char *)malloc(n + 1);
+    if (job->line == NULL) {
+        free(job);
+        return;
+    }
+    memcpy(job->line, line, n + 1);
+    job->fd = fd;
+    job->next = NULL;
+    if (log_push(job) != 0) {
+        free(job->line);
+        free(job);
+    }
+}
+
+static void cache_handle(struct cache_job *job)
+{
+    packetinfo pi;
+    connection cxt;
+
+    memset(&pi, 0, sizeof(pi));
+    memset(&cxt, 0, sizeof(cxt));
+    config.tstamp = job->hdr.ts;
+    cxt.af = job->af;
+    cxt.s_ip = job->cip;
+    cxt.d_ip = job->sip;
+    cxt.proto = job->proto;
+    pi.pheader = &job->hdr;
+    pi.cxt = &cxt;
+    pi.s_ttl = job->s_ttl;
+    pi.proto = job->proto;
+    pi.af = job->af;
+    if (job->have_eth)
+        pi.eth_hdr = &job->eth;
+    process_dns_answer(&pi, job->pkt);
+    ldns_pkt_free(job->pkt);
+    free(job);
+}
+
+static void cache_expire_due(void)
+{
+    time_t now = config.tstamp.tv_sec;
+
+    if (fanout_expire_all) {
+        fanout_expire_all = 0;
+        expire_all_dns_records();
+        return;
+    }
+    if (now <= 0)
+        return;
+    if ((now - config.dnslastchk) >= 600) {
+        expire_dns_records();
+        config.dnslastchk = now;
+    }
+}
+
+static void *cache_thread(void *arg)
+{
+    sig_atomic_t seen = fanout_tick;
+
+    (void)arg;
+    for (;;) {
+        int closed = 0;
+        struct cache_job *job = cache_pop(&closed);
+
+        if (job != NULL)
+            cache_handle(job);
+        if (seen != fanout_tick || fanout_expire_all) {
+            seen = fanout_tick;
+            cache_expire_due();
+        }
+        if (closed)
+            break;
+    }
+    expire_all_dns_records();
+    return NULL;
+}
+
+static void *writer_thread(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        int closed = 0;
+        struct log_job *job;
+
+        if (fanout_reopen) {
+            fanout_reopen = 0;
+            reopen_log_files();
+        }
+        job = log_pop(&closed);
+        if (job != NULL) {
+            write_log_line(job->fd, job->line);
+            free(job->line);
+            free(job);
+        }
+        if (closed)
+            break;
+    }
+    return NULL;
+}
+
+static void *capture_thread(void *arg)
+{
+    int id = (int)(intptr_t)arg;
+    pcap_t *h = fanout_handles[id];
+    sig_atomic_t seen = fanout_tick;
+
+    tl_bucket = (connection **)calloc(BUCKET_SIZE, sizeof(*tl_bucket));
+    if (tl_bucket == NULL) {
+        fanout_stop = 1;
+        return NULL;
+    }
+    while (!fanout_stop) {
+        int rc = pcap_dispatch(h, 64, got_packet, NULL);
+
+        if (fanout_stop || rc == PCAP_ERROR_BREAK)
+            break;
+        if (rc < 0) {
+            elog("[!] worker %d: %s\n", id + 1, pcap_geterr(h));
+            fanout_stop = 1;
+            break;
+        }
+        if (seen != fanout_tick) {
+            seen = fanout_tick;
+            end_sessions();
+            reasm_expire(tl_tstamp_set ? tl_tstamp.tv_sec : time(NULL));
+        }
+    }
+    end_sessions();
+    reasm_shutdown();
+    fanout_buckets[id] = tl_bucket;
+    tl_bucket = NULL;
+    return NULL;
+}
+
+static int start_pipeline(void)
+{
+    int i;
+    int n = config.workers;
+
+    if (pthread_create(&writer_th, NULL, writer_thread, NULL) != 0)
+        return -1;
+    writer_up = 1;
+    if (pthread_create(&cache_th, NULL, cache_thread, NULL) != 0)
+        return -1;
+    cache_up = 1;
+    for (i = 0; i < n; i++) {
+        if (pthread_create(&cap_th[i], NULL, capture_thread,
+                           (void *)(intptr_t)i) != 0) {
+            fanout_stop = 1;
+            return -1;
+        }
+        cap_up++;
+    }
+    return 0;
+}
+
+static void stop_pipeline(void)
+{
+    int i;
+
+    fanout_stop = 1;
+    for (i = 0; i < fanout_nhandles; i++) {
+        if (fanout_handles[i] != NULL)
+            pcap_breakloop(fanout_handles[i]);
+    }
+    for (i = 0; i < cap_up; i++)
+        pthread_join(cap_th[i], NULL);
+    cap_up = 0;
+    cache_close();
+    if (cache_up) {
+        pthread_join(cache_th, NULL);
+        cache_up = 0;
+    }
+    log_close();
+    if (writer_up) {
+        pthread_join(writer_th, NULL);
+        writer_up = 0;
+    }
+}
+
+static void release_fanout_buckets(void)
+{
+    int i;
+
+    for (i = 0; i < PDNS_WORKERS_MAX; i++) {
+        if (fanout_buckets[i] == NULL)
+            continue;
+        tl_bucket = fanout_buckets[i];
+        end_all_sessions();
+        free(fanout_buckets[i]);
+        fanout_buckets[i] = NULL;
+        tl_bucket = NULL;
+    }
+}
+
+static void close_fanout_handles(void)
+{
+    int i;
+
+    for (i = 0; i < fanout_nhandles; i++) {
+        if (fanout_handles[i] != NULL) {
+            pcap_close(fanout_handles[i]);
+            fanout_handles[i] = NULL;
+        }
+    }
+    fanout_nhandles = 0;
+}
+
+static void release_parent_logs(void)
+{
+    if (config.logfile_raw >= 0 && config.logfile_raw != STDOUT_FILENO)
+        close(config.logfile_raw);
+    if (config.logfile_nxd_raw >= 0 && config.logfile_nxd_raw != STDOUT_FILENO
+        && config.logfile_nxd_raw != config.logfile_raw)
+        close(config.logfile_nxd_raw);
+    config.logfile_raw = -1;
+    config.logfile_nxd_raw = -1;
+}
+
+static void prepare_fanout_group(void)
+{
+    unsigned int idx;
+
+    if (config.dev == NULL || config.dev[0] == '\0' ||
+        strcmp(config.dev, "any") == 0) {
+        elog("[!] -W cannot use interface \"any\"\n");
+        exit(1);
+    }
+    if (config.fanout_group_set)
+        return;
+
+    idx = if_nametoindex(config.dev);
+    if (idx == 0 || idx > 65535) {
+        elog("[!] No interface index for %s. Pass --fanout-group.\n",
+             config.dev);
+        exit(1);
+    }
+    config.fanout_group = (uint16_t)idx;
+}
+
+static int open_fanout_handles(void)
+{
+    int i;
+    int compiled = 0;
+
+    for (i = 0; i < config.workers; i++) {
+        pcap_t *h;
+        int fd;
+        uint32_t arg;
+
+        config.errbuf[0] = '\0';
+        h = pcap_open_live(config.dev, config.snaplen, config.promisc,
+                           500, config.errbuf);
+        if (h == NULL) {
+            elog("[!] worker %u: pcap_open_live: %s\n",
+                 (unsigned)(i + 1), config.errbuf);
+            close_fanout_handles();
+            return -1;
+        }
+        /* A cooked fallback does not fan out the way a packet socket does. */
+        if (config.errbuf[0] != '\0') {
+            elog("[!] worker %u: %s\n", (unsigned)(i + 1), config.errbuf);
+            pcap_close(h);
+            close_fanout_handles();
+            return -1;
+        }
+        fd = pcap_fileno(h);
+        if (fd < 0) {
+            elog("[!] worker %u: capture socket is not available\n",
+                 (unsigned)(i + 1));
+            pcap_close(h);
+            close_fanout_handles();
+            return -1;
+        }
+        arg = (uint32_t)config.fanout_group |
+              (((uint32_t)PACKET_FANOUT_HASH |
+                (uint32_t)PACKET_FANOUT_FLAG_DEFRAG) << 16);
+        if (setsockopt(fd, SOL_PACKET, PACKET_FANOUT, &arg, sizeof(arg)) < 0) {
+            elog("[!] worker %u: PACKET_FANOUT: %s\n",
+                 (unsigned)(i + 1), strerror(errno));
+            pcap_close(h);
+            close_fanout_handles();
+            return -1;
+        }
+        if (!compiled) {
+            config.linktype = pcap_datalink(h);
+            if (pcap_compile(h, &config.cfilter, config.bpff, 1,
+                             config.net_mask) == -1) {
+                elog("[!] worker %u: pcap_compile: %s\n",
+                     (unsigned)(i + 1), pcap_geterr(h));
+                pcap_close(h);
+                close_fanout_handles();
+                return -1;
+            }
+            compiled = 1;
+        }
+        if (pcap_setfilter(h, &config.cfilter) != 0) {
+            elog("[!] worker %u: pcap_setfilter: %s\n",
+                 (unsigned)(i + 1), pcap_geterr(h));
+            pcap_close(h);
+            close_fanout_handles();
+            return -1;
+        }
+        fanout_handles[i] = h;
+        fanout_nhandles++;
+    }
+    return 0;
+}
+
+/* Drop a pid file this start created but never locked. A failed fanout
+ * start must not look like a running daemon. */
+static void abandon_pidfile(void)
+{
+    if (daemon_pid_fd < 0 && config.pid_fd < 0)
+        return;
+    if (daemon_pid_fd >= 0 && daemon_pid_fd != config.pid_fd)
+        close(daemon_pid_fd);
+    if (config.pid_fd >= 0)
+        close(config.pid_fd);
+    daemon_pid_fd = -1;
+    config.pid_fd = -1;
+    if (config.pidfile != NULL)
+        unlink(config.pidfile);
+}
+
+static void fanout_fail(int detach_wr)
+{
+    close_fanout_handles();
+    abandon_pidfile();
+    if (detach_wr >= 0) {
+        char status = '0';
+        if (write(detach_wr, &status, 1) != 1)
+            exit(1);
+        close(detach_wr);
+    }
+    exit(1);
+}
+
+static void close_raw_logs(void)
+{
+    if (config.logfile_raw >= 0 && config.logfile_raw != STDOUT_FILENO)
+        close(config.logfile_raw);
+    if (config.logfile_nxd_raw >= 0 && config.logfile_nxd_raw != STDOUT_FILENO
+        && config.logfile_nxd_raw != config.logfile_raw)
+        close(config.logfile_nxd_raw);
+    config.logfile_raw = -1;
+    config.logfile_nxd_raw = -1;
+}
+
+static void fanout_main_loop(const sigset_t *set)
+{
+    while (!fanout_stop) {
+        struct timespec ts;
+        int sig;
+
+        ts.tv_sec = 1;
+        ts.tv_nsec = 0;
+        sig = sigtimedwait(set, NULL, &ts);
+        if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
+            fanout_stop = 1;
+        else if (sig == SIGALRM) {
+            fanout_tick++;
+            alarm(TIMEOUT);
+        }
+        else if (sig == SIGHUP)
+            fanout_reopen = 1;
+        else if (sig == SIGUSR1)
+            print_pdns_stats();
+        else if (sig == SIGUSR2)
+            fanout_expire_all = 1;
+    }
+}
+
+static void run_fanout_workers(int do_daemon)
+{
+    int detach[2] = {-1, -1};
+    int nworkers = config.workers;
+    sigset_t set;
+    pid_t pid;
+
+    queues_init();
+    prepare_fanout_group();
+    olog("[*] Fanout workers: %d group: %u hash\n",
+         nworkers, config.fanout_group);
+    fflush(stdout);
+    fflush(stderr);
+
+    if (do_daemon) {
+        open_daemon_fds();
+        refuse_locked_pidfile(daemon_pid_fd);
+        openlog("passivedns", LOG_PID | LOG_CONS, LOG_DAEMON);
+        olog("[*] Daemonizing...\n\n");
+        fflush(stdout);
+        if (pipe(detach) != 0) {
+            elog("[!] Failed to create pipe: %s\n", strerror(errno));
+            abandon_pidfile();
+            exit(1);
+        }
+        pid = fork();
+        if (pid < 0) {
+            elog("[!] Failed to fork: %s\n", strerror(errno));
+            abandon_pidfile();
+            exit(1);
+        }
+        if (pid > 0) {
+            char status = '0';
+            close(detach[1]);
+            release_parent_logs();
+            if (read(detach[0], &status, 1) != 1 || status != '1')
+                exit(1);
+            exit(0);
+        }
+        close(detach[0]);
+        detach[0] = -1;
+        if (setsid() < 0) {
+            abandon_pidfile();
+            exit(1);
+        }
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        if (getppid() == 1) {
+            abandon_pidfile();
+            exit(1);
+        }
+    }
+
+    if (open_fanout_handles() != 0)
+        fanout_fail(detach[1]);
+
+    if (config.chroot_dir && set_chroot() != 0) {
+        elog("[!] failed to chroot\n");
+        fanout_fail(detach[1]);
+    }
+    if (config.drop_privs_flag)
+        apply_privs();
+
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+    sigaddset(&set, SIGTERM);
+    sigaddset(&set, SIGQUIT);
+    sigaddset(&set, SIGALRM);
+    sigaddset(&set, SIGHUP);
+    sigaddset(&set, SIGUSR1);
+    sigaddset(&set, SIGUSR2);
+    sigaddset(&set, SIGPIPE);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+    if (start_pipeline() != 0) {
+        elog("[!] Failed to start worker threads\n");
+        stop_pipeline();
+        fanout_fail(detach[1]);
+    }
+
+    if (do_daemon && daemon_pid_fd >= 0)
+        write_pid_fd(daemon_pid_fd);
+
+    if (detach[1] >= 0) {
+        char status = '1';
+        if (write(detach[1], &status, 1) != 1) {
+            stop_pipeline();
+            abandon_pidfile();
+            exit(1);
+        }
+        close(detach[1]);
+        detach[1] = -1;
+    }
+
+    if (do_daemon && daemon_null_fd >= 0) {
+        dup2(daemon_null_fd, 0);
+        dup2(daemon_null_fd, 1);
+        dup2(daemon_null_fd, 2);
+        if (daemon_null_fd > 2)
+            close(daemon_null_fd);
+        daemon_null_fd = -1;
+    }
+
+    alarm(TIMEOUT);
+    fanout_main_loop(&set);
+    alarm(0);
+    stop_pipeline();
+    print_pdns_stats();
+    release_fanout_buckets();
+    close_fanout_handles();
+    close_raw_logs();
+    free_config();
+    olog("\n[*] passivedns ended.\n");
+    exit(0);
+}
+#endif /* __linux__ */
+
+#ifndef __linux__
+int pdns_cache_submit(packetinfo *pi, struct ldns_struct_pkt *pkt)
+{
+    (void)pi;
+    (void)pkt;
+    return -1;
+}
+
+void pdns_log_submit(int fd, const char *line)
+{
+    (void)fd;
+    (void)line;
+}
+#endif
+
+
+static void check_worker_args(void)
+{
+    if (config.workers > 1 && config.pcap_file) {
+        elog("[!] -W cannot be used with -r\n");
+        exit(1);
+    }
+    if (config.workers <= 1 && config.fanout_group_set) {
+        elog("[!] --fanout-group requires -W greater than 1\n");
+        exit(1);
+    }
+    if (config.workers <= 1)
+        return;
+#ifdef HAVE_PFRING
+    if (config.use_pfring) {
+        elog("[!] -W cannot be used with PF_RING -n\n");
+        exit(1);
+    }
+#endif
+#ifndef __linux__
+    elog("[!] -W needs Linux AF_PACKET fanout\n");
+    exit(1);
+#endif
+    if (config.dev != NULL && strcmp(config.dev, "any") == 0) {
+        elog("[!] -W cannot use interface \"any\"\n");
+        exit(1);
+    }
+}
+
 extern int optind, opterr, optopt; // getopt()
 
 /* magic main */
@@ -1798,6 +2672,9 @@ int main(int argc, char *argv[])
     int daemon = 0;
     memset(&config, 0, sizeof(globalconfig));
     config.pid_fd = -1;
+    config.workers = 1;
+    config.logfile_raw = -1;
+    config.logfile_nxd_raw = -1;
     config.max_connections = MAX_CONNECTIONS;
     config.inpacket = config.intr_flag = 0;
     config.dnslastchk = 0;
@@ -1853,10 +2730,12 @@ int main(int argc, char *argv[])
     signal(SIGUSR1, print_pdns_stats);
     signal(SIGUSR2, expire_all_dns_records);
 
-#define ARGS "i:H:r:qc:nyYNjJl:s:L:d:hb:Dp:C:P:S:f:X:u:g:T:V"
+#define ARGS "i:H:r:qc:nyYNjJl:s:L:d:hb:Dp:C:P:S:f:X:u:g:T:VW:"
 #define OPT_STATS_FILE 256
+#define OPT_FANOUT_GROUP 257
     static const struct option long_options[] = {
         {"stats-file", required_argument, NULL, OPT_STATS_FILE},
+        {"fanout-group", required_argument, NULL, OPT_FANOUT_GROUP},
         {NULL, 0, NULL, 0}
     };
 
@@ -1865,6 +2744,29 @@ int main(int argc, char *argv[])
         case 'i':
             config.dev = optarg;
             break;
+        case 'W': {
+            uint32_t nworkers = 0;
+
+            if (parse_u32(optarg, &nworkers) != 0 || nworkers < 1 ||
+                nworkers > PDNS_WORKERS_MAX) {
+                elog("[!] -W needs a worker count from 1 to %d\n",
+                     PDNS_WORKERS_MAX);
+                exit(1);
+            }
+            config.workers = (uint16_t)nworkers;
+            break;
+        }
+        case OPT_FANOUT_GROUP: {
+            uint32_t group = 0;
+
+            if (parse_u32(optarg, &group) != 0 || group == 0 || group > 65535) {
+                elog("[!] --fanout-group needs an id from 1 to 65535\n");
+                exit(1);
+            }
+            config.fanout_group = (uint16_t)group;
+            config.fanout_group_set = 1;
+            break;
+        }
         case 'H':
             config.hostname = strdup(optarg);
             break;
@@ -2020,6 +2922,7 @@ int main(int argc, char *argv[])
     /* A missing account is reported before logs are opened and before
      * a capture device is required. */
     resolve_privs();
+    check_worker_args();
 
     /* Fall back to log file if syslog is not used */
     if (config.output_syslog == 0)
@@ -2028,9 +2931,16 @@ int main(int argc, char *argv[])
     if (config.output_syslog_nxd == 0)
         config.output_log_nxd = 1;
 
-    /* Open log file */
+    /* Open log file. Workers use an append fd so each line is one write. */
     if (config.output_log) {
-        if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
+        if (config.workers > 1) {
+            config.logfile_raw = open_append_log(config.logfile);
+            if (config.logfile_raw < 0) {
+                elog("[!] Error opening log file %s\n", config.logfile);
+                exit(1);
+            }
+        }
+        else if (config.logfile[0] == '-' && config.logfile[1] == '\0') {
             config.logfile_fd = stdout;
         }
         else {
@@ -2047,7 +2957,17 @@ int main(int argc, char *argv[])
     if (config.output_log_nxd) {
         if (config.output_log && strcmp(config.logfile, config.logfile_nxd) == 0) {
             config.logfile_all = 1;
-            config.logfile_nxd_fd = config.logfile_fd;
+            if (config.workers > 1)
+                config.logfile_nxd_raw = config.logfile_raw;
+            else
+                config.logfile_nxd_fd = config.logfile_fd;
+        }
+        else if (config.workers > 1) {
+            config.logfile_nxd_raw = open_append_log(config.logfile_nxd);
+            if (config.logfile_nxd_raw < 0) {
+                elog("[!] Error opening NXDOMAIN log file %s\n", config.logfile_nxd);
+                exit(1);
+            }
         }
         else if (config.logfile_nxd[0] == '-' && config.logfile_nxd[1] == '\0') {
             config.logfile_nxd_fd = stdout;
@@ -2153,6 +3073,16 @@ int main(int argc, char *argv[])
         olog("[*] Device: %s\n", config.dev);
         show_snapshot(config.snaplen);
         warn_if_gro(config.dev);
+
+        if (config.workers > 1) {
+#ifndef __linux__
+            elog("[!] -W needs Linux AF_PACKET fanout\n");
+            exit(1);
+#else
+            run_fanout_workers(daemon);
+            return 0;
+#endif
+        }
 
         if ((config.handle = pcap_open_live(config.dev, config.snaplen, config.promisc, 500,
              config.errbuf)) == NULL) {

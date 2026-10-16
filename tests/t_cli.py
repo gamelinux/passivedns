@@ -136,9 +136,41 @@ def reopen_keeps_log():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def workers_daemon_missing():
+    """A daemon fanout that cannot open the device must exit and drop its pid file."""
+    tmp = tempfile.mkdtemp(prefix="pdns-wd-")
+    try:
+        log = os.path.join(tmp, "case.log")
+        pidfile = os.path.join(tmp, "pdns.pid")
+        proc = subprocess.run(
+            [regress.find_binary(), "-q", "-D", "-W", "2", "-i", "nosuch-pdns0",
+             "--fanout-group", "9", "-l", log, "-L", log, "-p", pidfile],
+            capture_output=True, text=True, timeout=15)
+        extra = ""
+        if os.path.exists(pidfile):
+            extra = "\npidfile still exists\n"
+        ok = (proc.returncode != 0 and "pcap_open_live" in (proc.stdout + proc.stderr)
+              and not os.path.exists(pidfile))
+        return (0 if ok else 1), proc.stdout, proc.stderr + extra
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def run_live(args):
+    """Live-option checks. -l stays in a temp dir and no pcap is read."""
+    tmp = tempfile.mkdtemp(prefix="pdns-live-")
+    try:
+        log = os.path.join(tmp, "case.log")
+        cmd = [regress.find_binary(), "-q", "-l", log, "-L", log] + args
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        return proc.returncode, proc.stdout, proc.stderr
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     code, out, err = run(["-V"])
-    report(code == 0 and "PassiveDNS 1.4.0" in out and "Edward Bjarte Fjellskål" in out,
+    report(code == 0 and "PassiveDNS 1.5.0" in out and "Edward Bjarte Fjellskål" in out,
            "version", out + err)
 
     code, out, err = run(["-h"])
@@ -147,7 +179,9 @@ def main():
            and "i: Server IP TTL" in out and "46CDNPRShV" in out
            and "-s <bytes>" in out and "4096" in out and "262144" in out
            and "ethtool -K <iface> gro off" in out
-           and "--stats-file <file>" in out,
+           and "--stats-file <file>" in out
+           and "-W <n>" in out and "--fanout-group <id>" in out
+           and "AF_PACKET" in out,
            "help", out + err)
 
     missing = tempfile.mkdtemp(prefix="pdns-missing-")
@@ -232,6 +266,40 @@ def main():
     report(code == 0 and "Record letters:" in out, "mem-and-hostname", out + err)
 
     report(reopen_keeps_log(), "log-reopen-keeps-fd")
+
+    code, out, err = run(["-W", "1"], empty)
+    report(code == 0 and "Snapshot length: 65535" in out, "workers-one", out + err)
+
+    code, out, err = run(["-W", "0"], empty)
+    report(code != 0 and "worker count" in (out + err), "workers-zero", out + err)
+
+    code, out, err = run(["-W", "65"], empty)
+    report(code != 0 and "worker count" in (out + err), "workers-too-many", out + err)
+
+    code, out, err = run(["-W", "2"], empty)
+    report(code != 0 and "-W cannot be used with -r" in (out + err),
+           "workers-with-read", out + err)
+
+    code, out, err = run(["--fanout-group", "4"], empty)
+    report(code != 0 and "--fanout-group requires -W" in (out + err),
+           "fanout-group-needs-workers", out + err)
+
+    code, out, err = run_live(["-W", "2", "--fanout-group", "0"])
+    report(code != 0 and "1 to 65535" in (out + err), "fanout-group-zero", out + err)
+
+    code, out, err = run_live(["-W", "2", "-i", "any"])
+    report(code != 0 and "any" in (out + err), "workers-any", out + err)
+
+    code, out, err = run_live(["-W", "2", "-i", "nosuch-pdns0"])
+    report(code != 0 and "interface index" in (out + err),
+           "workers-missing-iface", out + err)
+
+    code, out, err = run_live(["-W", "2", "-i", "nosuch-pdns0", "--fanout-group", "9"])
+    report(code != 0 and "pcap_open_live" in (out + err),
+           "workers-missing-device", out + err)
+
+    code, out, err = workers_daemon_missing()
+    report(code == 0, "workers-daemon-missing", out + err)
 
     if os.geteuid() != 0:
         code, out, err = run(["-T", "/tmp"], empty)

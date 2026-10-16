@@ -23,6 +23,23 @@
   Reading a pcap uses that file's snapshot length. -s does not
   change it. Startup prints the snapshot length and the enabled
   record letters unless -q is set. The offload warning is on stderr.
+* -W 1 (the default) is one process. -W n, for n up to 64, is live
+  capture only, as threads in that process. Each capture thread opens
+  its own AF_PACKET socket. libpcap
+  still provides the TPACKET_V3 ring. The socket then joins an
+  AF_PACKET fanout group in hash mode. The kernel hash is symmetric,
+  so a query and its answer are delivered to the same worker.
+  Fragments are defragmented before that hash. The group id defaults
+  to the interface index. --fanout-group sets another id from 1 to
+  65535. Two sensors on one interface need different groups.
+* -W cannot be combined with -r, with PF_RING -n, or with -i any.
+  Each capture thread opens its socket before chroot and before the
+  privilege drop. The process keeps one pid file. -W 1 does not
+  create these threads.
+* Each capture thread has its own connection table and its own
+  fragment list. One cache thread owns the DNS cache, so an answer
+  is logged once no matter which thread saw it. One writer thread
+  owns the log file.
 * HTTPS and SVCB answers are logged by default when ldns is 1.8.3
   or newer. The answer text is the priority, the target name, and
   the service parameters
