@@ -652,6 +652,6 @@ int pdns_cache_submit(packetinfo *pi, struct ldns_struct_pkt *pkt);
 void pdns_log_submit(int fd, const char *line);
 
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.5.0"
+#define PACKAGE_VERSION "1.5.1"
 #endif
 

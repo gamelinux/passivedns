@@ -156,6 +156,77 @@ def workers_daemon_missing():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def workers_daemon_lives():
+    """-D -W without -u must still be running after the parent exits.
+
+    Needs CAP_NET_RAW. CI's sudo is passwordless. A workstation sudo
+    prompt skips the check instead of hanging the suite.
+    """
+    sudo = []
+    if os.geteuid() != 0:
+        probe = subprocess.run(["sudo", "-n", "true"], capture_output=True)
+        if probe.returncode != 0:
+            return 2, "", ""
+        sudo = ["sudo", "-n"]
+
+    def alive(check):
+        try:
+            os.kill(check, 0)
+        except OSError as exc:
+            return exc.errno == errno.EPERM
+        return True
+
+    def signal_pid(check, sig):
+        if sudo:
+            subprocess.run(sudo + ["kill", "-%d" % sig, str(check)],
+                           check=False)
+        else:
+            os.kill(check, sig)
+
+    tmp = tempfile.mkdtemp(prefix="pdns-live-")
+    pid = None
+    try:
+        log = os.path.join(tmp, "case.log")
+        pidfile = os.path.join(tmp, "pdns.pid")
+        proc = subprocess.Popen(
+            sudo + [regress.find_binary(), "-q", "-D", "-W", "2", "-i", "lo",
+                    "--fanout-group", "41991", "-l", log, "-L", log,
+                    "-p", pidfile],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        try:
+            err = proc.communicate(timeout=15)[1]
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            return 1, "", "daemon parent did not exit"
+        if proc.returncode != 0 or not os.path.exists(pidfile):
+            return 1, "", "startup failed rc %s\n%s" % (proc.returncode, err)
+        pid = int(open(pidfile, encoding="utf-8").read().strip())
+        time.sleep(2)
+        if not alive(pid):
+            return 1, "", "daemon pid %s died after the parent exited" % pid
+        signal_pid(pid, signal.SIGTERM)
+        for _ in range(20):
+            time.sleep(0.1)
+            if not alive(pid):
+                pid = None
+                break
+        if pid is not None:
+            signal_pid(pid, signal.SIGKILL)
+            return 1, "", "daemon did not exit on SIGTERM"
+        return 0, "", ""
+    finally:
+        if pid is not None:
+            try:
+                signal_pid(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        if sudo:
+            subprocess.run(sudo + ["rm", "-rf", tmp], check=False)
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 def run_live(args):
     """Live-option checks. -l stays in a temp dir and no pcap is read."""
     tmp = tempfile.mkdtemp(prefix="pdns-live-")
@@ -170,7 +241,7 @@ def run_live(args):
 
 def main():
     code, out, err = run(["-V"])
-    report(code == 0 and "PassiveDNS 1.5.0" in out and "Edward Bjarte Fjellskål" in out,
+    report(code == 0 and "PassiveDNS 1.5.1" in out and "Edward Bjarte Fjellskål" in out,
            "version", out + err)
 
     code, out, err = run(["-h"])
@@ -300,6 +371,12 @@ def main():
 
     code, out, err = workers_daemon_missing()
     report(code == 0, "workers-daemon-missing", out + err)
+
+    code, out, err = workers_daemon_lives()
+    if code == 2:
+        print("SKIP workers-daemon-lives (not root)")
+    else:
+        report(code == 0, "workers-daemon-lives", out + err)
 
     if os.geteuid() != 0:
         code, out, err = run(["-T", "/tmp"], empty)

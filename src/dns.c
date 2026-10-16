@@ -750,12 +750,13 @@ static int out_add(outbuf *o, const char *fmt, ...)
         goto print_free; \
 } while (0)
 
-/* One syscall so concurrent workers cannot split a line in the file. */
+/* writev stays one record. A short write is continued, not dropped. */
 void write_log_line(int fd, const char *line)
 {
     struct iovec iov[2];
     char nl = '\n';
-    ssize_t n;
+    size_t done = 0;
+    size_t total;
 
     if (fd < 0 || line == NULL)
         return;
@@ -763,9 +764,35 @@ void write_log_line(int fd, const char *line)
     iov[0].iov_len = strlen(line);
     iov[1].iov_base = &nl;
     iov[1].iov_len = 1;
-    do {
-        n = writev(fd, iov, 2);
-    } while (n < 0 && errno == EINTR);
+    total = iov[0].iov_len + 1;
+    while (done < total) {
+        ssize_t n = writev(fd, iov, 2);
+
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            return;
+        }
+        if (n == 0)
+            return;
+        done += (size_t)n;
+        if ((size_t)n < iov[0].iov_len) {
+            iov[0].iov_base = (char *)iov[0].iov_base + n;
+            iov[0].iov_len -= (size_t)n;
+        }
+        else {
+            size_t rest = (size_t)n - iov[0].iov_len;
+
+            iov[0].iov_base = (char *)iov[0].iov_base + iov[0].iov_len;
+            iov[0].iov_len = 0;
+            if (rest < iov[1].iov_len) {
+                iov[1].iov_base = (char *)iov[1].iov_base + rest;
+                iov[1].iov_len -= rest;
+            }
+            else
+                iov[1].iov_len = 0;
+        }
+    }
 }
 
 void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,

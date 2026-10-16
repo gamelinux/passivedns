@@ -29,7 +29,9 @@
   still provides the TPACKET_V3 ring. The socket then joins an
   AF_PACKET fanout group in hash mode. The kernel hash is symmetric,
   so a query and its answer are delivered to the same worker.
-  Fragments are defragmented before that hash. The group id defaults
+  IPv4 fragments are defragmented before that hash. IPv6 fragments
+  are not: a fragment has no ports, so it can land on a different
+  worker than the query and be dropped. The group id defaults
   to the interface index. --fanout-group sets another id from 1 to
   65535. Two sensors on one interface need different groups.
 * -W cannot be combined with -r, with PF_RING -n, or with -i any.

@@ -1,3 +1,8 @@
+Changes with PassiveDNS 1.5.1
+
+- A -W daemon clears the parent-death signal before it reports
+  success, so it stays up when it does not drop privileges
+
 Changes with PassiveDNS 1.5.0
 
 - Add -W for live AF_PACKET fanout, hash mode only

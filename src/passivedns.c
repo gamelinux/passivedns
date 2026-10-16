@@ -958,14 +958,14 @@ void end_all_sessions()
 {
     connection *cxt;
     int cxkey;
-    config.llcxt = 0;
+    uint32_t counted = 0;
 
     for (cxkey = 0; cxkey < BUCKET_SIZE; cxkey++)
     {
         cxt = flow_buckets()[cxkey];
         while (cxt != NULL)
         {
-            config.llcxt++;
+            counted++;
             if (cxt->prev)
                 cxt->prev->next = cxt->next;
             if (cxt->next)
@@ -978,7 +978,7 @@ void end_all_sessions()
                 flow_buckets()[cxkey] = NULL;
         }
     }
-    dlog("CXT in list before cleaning: %10u\n", config.llcxt);
+    dlog("CXT in list before cleaning: %10u\n", counted);
     dlog("CXT in list after  cleaning: %10u\n", config.curcxt);
 }
 
@@ -988,7 +988,7 @@ void end_sessions()
     time_t check_time;
     check_time = tl_tstamp_set ? tl_tstamp.tv_sec : config.tstamp.tv_sec;
     int ended, expired = 0;
-    config.llcxt = 0;
+    uint32_t counted = 0;
 
     int iter;
 
@@ -998,7 +998,7 @@ void end_sessions()
         while (cxt != NULL)
         {
             ended = 0;
-            config.llcxt++;
+            counted++;
             /* TCP */
             if (cxt->proto == IP_PROTO_TCP) {
                 /* FIN from both sides, or RST from either side. */
@@ -1044,7 +1044,7 @@ void end_sessions()
                 cxt = cxt->next;
         }
     }
-    dlog("CXT in list before cleaning: %10u\n", config.llcxt);
+    dlog("CXT in list before cleaning: %10u\n", counted);
     dlog("CXT in list after  cleaning: %10u\n", config.curcxt);
 }
 
@@ -1921,6 +1921,21 @@ static volatile sig_atomic_t fanout_tick;
 static volatile sig_atomic_t fanout_reopen;
 static volatile sig_atomic_t fanout_expire_all;
 
+static int flag_get(volatile sig_atomic_t *flag)
+{
+    return __atomic_load_n(flag, __ATOMIC_RELAXED);
+}
+
+static void flag_set(volatile sig_atomic_t *flag, int value)
+{
+    __atomic_store_n(flag, value, __ATOMIC_RELAXED);
+}
+
+static void flag_inc(volatile sig_atomic_t *flag)
+{
+    __atomic_add_fetch(flag, 1, __ATOMIC_RELAXED);
+}
+
 struct cache_job {
     struct cache_job *next;
     ldns_pkt *pkt;
@@ -2172,8 +2187,8 @@ static void cache_expire_due(void)
 {
     time_t now = config.tstamp.tv_sec;
 
-    if (fanout_expire_all) {
-        fanout_expire_all = 0;
+    if (flag_get(&fanout_expire_all)) {
+        flag_set(&fanout_expire_all, 0);
         expire_all_dns_records();
         return;
     }
@@ -2187,7 +2202,7 @@ static void cache_expire_due(void)
 
 static void *cache_thread(void *arg)
 {
-    sig_atomic_t seen = fanout_tick;
+    sig_atomic_t seen = flag_get(&fanout_tick);
 
     (void)arg;
     for (;;) {
@@ -2196,8 +2211,8 @@ static void *cache_thread(void *arg)
 
         if (job != NULL)
             cache_handle(job);
-        if (seen != fanout_tick || fanout_expire_all) {
-            seen = fanout_tick;
+        if (seen != flag_get(&fanout_tick) || flag_get(&fanout_expire_all)) {
+            seen = flag_get(&fanout_tick);
             cache_expire_due();
         }
         if (closed)
@@ -2214,8 +2229,8 @@ static void *writer_thread(void *arg)
         int closed = 0;
         struct log_job *job;
 
-        if (fanout_reopen) {
-            fanout_reopen = 0;
+        if (flag_get(&fanout_reopen)) {
+            flag_set(&fanout_reopen, 0);
             reopen_log_files();
         }
         job = log_pop(&closed);
@@ -2234,25 +2249,25 @@ static void *capture_thread(void *arg)
 {
     int id = (int)(intptr_t)arg;
     pcap_t *h = fanout_handles[id];
-    sig_atomic_t seen = fanout_tick;
+    sig_atomic_t seen = flag_get(&fanout_tick);
 
     tl_bucket = (connection **)calloc(BUCKET_SIZE, sizeof(*tl_bucket));
     if (tl_bucket == NULL) {
-        fanout_stop = 1;
+        flag_set(&fanout_stop, 1);
         return NULL;
     }
-    while (!fanout_stop) {
+    while (!flag_get(&fanout_stop)) {
         int rc = pcap_dispatch(h, 64, got_packet, NULL);
 
-        if (fanout_stop || rc == PCAP_ERROR_BREAK)
+        if (flag_get(&fanout_stop) || rc == PCAP_ERROR_BREAK)
             break;
         if (rc < 0) {
             elog("[!] worker %d: %s\n", id + 1, pcap_geterr(h));
-            fanout_stop = 1;
+            flag_set(&fanout_stop, 1);
             break;
         }
-        if (seen != fanout_tick) {
-            seen = fanout_tick;
+        if (seen != flag_get(&fanout_tick)) {
+            seen = flag_get(&fanout_tick);
             end_sessions();
             reasm_expire(tl_tstamp_set ? tl_tstamp.tv_sec : time(NULL));
         }
@@ -2278,7 +2293,7 @@ static int start_pipeline(void)
     for (i = 0; i < n; i++) {
         if (pthread_create(&cap_th[i], NULL, capture_thread,
                            (void *)(intptr_t)i) != 0) {
-            fanout_stop = 1;
+            flag_set(&fanout_stop, 1);
             return -1;
         }
         cap_up++;
@@ -2290,7 +2305,7 @@ static void stop_pipeline(void)
 {
     int i;
 
-    fanout_stop = 1;
+    flag_set(&fanout_stop, 1);
     for (i = 0; i < fanout_nhandles; i++) {
         if (fanout_handles[i] != NULL)
             pcap_breakloop(fanout_handles[i]);
@@ -2481,7 +2496,7 @@ static void close_raw_logs(void)
 
 static void fanout_main_loop(const sigset_t *set)
 {
-    while (!fanout_stop) {
+    while (!flag_get(&fanout_stop)) {
         struct timespec ts;
         int sig;
 
@@ -2489,17 +2504,17 @@ static void fanout_main_loop(const sigset_t *set)
         ts.tv_nsec = 0;
         sig = sigtimedwait(set, NULL, &ts);
         if (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT)
-            fanout_stop = 1;
+            flag_set(&fanout_stop, 1);
         else if (sig == SIGALRM) {
-            fanout_tick++;
+            flag_inc(&fanout_tick);
             alarm(TIMEOUT);
         }
         else if (sig == SIGHUP)
-            fanout_reopen = 1;
+            flag_set(&fanout_reopen, 1);
         else if (sig == SIGUSR1)
             print_pdns_stats();
         else if (sig == SIGUSR2)
-            fanout_expire_all = 1;
+            flag_set(&fanout_expire_all, 1);
     }
 }
 
@@ -2587,6 +2602,16 @@ static void run_fanout_workers(int do_daemon)
 
     if (detach[1] >= 0) {
         char status = '1';
+
+        /* The parent exits when it reads this byte. A pending
+         * parent-death SIGTERM is blocked and would shut the daemon
+         * down. Dropping uid or gid clears the setting; running as
+         * root does not. */
+        if (prctl(PR_SET_PDEATHSIG, 0) != 0) {
+            stop_pipeline();
+            abandon_pidfile();
+            exit(1);
+        }
         if (write(detach[1], &status, 1) != 1) {
             stop_pipeline();
             abandon_pidfile();
