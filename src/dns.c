@@ -200,8 +200,13 @@ void dns_parser(packetinfo *pi)
             return;
         }
 
-        if ((pi->cxt->plid = ldns_pkt_id(dns_pkt)))
+        if ((pi->cxt->plid = ldns_pkt_id(dns_pkt))) {
             dlog("[D] DNS Query with TID = %d\n", pi->cxt->plid);
+            if (pi->pheader != NULL) {
+                pi->cxt->query_time = pi->pheader->ts.tv_sec;
+                pi->cxt->query_usec = pi->pheader->ts.tv_usec;
+            }
+        }
 
         else {
             dlog("[E] Error getting DNS TID from Query!\n");
@@ -212,6 +217,407 @@ void dns_parser(packetinfo *pi)
     }
 
     ldns_pkt_free(dns_pkt);
+}
+
+static int cmp_strptr(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+static void strip_one_dot(char *s)
+{
+    size_t n;
+
+    if (s == NULL)
+        return;
+    n = strlen(s);
+    if (n > 1 && s[n - 1] == '.')
+        s[n - 1] = '\0';
+}
+
+static char *rdf_text(ldns_rdf *rdf, int strip)
+{
+    ldns_buffer *buff;
+    char *s;
+
+    if (rdf == NULL)
+        return NULL;
+    buff = ldns_buffer_new(LDNS_MIN_BUFLEN);
+    if (buff == NULL)
+        return NULL;
+    if (ldns_rdf2buffer_str(buff, rdf) != LDNS_STATUS_OK) {
+        ldns_buffer_free(buff);
+        return NULL;
+    }
+    s = ldns_buffer2str(buff);
+    ldns_buffer_free(buff);
+    if (strip)
+        strip_one_dot(s);
+    return s;
+}
+
+static char *join_space(char **parts, int n)
+{
+    size_t len = 1;
+    size_t o = 0;
+    int i;
+    char *out;
+
+    for (i = 0; i < n; i++) {
+        if (parts[i] == NULL)
+            return NULL;
+        len += strlen(parts[i]);
+        if (i > 0)
+            len++;
+    }
+    out = malloc(len);
+    if (out == NULL)
+        return NULL;
+    for (i = 0; i < n; i++) {
+        size_t pl = strlen(parts[i]);
+
+        if (i > 0)
+            out[o++] = ' ';
+        memcpy(out + o, parts[i], pl);
+        o += pl;
+    }
+    out[o] = '\0';
+    return out;
+}
+
+/* Character-strings, without the length byte and without quotes. */
+static char *txt_raw(ldns_rr *rr)
+{
+    size_t total = 1;
+    size_t o = 0;
+    int i;
+    int n = (int)ldns_rr_rd_count(rr);
+    char *out;
+
+    for (i = 0; i < n; i++) {
+        ldns_rdf *rdf = ldns_rr_rdf(rr, i);
+        const uint8_t *d;
+        size_t sz;
+
+        if (rdf == NULL)
+            continue;
+        d = ldns_rdf_data(rdf);
+        sz = ldns_rdf_size(rdf);
+        if (d == NULL || sz < 1 || (size_t)d[0] + 1 > sz)
+            continue;
+        total += d[0];
+    }
+    out = malloc(total);
+    if (out == NULL)
+        return NULL;
+    for (i = 0; i < n; i++) {
+        ldns_rdf *rdf = ldns_rr_rdf(rr, i);
+        const uint8_t *d;
+        size_t sz;
+
+        if (rdf == NULL)
+            continue;
+        d = ldns_rdf_data(rdf);
+        sz = ldns_rdf_size(rdf);
+        if (d == NULL || sz < 1 || (size_t)d[0] + 1 > sz)
+            continue;
+        memcpy(out + o, d + 1, d[0]);
+        o += d[0];
+    }
+    out[o] = '\0';
+    return out;
+}
+
+static uint16_t json_wire_rdlen(ldns_rr *rr)
+{
+    ldns_buffer *b;
+    uint8_t *d;
+    size_t n;
+    size_t i;
+    uint16_t rdlen = 0;
+
+    b = ldns_buffer_new(LDNS_MIN_BUFLEN);
+    if (b == NULL)
+        return 0;
+    if (ldns_rr2buffer_wire(b, rr, LDNS_SECTION_ANSWER) != LDNS_STATUS_OK) {
+        ldns_buffer_free(b);
+        return 0;
+    }
+    d = ldns_buffer_begin(b);
+    n = ldns_buffer_position(b);
+    i = 0;
+    while (i < n) {
+        uint8_t lab = d[i];
+
+        if (lab == 0) {
+            i++;
+            break;
+        }
+        if ((lab & 0xc0) == 0xc0) {
+            if (i + 2 > n) {
+                ldns_buffer_free(b);
+                return 0;
+            }
+            i += 2;
+            break;
+        }
+        if (i + 1u + lab > n) {
+            ldns_buffer_free(b);
+            return 0;
+        }
+        i += 1u + lab;
+    }
+    if (i + 10 <= n)
+        rdlen = (uint16_t)(((uint16_t)d[i + 8] << 8) | d[i + 9]);
+    ldns_buffer_free(b);
+    return rdlen;
+}
+
+static char *data_bytes(ldns_rr *rr)
+{
+    char *s;
+    uint16_t n = json_wire_rdlen(rr);
+
+    if (n == 0)
+        return calloc(1, 1);
+    s = malloc(32);
+    if (s == NULL)
+        return NULL;
+    snprintf(s, 32, "DATA[%u bytes]", n);
+    return s;
+}
+
+static void free_parts(char **parts, int n)
+{
+    int i;
+
+    if (parts == NULL)
+        return;
+    for (i = 0; i < n; i++)
+        free(parts[i]);
+}
+
+/* JSON answer text. An empty string means this RR is skipped.
+ * NULL means the process is out of memory. The || line still uses
+ * enabled_rdata and the -X mask. */
+static char *json_rdata(ldns_rr *rr)
+{
+    ldns_rr_type t;
+    char *parts[4];
+    char *out;
+    int i;
+
+    if (rr == NULL)
+        return calloc(1, 1);
+    memset(parts, 0, sizeof(parts));
+    t = ldns_rr_get_type(rr);
+    switch (t) {
+    case LDNS_RR_TYPE_A:
+    case LDNS_RR_TYPE_AAAA:
+        out = rdf_text(ldns_rr_rdf(rr, 0), 0);
+        return out ? out : calloc(1, 1);
+    case LDNS_RR_TYPE_NS:
+    case LDNS_RR_TYPE_CNAME:
+    case LDNS_RR_TYPE_PTR:
+    case LDNS_RR_TYPE_DNAME:
+        out = rdf_text(ldns_rr_rdf(rr, 0), 1);
+        return out ? out : calloc(1, 1);
+    case LDNS_RR_TYPE_MX:
+        parts[0] = rdf_text(ldns_rr_rdf(rr, 0), 0);
+        parts[1] = rdf_text(ldns_rr_rdf(rr, 1), 1);
+        if (parts[0] == NULL || parts[1] == NULL) {
+            free_parts(parts, 2);
+            return NULL;
+        }
+        out = join_space(parts, 2);
+        free_parts(parts, 2);
+        return out;
+    case LDNS_RR_TYPE_SRV:
+        for (i = 0; i < 3; i++)
+            parts[i] = rdf_text(ldns_rr_rdf(rr, i), 0);
+        parts[3] = rdf_text(ldns_rr_rdf(rr, 3), 1);
+        for (i = 0; i < 4; i++) {
+            if (parts[i] == NULL) {
+                free_parts(parts, 4);
+                return NULL;
+            }
+        }
+        out = join_space(parts, 4);
+        free_parts(parts, 4);
+        return out;
+    case LDNS_RR_TYPE_TXT:
+    case LDNS_RR_TYPE_SPF:
+        return txt_raw(rr);
+    case LDNS_RR_TYPE_SOA:
+        parts[0] = rdf_text(ldns_rr_rdf(rr, 0), 1);
+        parts[1] = rdf_text(ldns_rr_rdf(rr, 1), 1);
+        parts[2] = rdf_text(ldns_rr_rdf(rr, 2), 0);
+        for (i = 0; i < 3; i++) {
+            if (parts[i] == NULL) {
+                free_parts(parts, 3);
+                return NULL;
+            }
+        }
+        out = join_space(parts, 3);
+        free_parts(parts, 3);
+        return out;
+#ifdef PDNS_HAVE_HTTPS
+    case LDNS_RR_TYPE_HTTPS:
+    case LDNS_RR_TYPE_SVCB: {
+        int count = (int)ldns_rr_rd_count(rr);
+        char **all;
+        int kept = 0;
+
+        if (count <= 0)
+            return calloc(1, 1);
+        all = calloc((size_t)count, sizeof(*all));
+        if (all == NULL)
+            return NULL;
+        for (i = 0; i < count; i++) {
+            char *piece = rdf_text(ldns_rr_rdf(rr, i), i == 1);
+
+            if (piece == NULL) {
+                free_parts(all, kept);
+                free(all);
+                return NULL;
+            }
+            if (piece[0] == '\0') {
+                free(piece);
+                continue;
+            }
+            all[kept++] = piece;
+        }
+        out = kept ? join_space(all, kept) : calloc(1, 1);
+        free_parts(all, kept);
+        free(all);
+        return out;
+    }
+#endif
+    default:
+        return data_bytes(rr);
+    }
+}
+
+/* One JSON object for the whole answer section. The || path stays per RR. */
+static int log_json_answer(packetinfo *pi, ldns_rr *qrr, ldns_pkt *dns_pkt)
+{
+    ldns_buffer *buff;
+    char *qname;
+    ldns_rr_list *answers;
+    int nanswers;
+    int i;
+    int kept = 0;
+    char **parts = NULL;
+    char *joined = NULL;
+    size_t jlen = 1;
+    uint16_t qtype;
+    uint16_t atype;
+    uint16_t rcode;
+    uint32_t ttl = 0;
+    uint64_t dnshash;
+    pdns_record *pr;
+    ldns_rr fake;
+
+    if (qrr == NULL || pi == NULL || pi->cxt == NULL)
+        return -1;
+    buff = ldns_buffer_new(LDNS_MIN_BUFLEN);
+    if (buff == NULL)
+        return -1;
+    ldns_buffer_clear(buff);
+    if (ldns_rdf2buffer_str(buff, ldns_rr_owner(qrr)) != LDNS_STATUS_OK) {
+        ldns_buffer_free(buff);
+        return -1;
+    }
+    qname = ldns_buffer2str(buff);
+    ldns_buffer_free(buff);
+    if (qname == NULL)
+        return -1;
+    strip_one_dot(qname);
+
+    qtype = (uint16_t)ldns_rr_get_type(qrr);
+    atype = qtype;
+    rcode = (uint16_t)ldns_pkt_get_rcode(dns_pkt);
+    answers = ldns_pkt_answer(dns_pkt);
+    nanswers = answers ? ldns_rr_list_rr_count(answers) : 0;
+    if (nanswers > 0) {
+        parts = calloc((size_t)nanswers, sizeof(*parts));
+        if (parts == NULL) {
+            free(qname);
+            return -1;
+        }
+    }
+    /* A non-zero rcode is logged with an empty answer. The answer
+     * RRs are not included. An empty NOERROR is logged only with -X 0. */
+    if (rcode == 0) {
+        for (i = 0; i < nanswers; i++) {
+            ldns_rr *rr = ldns_rr_list_rr(answers, i);
+            char *text = json_rdata(rr);
+            int k;
+
+            if (text == NULL) {
+                for (k = 0; k < kept; k++)
+                    free(parts[k]);
+                free(parts);
+                free(qname);
+                return -1;
+            }
+            if (text[0] == '\0') {
+                free(text);
+                continue;
+            }
+            parts[kept++] = text;
+            atype = (uint16_t)ldns_rr_get_type(rr);
+            ttl = ldns_rr_ttl(rr);
+        }
+    }
+    if (kept == 0) {
+        free(parts);
+        parts = NULL;
+        if (rcode == 0 && !(config.dnsfe & DNS_SE_CHK_NOERR)) {
+            free(qname);
+            return 0;
+        }
+        atype = qtype;
+        ttl = 0;
+        joined = calloc(1, 1);
+    }
+    else {
+        qsort(parts, (size_t)kept, sizeof(*parts), cmp_strptr);
+        for (i = 0; i < kept; i++)
+            jlen += strlen(parts[i]) + 1;
+        joined = malloc(jlen);
+        if (joined != NULL) {
+            joined[0] = '\0';
+            for (i = 0; i < kept; i++) {
+                if (i > 0)
+                    strcat(joined, "\x1e");
+                strcat(joined, parts[i]);
+            }
+        }
+        for (i = 0; i < kept; i++)
+            free(parts[i]);
+        free(parts);
+    }
+    if (joined == NULL) {
+        free(qname);
+        return -1;
+    }
+
+    dnshash = hash((unsigned char *)qname);
+    pr = get_pdns_record(dnshash, pi, (unsigned char *)qname);
+    free(qname);
+    if (pr == NULL) {
+        free(joined);
+        return -1;
+    }
+    memset(&fake, 0, sizeof(fake));
+    fake._rr_type = atype;
+    fake._rr_class = LDNS_RR_CLASS_IN;
+    fake._ttl = ttl;
+    update_pdns_record_asset(pi, pr, &fake, (unsigned char *)joined,
+                             qtype, (uint16_t)ldns_pkt_id(dns_pkt), rcode);
+    free(joined);
+    return 0;
 }
 
 int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt)
@@ -235,7 +641,12 @@ int process_dns_answer(packetinfo *pi, ldns_pkt *dns_pkt)
         rdf_data = ldns_rr_owner(ldns_rr_list_rr(dns_query_domains, j));
         dlog("[D] rdf_data: %p\n", rdf_data);
 
-        if (cache_dns_objects(pi, rdf_data, dns_buff, dns_pkt) != 0)
+        if (config.log_format == PDNS_LOG_JSON) {
+            if (log_json_answer(pi, ldns_rr_list_rr(dns_query_domains, j),
+                                dns_pkt) != 0)
+                dlog("[D] log_json_answer() returned error\n");
+        }
+        else if (cache_dns_objects(pi, rdf_data, dns_buff, dns_pkt) != 0)
             dlog("[D] cache_dns_objects() returned error\n");
     }
 
@@ -544,7 +955,8 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
         }
 
         /* Update the pdns record with the pdns asset */
-        update_pdns_record_asset(pi, pr, rr, (unsigned char*)rdomain_name);
+        update_pdns_record_asset(pi, pr, rr, (unsigned char*)rdomain_name,
+                                 0, 0, 0);
 
         /* If CNAME, free domain_name, and cp rdomain_name to domain_name */
         if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_CNAME) {
@@ -571,8 +983,42 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
     return 0;
 }
 
+static void asset_json_meta(pdns_asset *passet, packetinfo *pi,
+                            uint16_t qtype, uint16_t qid, uint16_t rc)
+{
+    passet->qtype = qtype;
+    passet->qid = qid;
+    passet->rc = rc;
+    passet->vlan = pi->vlan;
+    passet->aproto = pi->proto;
+    if (pi->cxt == NULL || pi->pheader == NULL)
+        return;
+    passet->cport = ntohs(pi->cxt->s_port);
+    passet->sport = ntohs(pi->cxt->d_port);
+    /* qtm is the DNS query to this answer. A missing query time
+     * falls back to the first packet, which is the query on UDP. */
+    {
+        time_t qsec = pi->cxt->query_time != 0 ? pi->cxt->query_time
+                                               : pi->cxt->start_time;
+        long qusec = pi->cxt->query_time != 0 ? pi->cxt->query_usec
+                                              : pi->cxt->start_usec;
+        int64_t sec = (int64_t)pi->pheader->ts.tv_sec - (int64_t)qsec;
+        int64_t usec = (int64_t)pi->pheader->ts.tv_usec - (int64_t)qusec;
+        int64_t delta = sec * 1000000 + usec;
+
+        if (passet->qts.tv_sec == 0 && passet->qts.tv_usec == 0) {
+            passet->qts.tv_sec = qsec;
+            passet->qts.tv_usec = qusec;
+        }
+        if (delta < 0)
+            delta = 0;
+        passet->qtm_usec = (uint64_t)delta;
+    }
+}
+
 void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
-                              ldns_rr *rr, unsigned char *rdomain_name)
+                              ldns_rr *rr, unsigned char *rdomain_name,
+                              uint16_t qtype, uint16_t qid, uint16_t rc)
 {
     pdns_asset *passet = pr->passet;
     pdns_asset *head = passet;
@@ -589,7 +1035,8 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
         if (passet->rr->_rr_type == rr->_rr_type) {
             dlog("[*] rr match\n");
             dlog("r:%s == a:%s\n", rdomain_name, passet->answer);
-            if (strcmp((const char *)rdomain_name,
+            if (passet->qtype == qtype && passet->rc == rc &&
+                    strcmp((const char *)rdomain_name,
                     (const char *)passet->answer) == 0 ) {
                 dlog("[*] rname/answer match\n");
                 /* We have this, update and if its over 24h since last print -
@@ -600,6 +1047,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                 passet->cip       = pi->cxt->s_ip; /* This should always be the client IP */
                 passet->sip       = pi->cxt->d_ip; /* This should always be the server IP */
                 passet->sip_ttl   = pi->s_ttl;
+                asset_json_meta(passet, pi, qtype, qid, rc);
                 if (rr->_ttl > passet->rr->_ttl)
                         passet->rr->_ttl = rr->_ttl;   /* Catch the highest TTL seen */
                 dlog("[*] DNS asset updated...\n");
@@ -669,6 +1117,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
     passet->cip = pi->cxt->s_ip; /* This should always be the client IP */
     passet->sip = pi->cxt->d_ip; /* This should always be the server IP */
     passet->sip_ttl = pi->s_ttl;
+    asset_json_meta(passet, pi, qtype, qid, rc);
     if (pi-> eth_hdr) {
         memcpy(passet->cmac, pi->eth_hdr->ether_dst, 6 * sizeof(u_char));
         memcpy(passet->smac, pi->eth_hdr->ether_src, 6 * sizeof(u_char));
@@ -750,6 +1199,160 @@ static int out_add(outbuf *o, const char *fmt, ...)
         goto print_free; \
 } while (0)
 
+static int json_add_str(outbuf *o, const char *s)
+{
+    const unsigned char *p;
+
+    if (out_add(o, "\"") != 0)
+        return -1;
+    if (s == NULL)
+        s = "";
+    for (p = (const unsigned char *)s; *p; p++) {
+        if (*p == '"' || *p == '\\') {
+            if (out_add(o, "\\%c", *p) != 0)
+                return -1;
+        }
+        else if (*p < 0x20) {
+            if (out_add(o, "\\u%04x", *p) != 0)
+                return -1;
+        }
+        else if (out_add(o, "%c", *p) != 0)
+            return -1;
+    }
+    return out_add(o, "\"");
+}
+
+static void rcode_text(uint16_t rc, char *buf, size_t n)
+{
+    const char *s = "UNKNOWN";
+
+    switch (rc) {
+        case 0: s = "NOERROR"; break;
+        case 1: s = "FORMERR"; break;
+        case 2: s = "SERVFAIL"; break;
+        case 3: s = "NXDOMAIN"; break;
+        case 4: s = "NOTIMP"; break;
+        case 5: s = "REFUSED"; break;
+        case 6: s = "YXDOMAIN"; break;
+        case 7: s = "YXRRSET"; break;
+        case 8: s = "NXRRSET"; break;
+        case 9: s = "NOTAUTH"; break;
+        case 10: s = "NOTZONE"; break;
+        default: break;
+    }
+    if (rc > 10)
+        snprintf(buf, n, "RCODE%u", rc);
+    else
+        snprintf(buf, n, "%s", s);
+}
+
+static int json_add_time(outbuf *o, const struct timeval *tv)
+{
+    struct tm tm;
+    time_t sec;
+
+    sec = tv->tv_sec;
+    if (gmtime_r(&sec, &tm) == NULL)
+        return -1;
+    return out_add(o, "\"%04d-%02d-%02dT%02d:%02d:%02d.%06ldZ\"",
+                   tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                   tm.tm_hour, tm.tm_min, tm.tm_sec, (long)tv->tv_usec);
+}
+
+static int build_v2_json(outbuf *o, pdns_record *l, pdns_asset *p,
+                         const char *client, const char *server)
+{
+    char rcbuf[32];
+    char *qtype = NULL;
+    char *atype = NULL;
+    struct timeval pts;
+    struct timespec now;
+    const struct timeval *fts;
+    const char *cursor;
+    uint8_t proto;
+    int first = 1;
+    int rc = -1;
+
+    if (l == NULL || p == NULL || p->rr == NULL || p->answer == NULL)
+        return -1;
+    qtype = ldns_rr_type2str((ldns_rr_type)p->qtype);
+    atype = ldns_rr_type2str((ldns_rr_type)p->rr->_rr_type);
+    if (qtype == NULL || atype == NULL)
+        goto json_done;
+    rcode_text(p->rc, rcbuf, sizeof(rcbuf));
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0)
+        goto json_done;
+    pts.tv_sec = now.tv_sec;
+    pts.tv_usec = now.tv_nsec / 1000;
+    fts = &p->first_seen;
+    if (p->qts.tv_sec != 0 || p->qts.tv_usec != 0)
+        fts = &p->qts;
+    proto = p->aproto ? p->aproto : l->proto;
+
+    if (out_add(o, "{\"query\":") != 0 || json_add_str(o, (char *)l->qname) != 0)
+        goto json_done;
+    if (out_add(o, ",\"qtype\":") != 0 || json_add_str(o, qtype) != 0)
+        goto json_done;
+    if (out_add(o, ",\"answer\":[") != 0)
+        goto json_done;
+    cursor = (const char *)p->answer;
+    if (cursor[0] != '\0') {
+        while (*cursor) {
+            const char *end = strchr(cursor, '\x1e');
+            size_t n = end ? (size_t)(end - cursor) : strlen(cursor);
+            char *one = malloc(n + 1);
+
+            if (one == NULL)
+                goto json_done;
+            memcpy(one, cursor, n);
+            one[n] = '\0';
+            if (!first && out_add(o, ",") != 0) {
+                free(one);
+                goto json_done;
+            }
+            first = 0;
+            if (json_add_str(o, one) != 0) {
+                free(one);
+                goto json_done;
+            }
+            free(one);
+            if (end == NULL)
+                break;
+            cursor = end + 1;
+        }
+    }
+    if (out_add(o, "],\"atype\":") != 0 || json_add_str(o, atype) != 0)
+        goto json_done;
+    if (out_add(o, ",\"qid\":%u,\"rc\":", p->qid) != 0 ||
+            json_add_str(o, rcbuf) != 0)
+        goto json_done;
+    if (out_add(o, ",\"ttl\":%u,\"cnt\":%" PRIu64 ",",
+                p->rr->_ttl, p->seen) != 0)
+        goto json_done;
+    if (out_add(o, "\"fts\":") != 0 || json_add_time(o, fts) != 0)
+        goto json_done;
+    if (out_add(o, ",\"lts\":") != 0 || json_add_time(o, &p->last_seen) != 0)
+        goto json_done;
+    if (out_add(o, ",\"pts\":") != 0 || json_add_time(o, &pts) != 0)
+        goto json_done;
+    if (out_add(o, ",\"src_ip\":") != 0 || json_add_str(o, client) != 0)
+        goto json_done;
+    if (out_add(o, ",\"src_port\":%u,\"dst_ip\":", p->cport) != 0 ||
+            json_add_str(o, server) != 0)
+        goto json_done;
+    if (out_add(o, ",\"dst_port\":%u,\"proto\":%u,\"vlan\":%u,\"qtm\":%llu.%06llu}",
+                p->sport, proto, p->vlan,
+                (unsigned long long)(p->qtm_usec / 1000000ull),
+                (unsigned long long)(p->qtm_usec % 1000000ull)) != 0)
+        goto json_done;
+    rc = 0;
+
+json_done:
+    free(qtype);
+    free(atype);
+    return rc;
+}
+
 /* writev stays one record. A short write is continued, not dropped. */
 void write_log_line(int fd, const char *line)
 {
@@ -803,10 +1406,10 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     static char ip_addr_s[INET6_ADDRSTRLEN];
     static char ip_addr_c[INET6_ADDRSTRLEN];
     char *d = config.log_delimiter;
-    char *proto;
-    char *rr_class;
-    char *rr_type;
-    char *rr_rcode;
+    char *proto = NULL;
+    char *rr_class = NULL;
+    char *rr_type = NULL;
+    char *rr_rcode = NULL;
     char *output = NULL;
     outbuf ob;
     int text_line = 0;
@@ -871,6 +1474,16 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
         u_ntop(p->sip, p->af, ip_addr_s);
         u_ntop(p->cip, p->af, ip_addr_c);
         server_ttl = p->sip_ttl;
+    }
+
+    if (config.log_format == PDNS_LOG_JSON && p != NULL) {
+        if (build_v2_json(&ob, l, p, ip_addr_c, ip_addr_s) != 0) {
+            text_line = 1;
+            goto print_free;
+        }
+        output = ob.data;
+        text_line = 1;
+        goto print_out;
     }
 
     proto    = malloc(4);
@@ -1357,6 +1970,7 @@ void print_passet(pdns_record *l, pdns_asset *p, ldns_rr *rr,
     }
 #endif /* HAVE_JSON */
 
+print_out:
     /* The writer thread owns the log fd when capture is threaded. */
     if (output && config.workers > 1)
         pdns_log_submit(raw, output);
@@ -1603,15 +2217,11 @@ void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
     /* Delete all domain assets */
     while (asset != NULL)
     {
-        /* Print the asset before we expires if it
-         * has been updated since it last was printed */
-        if (asset->last_seen.tv_sec > asset->last_print.tv_sec)
+        /* seen is the sightings not written yet. Write that
+         * pending state. A repeat with the same timestamp still
+         * counts, and the count on the line is only those sightings. */
+        if (asset->seen > 0)
             print_passet(pdnsr, asset, asset->rr, NULL, 0);
-
-        else if (asset->last_seen.tv_sec == asset->last_print.tv_sec) {
-            if (asset->last_seen.tv_usec > asset->last_print.tv_usec)
-                print_passet(pdnsr, asset, asset->rr, NULL, 0);
-        }
         tmp_asset = asset;
         asset = asset->next;
         delete_dns_asset(&pdnsr->passet, tmp_asset);
@@ -1653,15 +2263,9 @@ void expire_dns_assets(pdns_record *pdnsr, time_t expire_t)
     while (passet != NULL)
     {
         if (passet->last_seen.tv_sec <= expire_t) {
-            /* Print the asset before we expires if it
-               has been updated since it last was printed */
-            if (passet->last_seen.tv_sec > passet->last_print.tv_sec)
+            /* Same pending-count rule as process exit. */
+            if (passet->seen > 0)
                 print_passet(pdnsr, passet, passet->rr, NULL, 0);
-
-            else if (passet->last_seen.tv_sec == passet->last_print.tv_sec) {
-                if (passet->last_seen.tv_usec > passet->last_print.tv_usec)
-                    print_passet(pdnsr, passet, passet->rr, NULL, 0);
-            }
             /* Remove the asset from the linked list */
             if (passet->prev)
                 passet->prev->next = passet->next;

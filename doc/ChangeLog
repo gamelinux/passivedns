@@ -1,3 +1,18 @@
+Changes with PassiveDNS 2.0.0
+
+- Log one JSON object per line by default, the same fields as
+  passivednsgo and passivednsrust
+- --format text keeps the || line
+- qtm is the time from the DNS query to the answer.
+  With more than one worker, the JSON line keeps the client port,
+  the server port, and the VLAN id from that flow
+- JSON logs the same answer types as passivednsgo, including NS,
+  MX, TXT, SOA, and non-zero response codes. --format text still
+  uses the -X mask. Type 255 is ANY. fts is the first query time
+- On exit, write cached sightings that were not logged yet, even
+  when the answer time did not move. The count is only those
+  sightings
+
 Changes with PassiveDNS 1.5.1
 
 - A -W daemon clears the parent-death signal before it reports

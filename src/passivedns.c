@@ -840,6 +840,7 @@ connection *cxt_new(packetinfo *pi)
         cxt->s_tcpFlags |= pi->tcph->t_flags;
 
     cxt->start_time = pi->pheader->ts.tv_sec;
+    cxt->start_usec = pi->pheader->ts.tv_usec;
     cxt->last_pkt_time = pi->pheader->ts.tv_sec;
 
     if (pi->af == AF_INET6){
@@ -1713,6 +1714,8 @@ void usage()
     olog(" -y              Log to syslog (uses local7 syslog facility).\n");
     olog(" -Y              Log NXDOMAIN to syslog.\n");
     olog(" -d <delimiter>  Delimiter between fields in log file (default: ||).\n");
+    olog(" --format <json|text>  Record format (default: json).\n");
+    olog("                 json is one object per line. text is the || line.\n");
 #ifdef HAVE_JSON
     olog(" -j              Use JSON as output in log file.\n");
     olog(" -J              Use JSON as output in NXDOMAIN log file.\n");
@@ -1841,6 +1844,8 @@ static void show_record_letters(void)
     add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NOTZONE, 'z');
     add_letter(letters, sizeof(letters), &used, config.dnsfe & DNS_SE_CHK_NOERR, '0');
     olog("[*] Record letters: %s\n", letters[0] ? letters : "(none)");
+    olog("[*] Log format: %s\n",
+         config.log_format == PDNS_LOG_TEXT ? "text" : "json");
 }
 
 static void show_snapshot(int snaplen)
@@ -1945,6 +1950,13 @@ struct cache_job {
     uint32_t af;
     struct in6_addr cip;
     struct in6_addr sip;
+    uint16_t s_port;
+    uint16_t d_port;
+    uint16_t vlan;
+    time_t start_time;
+    long start_usec;
+    time_t query_time;
+    long query_usec;
     uint8_t s_ttl;
     uint8_t proto;
 };
@@ -2120,6 +2132,13 @@ int pdns_cache_submit(packetinfo *pi, struct ldns_struct_pkt *pkt)
     job->af = pi->cxt->af;
     job->cip = pi->cxt->s_ip;
     job->sip = pi->cxt->d_ip;
+    job->s_port = pi->cxt->s_port;
+    job->d_port = pi->cxt->d_port;
+    job->vlan = pi->vlan;
+    job->start_time = pi->cxt->start_time;
+    job->start_usec = pi->cxt->start_usec;
+    job->query_time = pi->cxt->query_time;
+    job->query_usec = pi->cxt->query_usec;
     job->s_ttl = pi->s_ttl;
     job->proto = pi->proto;
     if (pi->eth_hdr != NULL) {
@@ -2170,9 +2189,16 @@ static void cache_handle(struct cache_job *job)
     cxt.af = job->af;
     cxt.s_ip = job->cip;
     cxt.d_ip = job->sip;
+    cxt.s_port = job->s_port;
+    cxt.d_port = job->d_port;
+    cxt.start_time = job->start_time;
+    cxt.start_usec = job->start_usec;
+    cxt.query_time = job->query_time;
+    cxt.query_usec = job->query_usec;
     cxt.proto = job->proto;
     pi.pheader = &job->hdr;
     pi.cxt = &cxt;
+    pi.vlan = job->vlan;
     pi.s_ttl = job->s_ttl;
     pi.proto = job->proto;
     pi.af = job->af;
@@ -2758,9 +2784,11 @@ int main(int argc, char *argv[])
 #define ARGS "i:H:r:qc:nyYNjJl:s:L:d:hb:Dp:C:P:S:f:X:u:g:T:VW:"
 #define OPT_STATS_FILE 256
 #define OPT_FANOUT_GROUP 257
+#define OPT_FORMAT 258
     static const struct option long_options[] = {
         {"stats-file", required_argument, NULL, OPT_STATS_FILE},
         {"fanout-group", required_argument, NULL, OPT_FANOUT_GROUP},
+        {"format", required_argument, NULL, OPT_FORMAT},
         {NULL, 0, NULL, 0}
     };
 
@@ -2781,6 +2809,16 @@ int main(int argc, char *argv[])
             config.workers = (uint16_t)nworkers;
             break;
         }
+        case OPT_FORMAT:
+            if (strcmp(optarg, "json") == 0)
+                config.log_format = PDNS_LOG_JSON;
+            else if (strcmp(optarg, "text") == 0)
+                config.log_format = PDNS_LOG_TEXT;
+            else {
+                elog("[!] --format needs json or text\n");
+                exit(1);
+            }
+            break;
         case OPT_FANOUT_GROUP: {
             uint32_t group = 0;
 

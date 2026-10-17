@@ -241,7 +241,7 @@ def run_live(args):
 
 def main():
     code, out, err = run(["-V"])
-    report(code == 0 and "PassiveDNS 1.5.1" in out and "Edward Bjarte Fjellskål" in out,
+    report(code == 0 and "PassiveDNS 2.0.0" in out and "Edward Bjarte Fjellskål" in out,
            "version", out + err)
 
     code, out, err = run(["-h"])
@@ -252,7 +252,8 @@ def main():
            and "ethtool -K <iface> gro off" in out
            and "--stats-file <file>" in out
            and "-W <n>" in out and "--fanout-group <id>" in out
-           and "AF_PACKET" in out,
+           and "AF_PACKET" in out
+           and "--format <json|text>" in out,
            "help", out + err)
 
     missing = tempfile.mkdtemp(prefix="pdns-missing-")
@@ -340,6 +341,13 @@ def main():
 
     code, out, err = run(["-W", "1"], empty)
     report(code == 0 and "Snapshot length: 65535" in out, "workers-one", out + err)
+
+    code, out, err = run(["--format", "nope"], empty)
+    report(code != 0 and "--format needs json or text" in (out + err),
+           "format-bad", out + err)
+
+    code, out, err = run(["--format", "text"], empty)
+    report(code == 0 and "Log format: text" in out, "format-text", out + err)
 
     code, out, err = run(["-W", "0"], empty)
     report(code != 0 and "worker count" in (out + err), "workers-zero", out + err)

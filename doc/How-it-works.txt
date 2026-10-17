@@ -42,10 +42,20 @@
   fragment list. One cache thread owns the DNS cache, so an answer
   is logged once no matter which thread saw it. One writer thread
   owns the log file.
+* The default log line is one JSON object. The fields are query,
+  qtype, answer, atype, qid, rc, ttl, cnt, fts, lts, pts, src_ip,
+  src_port, dst_ip, dst_port, proto, vlan, and qtm. answer is an
+  array of the rdata strings in that response. qtm is the time from
+  the DNS query to this answer. fts is the first query time and lts
+  is the latest answer time. Type 255 is printed as ANY. --format
+  text keeps the || line, one record per rdata.
+* The JSON line logs every answer-section type, the same set as
+  passivednsgo. NS, MX, TXT, SOA, and a non-zero response code are
+  included. --format text still follows the -X mask. An empty
+  NOERROR answer is logged only with -X 0
 * HTTPS and SVCB answers are logged by default when ldns is 1.8.3
   or newer. The answer text is the priority, the target name, and
   the service parameters
-* An empty NOERROR answer is logged only with -X 0
 * -f i prints the IP TTL, or IPv6 hop limit, of the reply. It is
   not in the default field mask
 
@@ -72,9 +82,14 @@
 
 ## Domain caching
 * When a DNS question and answer is received, it is stored
-  in an internal linked list. A new answer is printed once.
-  The same answer is not printed again for 24 hours
-  (DNSPRINTTIME, 86400 seconds) unless the record changes.
+  in an internal linked list. A new answer is written once,
+  and its seen-count is cleared. Later sightings of that
+  same answer stay in the cache. They are written when 24
+  hours have passed (DNSPRINTTIME, 86400 seconds), or when
+  passivedns exits. The count on that line is only the
+  sightings not written yet, including a repeat whose
+  timestamp did not move. pdns2db.pl adds that count to the
+  stored total. An entry with nothing new is not written again.
 * A record that has not been updated for 12 hours
   (DNSCACHETIMEOUT, 43200 seconds) is dropped from the cache.
   Both intervals can be changed with -P and -C.

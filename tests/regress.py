@@ -172,7 +172,10 @@ def run_case(binary, packets, args, linktype=1, times=None):
         pcap = os.path.join(tmp, "case.pcap")
         log = os.path.join(tmp, "case.log")
         write_pcap(pcap, packets, linktype, times)
-        cmd = [binary, "-r", pcap, "-l", log, "-L", log] + args
+        extra = list(args)
+        if "--format" not in extra:
+            extra = ["--format", "text"] + extra
+        cmd = [binary, "-r", pcap, "-l", log, "-L", log] + extra
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         except subprocess.TimeoutExpired:
@@ -188,6 +191,20 @@ def run_case(binary, packets, args, linktype=1, times=None):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def expect_all(binary, label, packets, needles, args=None, linktype=1, absent=(), times=None):
+    code, text, err, mode_ok, _out = run_case(binary, packets, args or [], linktype, times)
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    hit = lines[0] if len(lines) == 1 else ""
+    missing = [n for n in needles if n not in hit]
+    if code != 0 or not mode_ok or len(lines) != 1 or missing:
+        return False, "%s: exit %s mode %s lines %d missing %s\n%s\n%s" % (
+            label, code, mode_ok, len(lines), missing, text, err)
+    for item in absent:
+        if item in lines[0]:
+            return False, "%s: unexpected %r in %s" % (label, item, lines[0])
+    return True, lines[0]
+
+
 def expect_logged(binary, label, packets, needle, args=None, linktype=1, absent=(), times=None):
     code, text, err, mode_ok, _out = run_case(binary, packets, args or [], linktype, times)
     lines = [ln for ln in text.splitlines() if needle in ln]
@@ -200,8 +217,9 @@ def expect_logged(binary, label, packets, needle, args=None, linktype=1, absent=
     return True, lines[0]
 
 
-def expect_many(binary, label, packets, needles, args=None, linktype=1):
-    code, text, err, mode_ok, _out = run_case(binary, packets, args or [], linktype)
+def expect_many(binary, label, packets, needles, args=None, linktype=1, times=None):
+    code, text, err, mode_ok, _out = run_case(
+        binary, packets, args or [], linktype, times)
     lines = [ln for ln in text.splitlines() if ln.strip()]
     found = [n for n in needles if any(n in ln for ln in lines)]
     if code != 0 or not mode_ok or len(lines) != len(needles) or len(found) != len(needles):
@@ -405,13 +423,16 @@ def cases():
 
     qdup = dns_query(0x6ddd, "dup.example.com")
     adup = dns_response(0x6ddd, "dup.example.com", socket.inet_aton("9.9.9.9"))
-    # Same timestamp on every packet. A newer timestamp is flushed again at shutdown.
+    # Same timestamp. Exit still writes the second sighting, cnt 1.
+    # The two lines add up to 2.
     yield ("duplicate", [
         eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44014, 53, qdup))),
         eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44014, adup))),
         eth(ipv4("10.5.0.1", "10.5.0.2", 17, udp(44014, 53, qdup))),
         eth(ipv4("10.5.0.2", "10.5.0.1", 17, udp(53, 44014, adup))),
-    ], "dup.example.com.||A||9.9.9.9", None, 1, (), ((1700000000, 0),) * 4)
+    ], ("dup.example.com.||A||9.9.9.9||300||1",
+        "dup.example.com.||A||9.9.9.9||300||1"),
+       None, 1, (), ((1700000000, 0),) * 4)
 
     vlan_q = dns_query(0x7001, "vlan.example.com")
     vlan_a = dns_response(0x7001, "vlan.example.com", socket.inet_aton("9.9.9.9"))
@@ -566,8 +587,11 @@ def cases():
         + qa("10.10.2.1", "10.10.2.2", 50021, 0x7E02, "ipttldup.example.com",
              socket.inet_aton("9.9.9.9"), ipttl=19)
     )
-    yield ("server-ttl-dup", dup_ttl, "10.10.2.2||53||IN||ipttldup.example.com.||A||",
-           ["-f", "SMcsCQTAtni"], 1, ("||19||",), [same, same, same, same])
+    # The second sighting keeps the later IP TTL and its own count.
+    yield ("server-ttl-dup", dup_ttl, (
+        "10.10.2.2||53||IN||ipttldup.example.com.||A||9.9.9.9||300||1",
+        "10.10.2.2||19||IN||ipttldup.example.com.||A||9.9.9.9||300||1",
+    ), ["-f", "SMcsCQTAtni"], 1, (), [same, same, same, same])
 
     hop_q = dns_query(0x7E03, "hop.example.com")
     hop_a = dns_response(0x7E03, "hop.example.com", socket.inet_aton("9.9.9.9"))
@@ -631,6 +655,81 @@ def cases():
         eth(ipv4("10.14.1.2", "10.14.1.1", 6, tcp(53, 41412, 6000 + len(ramsg), b"", 0x04))),
     ], ("open", 0, "tcprst.example.com.||A||9.9.9.9"), None)
 
+    yield ("json-a", qa("10.20.0.1", "10.20.0.2", 42000, 0x5151,
+                        "json.example.com", socket.inet_aton("9.9.9.9")),
+           '"query":"json.example.com","qtype":"A","answer":["9.9.9.9"],"atype":"A","qid":20817',
+           ["--format", "json"])
+
+    twice = qa("10.20.0.1", "10.20.0.2", 42001, 0x5152,
+               "jsondup.example.com", socket.inet_aton("9.9.9.9"))
+    # Same timestamp. Exit writes the second sighting with its own
+    # query id. Each line has cnt 1, and 1 + 1 = 2.
+    yield ("json-dup", twice + qa("10.20.0.1", "10.20.0.2", 42002, 0x5153,
+                                  "jsondup.example.com", socket.inet_aton("9.9.9.9")),
+           ('"qid":20818,"rc":"NOERROR","ttl":300,"cnt":1',
+            '"qid":20819,"rc":"NOERROR","ttl":300,"cnt":1'),
+           ["--format", "json"], 1, (), ((1700000000, 0),) * 4)
+
+    # Three identical answers. The first line is cnt 1. The other
+    # two stay in the cache, and exit writes them as cnt 2.
+    # 1 + 2 = 3. json-dup is the same-timestamp case, cnt 1 then cnt 1.
+    flush_pkts = (
+        qa("10.20.5.1", "10.20.5.2", 42040, 0x5158,
+           "flush.example.com", socket.inet_aton("9.9.9.9"))
+        + qa("10.20.5.1", "10.20.5.2", 42040, 0x5159,
+             "flush.example.com", socket.inet_aton("9.9.9.9"))
+        + qa("10.20.5.1", "10.20.5.2", 42040, 0x515A,
+             "flush.example.com", socket.inet_aton("9.9.9.9"))
+    )
+    flush_times = (
+        (1700000000, 0),
+        (1700000000, 100000),
+        (1700000001, 0),
+        (1700000001, 500000),
+        (1700000002, 0),
+        (1700000002, 800000),
+    )
+    yield ("flush-text", flush_pkts, (
+        "1700000000.100000||10.20.5.1||10.20.5.2||IN||flush.example.com.||A||9.9.9.9||300||1",
+        "1700000002.800000||10.20.5.1||10.20.5.2||IN||flush.example.com.||A||9.9.9.9||300||2",
+    ), ["--format", "text"], 1, (), flush_times)
+    yield ("json-flush", flush_pkts, (
+        '"qid":20824,"rc":"NOERROR","ttl":300,"cnt":1,"fts":"2023-11-14T22:13:20.000000Z","lts":"2023-11-14T22:13:20.100000Z"',
+        '"qid":20826,"rc":"NOERROR","ttl":300,"cnt":2,"fts":"2023-11-14T22:13:20.000000Z","lts":"2023-11-14T22:13:22.800000Z"',
+    ), ["--format", "json"], 1, (), flush_times)
+
+    multi = dns_answers(0x5154, "multi.example.com", 1, [
+        ("multi.example.com", 1, 300, socket.inet_aton("9.9.9.9")),
+        ("multi.example.com", 1, 200, socket.inet_aton("1.1.1.1")),
+    ])
+    yield ("json-multi", [
+        eth(ipv4("10.20.1.1", "10.20.1.2", 17, udp(42010, 53, dns_query(0x5154, "multi.example.com")))),
+        eth(ipv4("10.20.1.2", "10.20.1.1", 17, udp(53, 42010, multi))),
+    ], '"answer":["1.1.1.1","9.9.9.9"],"atype":"A","qid":20820',
+       ["--format", "json"])
+
+    yield ("json-nx", [
+        eth(ipv4("10.20.2.1", "10.20.2.2", 17, udp(42020, 53, dns_query(0x5155, "nxjson.example.com")))),
+        eth(ipv4("10.20.2.2", "10.20.2.1", 17, udp(53, 42020, dns_nxdomain(0x5155, "nxjson.example.com")))),
+    ], ['"query":"nxjson.example.com","qtype":"A","answer":[],"atype":"A"',
+        '"rc":"NXDOMAIN"'],
+       ["--format", "json"])
+
+    yield ("json-pipe", qa("10.20.3.1", "10.20.3.2", 42030, 0x5156,
+                           "a||b.example.com", socket.inet_aton("1.2.3.4")),
+           '"query":"a||b.example.com","qtype":"A","answer":["1.2.3.4"]',
+           ["--format", "json"])
+
+    # Query at .900000, answer one second later at .100000. qtm is
+    # 0.200000. The old formula kept the answer's fraction and would
+    # print 1.100000. Ports are the client and the resolver.
+    yield ("json-meta", qa("10.20.4.1", "10.20.4.2", 42111, 0x5157,
+                           "meta.example.com", socket.inet_aton("8.8.4.4")),
+           ['"fts":"2023-11-14T22:13:20.900000Z","lts":"2023-11-14T22:13:21.100000Z"',
+            '"src_ip":"10.20.4.1","src_port":42111,"dst_ip":"10.20.4.2","dst_port":53,"proto":17,"vlan":0,"qtm":0.200000'],
+           ["--format", "json"], 1, (),
+           ((1700000000, 900000), (1700000001, 100000)))
+
 
 def main():
     binary = find_binary()
@@ -645,7 +744,11 @@ def main():
         elif isinstance(needle, tuple) and needle and needle[0] == "open":
             ok, detail = expect_open(binary, label, packets, needle[1], needle[2], args)
         elif isinstance(needle, tuple):
-            ok, detail = expect_many(binary, label, packets, needle, args, linktype)
+            ok, detail = expect_many(
+                binary, label, packets, needle, args, linktype, times)
+        elif isinstance(needle, list):
+            ok, detail = expect_all(
+                binary, label, packets, needle, args, linktype, absent, times)
         else:
             ok, detail = expect_logged(
                 binary, label, packets, needle, args, linktype, absent, times)

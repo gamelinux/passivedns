@@ -118,8 +118,9 @@
  * you will get a last seen timestamp update once a day
  * at least. If the record changes, it will be classified
  * as a new record, and printent. If a record expires and
- * it has been updated since last_print time, it will be
- * printed again.
+ * it still has sightings that were not written, those
+ * sightings are written. The count is only that pending
+ * number, including when the timestamp did not move.
  */
 #define DNSPRINTTIME          86400    /* 24H = 86400 sec */
 
@@ -154,6 +155,15 @@ typedef struct _pdns_asset {
     u_char                 smac[6];    /* DNS Server MAC address */
     struct in6_addr        cip;        /* DNS Client IP (v4/6) */
     u_char                 cmac[6];    /* DNS Client MAC address */
+    uint16_t               qtype;      /* Question type. Text mode leaves this 0. */
+    uint16_t               qid;        /* DNS transaction id. */
+    uint16_t               vlan;       /* VLAN id, host order. */
+    uint16_t               cport;      /* Client port, host order. */
+    uint16_t               sport;      /* Server port, host order. */
+    uint16_t               rc;         /* DNS response code. */
+    uint64_t               qtm_usec;   /* Answer time minus the DNS query. */
+    struct timeval         qts;        /* First DNS query time. Zero until set. */
+    uint8_t                aproto;     /* IP protocol of the latest answer. */
     struct _pdns_asset     *next;      /* Next dns asset */
     struct _pdns_asset     *prev;      /* Prev dns asset */
 } pdns_asset;
@@ -183,7 +193,9 @@ int cache_dns_objects (packetinfo *pi, ldns_rdf *rdf_data, ldns_buffer *buff, ld
 pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *domain_name);
 const char *u_ntop (const struct in6_addr ip_addr, int af, char *dest);
 void dns_parser (packetinfo *pi);
-void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr, unsigned char *rdomain_name);
+void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr,
+                                unsigned char *rdomain_name, uint16_t qtype,
+                                uint16_t qid, uint16_t rc);
 void print_passet (pdns_record *l, pdns_asset *p, ldns_rr *rr, ldns_rdf *lname, uint16_t rcode);
 void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
 void expire_dns_records();

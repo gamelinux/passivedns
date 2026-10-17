@@ -267,6 +267,9 @@ typedef struct _connection {
     struct   _connection *prev;
     struct   _connection *next;
     time_t   start_time;          /* Connection start time */
+    long     start_usec;          /* Microseconds of the first packet */
+    time_t   query_time;          /* DNS query time, or 0 if none yet */
+    long     query_usec;          /* Microseconds of that query */
     time_t   last_pkt_time;       /* Last seen packet time */
     uint64_t cxid;                /* Connection ID */
     uint8_t  reversed;            /* 1 if the connection is reversed */
@@ -539,6 +542,7 @@ typedef struct _globalconfig {
     uint8_t             use_json;          /* Use JSON as output in log */
     uint8_t             use_json_nxd;      /* Use JSON as output in NXDOMAIN log */
 #endif /* HAVE_JSON */
+    uint8_t             log_format;        /* PDNS_LOG_JSON or PDNS_LOG_TEXT */
     uint8_t             use_stats_file;    /* Print stats on signal to file */
     char                *statsfile;        /* File to print stats to */
     uint8_t             setfilter;
@@ -602,6 +606,10 @@ typedef struct _globalconfig {
 /* Live AF_PACKET workers. 1 keeps the single-process capture path. */
 #define PDNS_WORKERS_MAX                64
 
+/* Default log line is one JSON object. text keeps the || line. */
+#define PDNS_LOG_JSON                   0
+#define PDNS_LOG_TEXT                   1
+
 #define plog(fmt, ...) do{ fprintf(stdout, (fmt), ##__VA_ARGS__); }while(0)
 #define flog(h, fmt, ...) \
   do{ \
@@ -652,6 +660,6 @@ int pdns_cache_submit(packetinfo *pi, struct ldns_struct_pkt *pkt);
 void pdns_log_submit(int fd, const char *line);
 
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.5.1"
+#define PACKAGE_VERSION "2.0.0"
 #endif
 
