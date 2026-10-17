@@ -259,6 +259,9 @@ typedef struct _tcp_buf {
     size_t charged;
 } tcp_buf;
 
+/* One outstanding DNS query on a connection. A socket can have several. */
+typedef struct _dns_flight dns_flight;
+
 /*
  * Structure for connections
  */
@@ -268,7 +271,7 @@ typedef struct _connection {
     struct   _connection *next;
     time_t   start_time;          /* Connection start time */
     long     start_usec;          /* Microseconds of the first packet */
-    time_t   query_time;          /* DNS query time, or 0 if none yet */
+    time_t   query_time;          /* Time of the query just paired, or 0 */
     long     query_usec;          /* Microseconds of that query */
     time_t   last_pkt_time;       /* Last seen packet time */
     uint64_t cxid;                /* Connection ID */
@@ -286,7 +289,8 @@ typedef struct _connection {
     uint8_t  s_tcpFlags;          /* TCP flags sent by source */
     uint8_t  d_tcpFlags;          /* TCP flags sent by destination */
     uint8_t  check;               /* Flags specifying checking */
-    uint16_t plid;                /* Protocol layer ID (DNS TID) */
+    uint16_t plid;                /* Last DNS query id. Non-zero once one was stored. */
+    dns_flight *flight;           /* Outstanding query ids and their times */
     tcp_buf to_server;            /* Bytes from the first-seen source */
     tcp_buf to_client;            /* Bytes in the opposite direction */
 } connection;
@@ -652,6 +656,7 @@ int cxt_update_client(connection *cxt, packetinfo *pi);
 int cxt_update_unknown(connection *cxt, packetinfo *pi);
 int cxt_update_server(connection *cxt, packetinfo *pi);
 void cxt_release(packetinfo *pi);
+void dns_flight_clear(connection *cxt);
 int mem_charge(size_t n);
 void mem_refund(size_t n);
 struct ldns_struct_pkt;

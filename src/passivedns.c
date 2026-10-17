@@ -1071,6 +1071,7 @@ void del_connection(connection * cxt, connection ** bucket_ptr)
         next->prev = prev;
     }
 
+    dns_flight_clear(cxt);
     tcp_buf_free(&cxt->to_server);
     tcp_buf_free(&cxt->to_client);
     mem_refund(sizeof(connection));

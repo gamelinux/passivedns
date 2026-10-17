@@ -67,13 +67,14 @@
   that a client asked for a domain, so that
   there will not be any tracking of domains,
   if a client did not request one. A bit spoof
-  protection. In the connection data, the 
-  DNS Transaction ID is also stored, to verify
-  that the client sent a request, and that the
-  server answered the right TID request :)
-* A UDP flow is removed when that answer matches.
-  A query that never gets an answer still expires
-  after 60 seconds (UDP_TIMEOUT).
+  protection. The connection keeps every outstanding
+  DNS transaction id and the time of that query.
+  One socket can have several queries in flight.
+  An answer is paired with its own id, and the
+  logged query time is that query's time.
+* A UDP flow is removed when the last outstanding
+  answer matches. A query that never gets an answer
+  still expires after 60 seconds (UDP_TIMEOUT).
 * A TCP flow stays after the DNS answer, because the
   same socket can carry another query. It is removed
   when both sides have sent FIN, or either side has

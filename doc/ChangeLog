@@ -12,6 +12,9 @@ Changes with PassiveDNS 2.0.0
 - On exit, write cached sightings that were not logged yet, even
   when the answer time did not move. The count is only those
   sightings
+- Keep every outstanding DNS id on a flow. A second query no longer
+  replaces the first, and each answer uses its own query time. A UDP
+  flow is freed when the last of those answers has matched
 
 Changes with PassiveDNS 1.5.1
 

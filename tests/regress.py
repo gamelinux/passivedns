@@ -217,11 +217,19 @@ def expect_logged(binary, label, packets, needle, args=None, linktype=1, absent=
     return True, lines[0]
 
 
+def _in_text(needle, text):
+    if needle is None:
+        return True
+    if isinstance(needle, (tuple, list)):
+        return all(part in text for part in needle)
+    return needle in text
+
+
 def expect_many(binary, label, packets, needles, args=None, linktype=1, times=None):
     code, text, err, mode_ok, _out = run_case(
         binary, packets, args or [], linktype, times)
     lines = [ln for ln in text.splitlines() if ln.strip()]
-    found = [n for n in needles if any(n in ln for ln in lines)]
+    found = [n for n in needles if any(_in_text(n, ln) for ln in lines)]
     if code != 0 or not mode_ok or len(lines) != len(needles) or len(found) != len(needles):
         return False, "%s: exit %s mode %s lines %d found %s\n%s\n%s" % (
             label, code, mode_ok, len(lines), found, text, err)
@@ -245,7 +253,7 @@ def open_count(stdout):
 def expect_open(binary, label, packets, count, needle=None, args=None):
     code, text, err, mode_ok, out = run_case(binary, packets, args or [])
     got = open_count(out)
-    logged = needle is None or needle in text
+    logged = _in_text(needle, text)
     quiet = needle is not None or not text.strip()
     if code != 0 or not mode_ok or got != count or not logged or not quiet:
         return False, "%s: exit %s mode %s open %s\n%s\n%s\n%s" % (
@@ -624,6 +632,56 @@ def cases():
         eth(ipv4("10.14.0.1", "10.14.0.2", 17, udp(41402, 53, again_q2))),
         eth(ipv4("10.14.0.2", "10.14.0.1", 17, udp(53, 41402, again_a2))),
     ], ("open", 0, "5.6.7.8"), None)
+
+    # Two queries in flight on one UDP socket. The second answer is
+    # logged first. Both must be kept, and the flow is gone at the end.
+    flight_q1 = dns_query(0x1611, "inflight-a.example.com")
+    flight_q2 = dns_query(0x1612, "inflight-b.example.com")
+    flight_a1 = dns_response(0x1611, "inflight-a.example.com", socket.inet_aton("1.2.3.4"))
+    flight_a2 = dns_response(0x1612, "inflight-b.example.com", socket.inet_aton("5.6.7.8"))
+    flight_pkts = [
+        eth(ipv4("10.16.0.1", "10.16.0.2", 17, udp(43010, 53, flight_q1))),
+        eth(ipv4("10.16.0.1", "10.16.0.2", 17, udp(43010, 53, flight_q2))),
+        eth(ipv4("10.16.0.2", "10.16.0.1", 17, udp(53, 43010, flight_a2))),
+        eth(ipv4("10.16.0.2", "10.16.0.1", 17, udp(53, 43010, flight_a1))),
+    ]
+    yield ("udp-inflight", flight_pkts, ("open", 0, (
+        "inflight-a.example.com.||A||1.2.3.4",
+        "inflight-b.example.com.||A||5.6.7.8",
+    )), None)
+    # 0x1611 is 5649, 0x1612 is 5650. a is queried 2.0s before its
+    # answer. b is queried 0.5s before its answer. The later query
+    # must not replace a's query time.
+    yield ("json-inflight", flight_pkts, (
+        ('"query":"inflight-b.example.com"', '"qid":5650',
+         '"src_port":43010', '"qtm":0.500000'),
+        ('"query":"inflight-a.example.com"', '"qid":5649',
+         '"fts":"2023-11-14T22:13:20.000000Z"',
+         '"lts":"2023-11-14T22:13:22.000000Z"', '"qtm":2.000000'),
+    ), ["--format", "json"], 1, (), (
+        (1700000000, 0),
+        (1700000001, 0),
+        (1700000001, 500000),
+        (1700000002, 0),
+    ))
+
+    tq1 = dns_query(0x1613, "tcpflight-a.example.com")
+    tq2 = dns_query(0x1614, "tcpflight-b.example.com")
+    ta1 = dns_response(0x1613, "tcpflight-a.example.com", socket.inet_aton("1.2.3.4"))
+    ta2 = dns_response(0x1614, "tcpflight-b.example.com", socket.inet_aton("5.6.7.8"))
+    tm1 = struct.pack(">H", len(tq1)) + tq1
+    tm2 = struct.pack(">H", len(tq2)) + tq2
+    tam1 = struct.pack(">H", len(ta1)) + ta1
+    tam2 = struct.pack(">H", len(ta2)) + ta2
+    yield ("tcp-inflight", [
+        eth(ipv4("10.16.1.1", "10.16.1.2", 6, tcp(43011, 53, 1000, tm1))),
+        eth(ipv4("10.16.1.1", "10.16.1.2", 6, tcp(43011, 53, 1000 + len(tm1), tm2))),
+        eth(ipv4("10.16.1.2", "10.16.1.1", 6, tcp(53, 43011, 5000, tam2))),
+        eth(ipv4("10.16.1.2", "10.16.1.1", 6, tcp(53, 43011, 5000 + len(tam2), tam1))),
+    ], ("open", 1, (
+        "tcpflight-a.example.com.||A||1.2.3.4",
+        "tcpflight-b.example.com.||A||5.6.7.8",
+    )), None)
 
     tq = dns_query(0x1405, "tcpstay.example.com")
     ta = dns_response(0x1405, "tcpstay.example.com", socket.inet_aton("9.9.9.9"))

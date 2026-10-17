@@ -61,6 +61,100 @@ uint64_t hash(unsigned char *str)
     return hash % DBUCKET_SIZE;
 }
 
+/* Outstanding query ids. The struct stays private to the parser. */
+struct _dns_flight {
+    struct _dns_flight *next;
+    uint16_t id;
+    time_t sec;
+    long usec;
+};
+
+static int dns_flight_has(connection *cxt, uint16_t id)
+{
+    dns_flight *node;
+
+    if (cxt == NULL || id == 0)
+        return 0;
+    for (node = cxt->flight; node != NULL; node = node->next) {
+        if (node->id == id)
+            return 1;
+    }
+    return 0;
+}
+
+/* Remember id, or refresh its query time when the client retries it.
+ * plid stays non-zero so the reverse direction remains the server. */
+static int dns_flight_add(connection *cxt, uint16_t id, time_t sec, long usec)
+{
+    dns_flight *node;
+
+    if (cxt == NULL || id == 0)
+        return 0;
+    for (node = cxt->flight; node != NULL; node = node->next) {
+        if (node->id != id)
+            continue;
+        node->sec = sec;
+        node->usec = usec;
+        cxt->plid = id;
+        return 1;
+    }
+    if (!mem_charge(sizeof(dns_flight)))
+        return 0;
+    node = (dns_flight *) calloc(1, sizeof(dns_flight));
+    if (node == NULL) {
+        mem_refund(sizeof(dns_flight));
+        return 0;
+    }
+    node->id = id;
+    node->sec = sec;
+    node->usec = usec;
+    node->next = cxt->flight;
+    cxt->flight = node;
+    cxt->plid = id;
+    return 1;
+}
+
+/* Copy this id's query time onto the connection and drop the id. */
+static int dns_flight_take(connection *cxt, uint16_t id)
+{
+    dns_flight **prev;
+    dns_flight *node;
+
+    if (cxt == NULL || id == 0)
+        return 0;
+    prev = &cxt->flight;
+    while ((node = *prev) != NULL) {
+        if (node->id != id) {
+            prev = &node->next;
+            continue;
+        }
+        cxt->query_time = node->sec;
+        cxt->query_usec = node->usec;
+        *prev = node->next;
+        mem_refund(sizeof(*node));
+        free(node);
+        return 1;
+    }
+    return 0;
+}
+
+void dns_flight_clear(connection *cxt)
+{
+    dns_flight *node;
+    dns_flight *next;
+
+    if (cxt == NULL)
+        return;
+    node = cxt->flight;
+    cxt->flight = NULL;
+    while (node != NULL) {
+        next = node->next;
+        mem_refund(sizeof(*node));
+        free(node);
+        node = next;
+    }
+}
+
 void dns_parser(packetinfo *pi)
 {
     ldns_status status;
@@ -105,17 +199,15 @@ void dns_parser(packetinfo *pi)
             return;
         }
         dlog("[D] DNS Answer\n");
-        /* plid 0 means the query id was missing or rejected. Id 0 must not match. */
-        if (pi->cxt->plid != 0 && pi->cxt->plid == ldns_pkt_id(dns_pkt)) {
-            dlog("[D] DNS Query TID match Answer TID: %d\n", pi->cxt->plid);
-        }
-        else {
+        /* Id 0 is never stored. Another outstanding id must not hide this one. */
+        if (!dns_flight_has(pi->cxt, ldns_pkt_id(dns_pkt))) {
             dlog("[D] DNS Query TID did not match Answer TID: %d != %d - Skipping!\n",
                  pi->cxt->plid, ldns_pkt_id(dns_pkt));
             ldns_pkt_free(dns_pkt);
             update_dns_stats(pi,ERROR);
             return;
         }
+        dlog("[D] DNS Query TID match Answer TID: %d\n", ldns_pkt_id(dns_pkt));
 
         /* From isc.org wording:
          * We do not collect any of the query-response traffic that
@@ -146,6 +238,12 @@ void dns_parser(packetinfo *pi)
             return;
         }
 
+        /* The matched id supplies the query time. Other ids stay. */
+        if (!dns_flight_take(pi->cxt, ldns_pkt_id(dns_pkt))) {
+            ldns_pkt_free(dns_pkt);
+            update_dns_stats(pi, ERROR);
+            return;
+        }
         /* Send it off for processing. Capture threads hand the answer
          * to the one cache thread. -W 1 updates the cache here. */
         if (config.workers > 1) {
@@ -154,10 +252,9 @@ void dns_parser(packetinfo *pi)
         }
         else if (process_dns_answer(pi, dns_pkt) < 0)
             dlog("[D] process_dns_answer() returned -1\n");
-        /* The query and this answer have been paired. UDP has no FIN,
-         * so drop the flow now instead of holding it for UDP_TIMEOUT.
-         * TCP can carry another query before it closes. */
-        if (pi->proto == IP_PROTO_UDP)
+        /* This id is paired. UDP has no FIN, so drop the flow once
+         * nothing else is outstanding. TCP can carry another query. */
+        if (pi->proto == IP_PROTO_UDP && pi->cxt->flight == NULL)
             cxt_release(pi);
     }
     else {
@@ -182,12 +279,7 @@ void dns_parser(packetinfo *pi)
            ((pi->cxt->last_pkt_time - pi->cxt->start_time) <= 60)) {
             dlog("[D] DNS Query on an established DNS session - TID: Old:%d New:%d\n",
                  pi->cxt->plid, ldns_pkt_id(dns_pkt));
-            /* Some clients have bad or strange random src
-             * port generator and will gladly reuse the same
-             * src port several times in a short time period.
-             * To implement this fully, each cxt should be include
-             * the TID in its tuple, but still this will make a mess :/
-             */
+            /* Same socket, another query still unanswered. Keep both ids. */
         }
         else
             dlog("[D] New DNS Query\n");
@@ -200,19 +292,29 @@ void dns_parser(packetinfo *pi)
             return;
         }
 
-        if ((pi->cxt->plid = ldns_pkt_id(dns_pkt))) {
-            dlog("[D] DNS Query with TID = %d\n", pi->cxt->plid);
-            if (pi->pheader != NULL) {
-                pi->cxt->query_time = pi->pheader->ts.tv_sec;
-                pi->cxt->query_usec = pi->pheader->ts.tv_usec;
-            }
-        }
+        {
+            uint16_t qid = ldns_pkt_id(dns_pkt);
+            time_t sec = 0;
+            long usec = 0;
 
-        else {
-            dlog("[E] Error getting DNS TID from Query!\n");
-            ldns_pkt_free(dns_pkt);
-            update_dns_stats(pi, ERROR);
-            return;
+            /* Id 0 is not a stored query, so it must not match an answer. */
+            if (qid == 0) {
+                dlog("[E] Error getting DNS TID from Query!\n");
+                ldns_pkt_free(dns_pkt);
+                update_dns_stats(pi, ERROR);
+                return;
+            }
+            if (pi->pheader != NULL) {
+                sec = pi->pheader->ts.tv_sec;
+                usec = pi->pheader->ts.tv_usec;
+            }
+            if (!dns_flight_add(pi->cxt, qid, sec, usec)) {
+                dlog("[E] Could not store DNS TID\n");
+                ldns_pkt_free(dns_pkt);
+                update_dns_stats(pi, ERROR);
+                return;
+            }
+            dlog("[D] DNS Query with TID = %d\n", qid);
         }
     }
 
