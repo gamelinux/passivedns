@@ -22,12 +22,14 @@ search-pdns.pl still needs the Perl database modules:
 
 root@localhost: sudo apt install libdatetime-perl libdate-simple-perl libdbd-mysql-perl
 
-First you need to add a user to the MySQL or MariaDB server. Grant only
-SELECT, CREATE, INSERT, and UPDATE on the pdns database.
+First you need to add a user to the MySQL or MariaDB server. Grant
+SELECT, CREATE, INSERT, UPDATE, ALTER, and INDEX on the pdns database.
+ALTER and INDEX are used once, when an older varchar(255) ANSWER column
+is widened so a long TXT fits.
 
 mysql> CREATE DATABASE pdns;
 mysql> CREATE USER 'pdns'@'localhost' IDENTIFIED BY 'choose-a-password';
-mysql> GRANT SELECT, CREATE, INSERT, UPDATE ON pdns.* TO 'pdns'@'localhost';
+mysql> GRANT SELECT, CREATE, INSERT, UPDATE, ALTER, INDEX ON pdns.* TO 'pdns'@'localhost';
 mysql> FLUSH PRIVILEGES;
 
 Then you need to start up pdns2db.py

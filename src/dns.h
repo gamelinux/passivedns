@@ -186,6 +186,8 @@ typedef struct _pdns_record {
     pdns_asset             *passet;    /* Head of dns assets */
     struct _pdns_record    *next;      /* Next dns record */
     struct _pdns_record    *prev;      /* Prev dns record */
+    struct _pdns_record    *older;     /* Toward the oldest last_seen */
+    struct _pdns_record    *newer;     /* Toward the newest last_seen */
 } pdns_record;
 
 /* Declare */

@@ -13,7 +13,10 @@ Security Monitoring (NSM) and general digital forensics.
 PassiveDNS sniffs traffic from an interface or reads a pcap-file and outputs
 the DNS-server answers to a log file. PassiveDNS can cache/aggregate duplicate
 DNS answers in-memory, limiting the amount of data in the logfile without
-losing the essense in the DNS answer.
+losing the essense in the DNS answer. The JSON cache key is the question
+type, the response code, and the whole sorted answer set. The same set is
+logged again after 24 hours (-P). A different address is a new set, so a
+CDN that rotates addresses logs one line for each set.
 
 Build instructions for Ubuntu 26.04 are in doc/INSTALL.
 Report a vulnerability through SECURITY.md.

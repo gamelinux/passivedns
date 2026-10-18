@@ -225,14 +225,15 @@ def _in_text(needle, text):
     return needle in text
 
 
-def expect_many(binary, label, packets, needles, args=None, linktype=1, times=None):
+def expect_many(binary, label, packets, needles, args=None, linktype=1, times=None, absent=()):
     code, text, err, mode_ok, _out = run_case(
         binary, packets, args or [], linktype, times)
     lines = [ln for ln in text.splitlines() if ln.strip()]
     found = [n for n in needles if any(_in_text(n, ln) for ln in lines)]
-    if code != 0 or not mode_ok or len(lines) != len(needles) or len(found) != len(needles):
-        return False, "%s: exit %s mode %s lines %d found %s\n%s\n%s" % (
-            label, code, mode_ok, len(lines), found, text, err)
+    extra = [item for item in absent if item in text]
+    if code != 0 or not mode_ok or len(lines) != len(needles) or len(found) != len(needles) or extra:
+        return False, "%s: exit %s mode %s lines %d found %s unexpected %s\n%s\n%s" % (
+            label, code, mode_ok, len(lines), found, extra, text, err)
     return True, "\n".join(lines)
 
 
@@ -716,7 +717,7 @@ def cases():
     yield ("json-a", qa("10.20.0.1", "10.20.0.2", 42000, 0x5151,
                         "json.example.com", socket.inet_aton("9.9.9.9")),
            '"query":"json.example.com","qtype":"A","answer":["9.9.9.9"],"atype":"A","qid":20817',
-           ["--format", "json"])
+           ["--format", "json"], 1, ('"atypes"',))
 
     twice = qa("10.20.0.1", "10.20.0.2", 42001, 0x5152,
                "jsondup.example.com", socket.inet_aton("9.9.9.9"))
@@ -764,7 +765,7 @@ def cases():
         eth(ipv4("10.20.1.1", "10.20.1.2", 17, udp(42010, 53, dns_query(0x5154, "multi.example.com")))),
         eth(ipv4("10.20.1.2", "10.20.1.1", 17, udp(53, 42010, multi))),
     ], '"answer":["1.1.1.1","9.9.9.9"],"atype":"A","qid":20820',
-       ["--format", "json"])
+       ["--format", "json"], 1, ('"atypes"',))
 
     yield ("json-nx", [
         eth(ipv4("10.20.2.1", "10.20.2.2", 17, udp(42020, 53, dns_query(0x5155, "nxjson.example.com")))),
@@ -807,6 +808,90 @@ def cases():
            ["--format", "json"], 1, (),
            ((1700000000, 900000), (1700000001, 100000)))
 
+    mixed = dns_answers(0x5160, "mixed.example.com", 1, [
+        ("mixed.example.com", 5, 300, name("cdn.example.com")),
+        ("mixed.example.com", 1, 60, socket.inet_aton("9.9.9.9")),
+    ])
+    yield ("json-mixed", [
+        eth(ipv4("10.21.0.1", "10.21.0.2", 17, udp(42160, 53, dns_query(0x5160, "mixed.example.com")))),
+        eth(ipv4("10.21.0.2", "10.21.0.1", 17, udp(53, 42160, mixed))),
+    ], '"answer":["9.9.9.9","cdn.example.com"],"atype":"A","atypes":["A","CNAME"],"qid":20832',
+       ["--format", "json"])
+
+    yield ("json-quote", qa("10.21.0.3", "10.21.0.4", 42161, 0x5161,
+                            "quote.example.com", txt_rdata('say "hi"\\x'), qtype=16),
+           '"answer":["say \\"hi\\"\\\\x"]',
+           ["--format", "json"])
+
+    # 257 outstanding ids on one flow. The oldest is dropped. The newest matches.
+    cap_pkts = []
+    cap_times = []
+    for i in range(1, 258):
+        if i == 1:
+            qn = "oldflight.example.com"
+        elif i == 257:
+            qn = "newflight.example.com"
+        else:
+            qn = "f%04d.example.com" % i
+        cap_pkts.append(eth(ipv4("10.40.0.1", "10.40.0.2", 17,
+                                 udp(44000, 53, dns_query(i, qn)))))
+        cap_times.append((1700000100, i))
+    cap_pkts.append(eth(ipv4("10.40.0.2", "10.40.0.1", 17, udp(
+        53, 44000, dns_response(1, "oldflight.example.com", socket.inet_aton("1.1.1.1"))))))
+    cap_times.append((1700000100, 300))
+    cap_pkts.append(eth(ipv4("10.40.0.2", "10.40.0.1", 17, udp(
+        53, 44000, dns_response(257, "newflight.example.com", socket.inet_aton("9.9.9.9"))))))
+    cap_times.append((1700000100, 301))
+    yield ("flight-cap", cap_pkts, ("newflight.example.com",), None, 1,
+           ("oldflight.example.com",), cap_times)
+
+    # A full list still answers the oldest stored id.
+    full_pkts = []
+    full_times = []
+    for i in range(1, 257):
+        qn = "fullold.example.com" if i == 1 else "k%04d.example.com" % i
+        full_pkts.append(eth(ipv4("10.40.2.1", "10.40.2.2", 17,
+                                  udp(44002, 53, dns_query(i, qn)))))
+        full_times.append((1700003000, i))
+    full_pkts.append(eth(ipv4("10.40.2.2", "10.40.2.1", 17, udp(
+        53, 44002, dns_response(1, "fullold.example.com", socket.inet_aton("1.1.1.1"))))))
+    full_times.append((1700003000, 400))
+    yield ("flight-full", full_pkts, ("fullold.example.com",), None, 1,
+           (), full_times)
+
+    # A retry while the list is full must not drop the oldest id.
+    retry_pkts = []
+    retry_times = []
+    for i in range(1, 257):
+        qn = "retryold.example.com" if i == 1 else "r%04d.example.com" % i
+        retry_pkts.append(eth(ipv4("10.40.3.1", "10.40.3.2", 17,
+                                   udp(44003, 53, dns_query(i, qn)))))
+        retry_times.append((1700004000, i))
+    retry_pkts.append(eth(ipv4("10.40.3.1", "10.40.3.2", 17, udp(
+        44003, 53, dns_query(256, "r0256.example.com")))))
+    retry_times.append((1700004000, 500))
+    retry_pkts.append(eth(ipv4("10.40.3.2", "10.40.3.1", 17, udp(
+        53, 44003, dns_response(1, "retryold.example.com", socket.inet_aton("1.1.1.1"))))))
+    retry_times.append((1700004000, 501))
+    yield ("flight-retry", retry_pkts, ("retryold.example.com",), None, 1,
+           (), retry_times)
+
+    # An id older than UDP_TIMEOUT does not match, even if the flow is still open.
+    age_base = 1700002000
+    yield ("flight-age", [
+        eth(ipv4("10.40.1.1", "10.40.1.2", 17, udp(44001, 53, dns_query(7, "oldage.example.com")))),
+        eth(ipv4("10.40.1.2", "10.40.1.1", 17, udp(
+            53, 44001, dns_response(7, "oldage.example.com", socket.inet_aton("1.2.3.4"))))),
+        eth(ipv4("10.40.1.1", "10.40.1.2", 17, udp(44001, 53, dns_query(8, "newage.example.com")))),
+        eth(ipv4("10.40.1.2", "10.40.1.1", 17, udp(
+            53, 44001, dns_response(8, "newage.example.com", socket.inet_aton("9.9.9.9"))))),
+    ], ("newage.example.com",), None, 1, ("oldage.example.com",), (
+        (age_base, 0),
+        (age_base + 61, 0),
+        (age_base + 61, 1),
+        (age_base + 61, 2),
+    ))
+
 
 def main():
     binary = find_binary()
@@ -822,7 +907,7 @@ def main():
             ok, detail = expect_open(binary, label, packets, needle[1], needle[2], args)
         elif isinstance(needle, tuple):
             ok, detail = expect_many(
-                binary, label, packets, needle, args, linktype, times)
+                binary, label, packets, needle, args, linktype, times, absent)
         elif isinstance(needle, list):
             ok, detail = expect_all(
                 binary, label, packets, needle, args, linktype, absent, times)

@@ -7,7 +7,27 @@ Changes with PassiveDNS 2.0.1
   0x80-0xff are written as \u00XX, so a TXT record cannot split
   the line or make it invalid JSON
 - When a new cache entry does not fit under -S, drop the oldest
-  names even if they are younger than 12 hours
+  names even if they are younger than 12 hours. That drop follows
+  last_seen order instead of scanning every hash bucket. The name
+  hash has 100003 buckets
+- A JSON answer section with more than one RR type also carries
+  atypes, one type per answer, in the same order as answer. A
+  one-type line is unchanged. pdns2db.py stores each value under
+  its own type
+- ANSWER is MEDIUMTEXT. The unique key is a SHA-256 of the stored
+  answer, so a long TXT is inserted. An older varchar(255) table
+  is widened on the first pdns2db.py run. A failed insert is logged
+- One flow keeps at most 256 outstanding query ids. An id older
+  than 60 seconds is dropped. A retry does not drop another id.
+  An answer for an id that is still stored is logged when the
+  list is full
+- --format json warns when -X (except 0), -f, -d, -j, -J, -L, or
+  -Y is set. Those flags apply to the text log. -X 0 still logs
+  an empty NOERROR
+- Startup stats include kernel and interface drop counters from
+  pcap_stats. A savefile has no counters and prints n/a
+- -W warns that fanout defragments IPv4 only. An IPv6 fragment can
+  miss the worker that saw the query
 
 Changes with PassiveDNS 2.0.0
 

@@ -45,10 +45,16 @@
 * The default log line is one JSON object. The fields are query,
   qtype, answer, atype, qid, rc, ttl, cnt, fts, lts, pts, src_ip,
   src_port, dst_ip, dst_port, proto, vlan, and qtm. answer is an
-  array of the rdata strings in that response. qtm is the time from
-  the DNS query to this answer. fts is the first query time and lts
-  is the latest answer time. Type 255 is printed as ANY. --format
-  text keeps the || line, one record per rdata.
+  array of the rdata strings in that response. When that section
+  has more than one RR type, atypes is inserted after atype, one
+  type per answer, in the same order. A one-type line does not
+  include atypes, so it matches passivednsgo and passivednsrust.
+  qtm is the time from the DNS query to this answer. fts is the
+  first query time and lts is the latest answer time. Type 255 is
+  printed as ANY. --format text keeps the || line, one record per
+  rdata. -X other than 0, -f, -d, -j, -J, -L, and -Y apply to that
+  text line. JSON logs every answer type and warns if those flags
+  are set. -X 0 still logs an empty NOERROR on the JSON line.
 * The JSON line logs every answer-section type, the same set as
   passivednsgo. NS, MX, TXT, SOA, and a non-zero response code are
   included. --format text still follows the -X mask. An empty
@@ -68,7 +74,13 @@
   there will not be any tracking of domains,
   if a client did not request one. A bit spoof
   protection. The connection keeps every outstanding
-  DNS transaction id and the time of that query.
+  DNS transaction id and the time of that query,
+  up to 256 ids. An id older than 60 seconds
+  (UDP_TIMEOUT) is dropped. A later answer for
+  that id is not logged. An answer for an id
+  that is still stored is logged, including
+  when the list is full. A retry of a stored
+  id does not drop a different one.
   One socket can have several queries in flight.
   An answer is paired with its own id, and the
   logged query time is that query's time.
@@ -83,18 +95,28 @@
 
 ## Domain caching
 * When a DNS question and answer is received, it is stored
-  in an internal linked list. A new answer is written once,
-  and its seen-count is cleared. Later sightings of that
-  same answer stay in the cache. They are written when 24
-  hours have passed (DNSPRINTTIME, 86400 seconds), or when
-  passivedns exits. The count on that line is only the
-  sightings not written yet, including a repeat whose
-  timestamp did not move. pdns2db.py adds that count to the
-  stored total. An entry with nothing new is not written again.
+  in an internal linked list. On the JSON line the cache key
+  is the question type, the response code, and the whole
+  sorted answer set. A response that adds, drops, or replaces
+  one address is a different set and is logged as its own line.
+  A CDN that rotates addresses therefore logs one line per
+  distinct set. The same set is written once, and its
+  seen-count is cleared. Later sightings of that same set stay
+  in the cache. They are written when 24 hours have passed
+  (DNSPRINTTIME, 86400 seconds), or when passivedns exits.
+  The count on that line is only the sightings not written yet,
+  including a repeat whose timestamp did not move. pdns2db.py
+  adds that count to the stored total. An entry with nothing
+  new is not written again.
 * A record that has not been updated for 12 hours
   (DNSCACHETIMEOUT, 43200 seconds) is dropped from the cache.
   Both intervals can be changed with -P and -C.
   If a new record does not fit under the -S memory limit, the
   oldest names are dropped even when they are younger than that.
+  Names are kept in last_seen order, so that drop does not scan
+  every hash bucket. The 10 minute idle scan still walks the
+  table to expire assets. The name hash has 100003 buckets.
+  Shutdown stats include the kernel and interface drop counters.
+  A pcap file has no counters and prints n/a.
 
 

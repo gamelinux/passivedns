@@ -3,9 +3,14 @@ Upgrade from PassiveDNS 2.0.0 to 2.0.1:
 - 2.0.0 writes one JSON object per line. tools/pdns2db.pl only
   reads || lines, so a 2.0.0 log does not fill the database.
 - Install tools/pdns2db.py and run it in place of pdns2db.pl.
-  It reads JSON and || lines. The table does not change.
-  python3-pymysql is the database driver. search-pdns.pl is
-  unchanged.
+  It reads JSON and || lines. python3-pymysql is the database
+  driver. search-pdns.pl is unchanged.
+- The first run widens ANSWER from varchar(255) to MEDIUMTEXT and
+  adds AHASH, the SHA-256 of the stored answer. The unique key
+  becomes (MAPTYPE, AHASH, RR, QUERY). That rewrite needs ALTER
+  and INDEX, and it locks the table until it finishes. A new
+  database gets this shape from CREATE TABLE. A long TXT is stored.
+  A failed insert is logged and that row is skipped.
 - Until that script is in place, start the 2.0.0 daemon with
   --format text so the log stays in the old || form.
 - A full cache of young names, such as a flood of NXDOMAIN

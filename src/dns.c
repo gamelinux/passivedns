@@ -42,14 +42,57 @@
 
 extern globalconfig config;
 
-/* The 12th Carol number and 7th Carol prime, 16769023, is also a Carol emirp */
-//#define DBUCKET_SIZE     16769023
-#define DBUCKET_SIZE  3967   /* Carol that is primes */
+/* Prime bucket count. 3967 made chains of hundreds of names at the
+ * default 256 MB limit. 100003 keeps those chains short. The pointer
+ * table is about 800 KB. */
+#define DBUCKET_SIZE  100003
 
 pdns_record *dbucket[DBUCKET_SIZE];
 
 /* Record currently being updated. Expiration must not free it. */
 static pdns_record *expire_keep = NULL;
+
+/* Names in last_seen order. The head is the oldest. */
+static pdns_record *oldest_record = NULL;
+static pdns_record *newest_record = NULL;
+
+static void rec_time_unlink(pdns_record *rec)
+{
+    if (rec == NULL)
+        return;
+    if (rec->older != NULL)
+        rec->older->newer = rec->newer;
+    else if (oldest_record == rec)
+        oldest_record = rec->newer;
+    if (rec->newer != NULL)
+        rec->newer->older = rec->older;
+    else if (newest_record == rec)
+        newest_record = rec->older;
+    rec->older = NULL;
+    rec->newer = NULL;
+}
+
+static void rec_time_push(pdns_record *rec)
+{
+    rec->older = newest_record;
+    rec->newer = NULL;
+    if (newest_record != NULL)
+        newest_record->newer = rec;
+    else
+        oldest_record = rec;
+    newest_record = rec;
+}
+
+/* last_seen moved forward. The name becomes the newest. */
+static void rec_time_touch(pdns_record *rec)
+{
+    if (rec == NULL || newest_record == rec)
+        return;
+    rec_time_unlink(rec);
+    rec_time_push(rec);
+}
+
+static pdns_record *next_expirable(time_t expire_t);
 
 uint64_t hash(unsigned char *str)
 {
@@ -61,13 +104,71 @@ uint64_t hash(unsigned char *str)
     return hash % DBUCKET_SIZE;
 }
 
-/* Outstanding query ids. The struct stays private to the parser. */
+/* Outstanding query ids. The struct stays private to the parser.
+ * One flow keeps at most DNS_FLIGHT_MAX ids. An id older than
+ * UDP_TIMEOUT is dropped, so a lost query cannot pin -S. */
+#define DNS_FLIGHT_MAX 256
+
 struct _dns_flight {
     struct _dns_flight *next;
     uint16_t id;
     time_t sec;
     long usec;
 };
+
+static void dns_flight_free(dns_flight **prev)
+{
+    dns_flight *node = *prev;
+
+    *prev = node->next;
+    mem_refund(sizeof(*node));
+    free(node);
+}
+
+/* Drop ids older than UDP_TIMEOUT. The cap is separate: an answer,
+ * or a retry of an id already stored, must not push another id off. */
+static void dns_flight_age(connection *cxt, time_t sec)
+{
+    dns_flight **prev;
+
+    if (cxt == NULL)
+        return;
+    prev = &cxt->flight;
+    while (*prev != NULL) {
+        dns_flight *node = *prev;
+
+        if (sec >= node->sec && (sec - node->sec) > UDP_TIMEOUT)
+            dns_flight_free(prev);
+        else
+            prev = &node->next;
+    }
+}
+
+/* Make one free slot for a new id. The new node is not linked yet. */
+static void dns_flight_make_room(connection *cxt)
+{
+    for (;;) {
+        dns_flight **oldest;
+        dns_flight **scan;
+        int count = 0;
+
+        if (cxt->flight == NULL)
+            return;
+        oldest = &cxt->flight;
+        for (scan = &cxt->flight; *scan != NULL; scan = &(*scan)->next) {
+            dns_flight *node = *scan;
+
+            count++;
+            if (node->sec < (*oldest)->sec ||
+                (node->sec == (*oldest)->sec &&
+                 node->usec < (*oldest)->usec))
+                oldest = scan;
+        }
+        if (count < DNS_FLIGHT_MAX)
+            return;
+        dns_flight_free(oldest);
+    }
+}
 
 static int dns_flight_has(connection *cxt, uint16_t id)
 {
@@ -87,6 +188,7 @@ static int dns_flight_has(connection *cxt, uint16_t id)
 static int dns_flight_add(connection *cxt, uint16_t id, time_t sec, long usec)
 {
     dns_flight *node;
+    int found = 0;
 
     if (cxt == NULL || id == 0)
         return 0;
@@ -95,6 +197,13 @@ static int dns_flight_add(connection *cxt, uint16_t id, time_t sec, long usec)
             continue;
         node->sec = sec;
         node->usec = usec;
+        found = 1;
+        break;
+    }
+    /* Age after a refresh so this id is young. Do not drop another
+     * id: a retry is not a new query. */
+    dns_flight_age(cxt, sec);
+    if (found) {
         cxt->plid = id;
         return 1;
     }
@@ -108,6 +217,9 @@ static int dns_flight_add(connection *cxt, uint16_t id, time_t sec, long usec)
     node->id = id;
     node->sec = sec;
     node->usec = usec;
+    /* Room is made only for a new id, and only after it can be stored.
+     * The node is not on the list, so this drop cannot free it. */
+    dns_flight_make_room(cxt);
     node->next = cxt->flight;
     cxt->flight = node;
     cxt->plid = id;
@@ -238,7 +350,11 @@ void dns_parser(packetinfo *pi)
             return;
         }
 
-        /* The matched id supplies the query time. Other ids stay. */
+        /* The matched id supplies the query time. Other ids stay.
+         * An id older than UDP_TIMEOUT is already gone. A full list
+         * still answers an id that is stored. */
+        if (pi->cxt != NULL && pi->pheader != NULL)
+            dns_flight_age(pi->cxt, pi->pheader->ts.tv_sec);
         if (!dns_flight_take(pi->cxt, ldns_pkt_id(dns_pkt))) {
             ldns_pkt_free(dns_pkt);
             update_dns_stats(pi, ERROR);
@@ -322,8 +438,9 @@ void dns_parser(packetinfo *pi)
 }
 
 typedef struct _ans_part {
-    char   *data;
-    size_t  len;
+    char    *data;
+    size_t   len;
+    uint16_t rrtype;
 } ans_part;
 
 static int cmp_ans_part(const void *a, const void *b)
@@ -341,11 +458,16 @@ static int cmp_ans_part(const void *a, const void *b)
         return -1;
     if (pa->len > pb->len)
         return 1;
+    if (pa->rrtype < pb->rrtype)
+        return -1;
+    if (pa->rrtype > pb->rrtype)
+        return 1;
     return 0;
 }
 
-/* Count, then each answer as a length and its bytes. No separator
- * byte, so a TXT value cannot add or cut elements. */
+/* Count, then each answer as its type, a pad, a length, and its bytes.
+ * No separator byte, so a TXT value cannot add or cut elements.
+ * The type stays with the bytes through the sort. */
 static unsigned char *pack_answers(ans_part *parts, int n, size_t *outlen)
 {
     size_t total = 4;
@@ -354,9 +476,9 @@ static unsigned char *pack_answers(ans_part *parts, int n, size_t *outlen)
     unsigned char *buf;
 
     for (i = 0; i < n; i++) {
-        if (parts[i].len > UINT32_MAX || total > SIZE_MAX - 4 - parts[i].len)
+        if (parts[i].len > UINT32_MAX || total > SIZE_MAX - 8 - parts[i].len)
             return NULL;
-        total += 4 + parts[i].len;
+        total += 8 + parts[i].len;
     }
     buf = malloc(total + 1);
     if (buf == NULL)
@@ -369,10 +491,14 @@ static unsigned char *pack_answers(ans_part *parts, int n, size_t *outlen)
         off += 4;
     }
     for (i = 0; i < n; i++) {
+        uint16_t typ = parts[i].rrtype;
+        uint16_t pad = 0;
         uint32_t plen = (uint32_t)parts[i].len;
 
-        memcpy(buf + off, &plen, 4);
-        off += 4;
+        memcpy(buf + off, &typ, 2);
+        memcpy(buf + off + 2, &pad, 2);
+        memcpy(buf + off + 4, &plen, 4);
+        off += 8;
         if (plen > 0)
             memcpy(buf + off, parts[i].data, plen);
         off += plen;
@@ -380,6 +506,26 @@ static unsigned char *pack_answers(ans_part *parts, int n, size_t *outlen)
     buf[off] = '\0';
     *outlen = total;
     return buf;
+}
+
+/* Next packed answer. off starts at 4, after the count. */
+static int pack_next(const unsigned char *raw, uint32_t answer_len, size_t *off,
+                     uint16_t *typ, const unsigned char **data, uint32_t *plen)
+{
+    uint16_t pad = 0;
+
+    if (*off + 8 > answer_len)
+        return -1;
+    memcpy(typ, raw + *off, 2);
+    memcpy(&pad, raw + *off + 2, 2);
+    (void)pad;
+    memcpy(plen, raw + *off + 4, 4);
+    *off += 8;
+    if ((size_t)*plen > answer_len - *off)
+        return -1;
+    *data = raw + *off;
+    *off += *plen;
+    return 0;
 }
 
 static void strip_one_dot(char *s)
@@ -740,6 +886,7 @@ static int log_json_answer(packetinfo *pi, ldns_rr *qrr, ldns_pkt *dns_pkt)
             }
             parts[kept].data = text;
             parts[kept].len = tlen;
+            parts[kept].rrtype = (uint16_t)t;
             kept++;
             atype = (uint16_t)t;
             ttl = ldns_rr_ttl(rr);
@@ -1325,41 +1472,59 @@ typedef struct _outbuf {
     size_t cap;
 } outbuf;
 
+static int out_reserve(outbuf *o, size_t need)
+{
+    char *grown;
+    size_t ncap;
+
+    if (need >= LOG_LINE_MAX || o->len >= LOG_LINE_MAX - need)
+        return -1;
+    if (o->len + need + 1 <= o->cap)
+        return 0;
+    ncap = o->cap ? o->cap : 128;
+    while (o->len + need + 1 > ncap) {
+        if (ncap > LOG_LINE_MAX / 2) {
+            ncap = o->len + need + 1;
+            break;
+        }
+        ncap *= 2;
+    }
+    grown = (char *)realloc(o->data, ncap);
+    if (!grown)
+        return -1;
+    o->data = grown;
+    o->cap = ncap;
+    return 0;
+}
+
 static int out_add(outbuf *o, const char *fmt, ...)
 {
     va_list ap, aq;
     int need;
-    char *grown;
-    size_t ncap;
 
     va_start(ap, fmt);
     va_copy(aq, ap);
     need = vsnprintf(NULL, 0, fmt, ap);
     va_end(ap);
-    if (need < 0 || o->len + (size_t)need >= LOG_LINE_MAX) {
+    if (need < 0 || out_reserve(o, (size_t)need) != 0) {
         va_end(aq);
         return -1;
-    }
-    if (o->len + (size_t)need + 1 > o->cap) {
-        ncap = o->cap ? o->cap : 128;
-        while (o->len + (size_t)need + 1 > ncap) {
-            if (ncap > LOG_LINE_MAX / 2) {
-                ncap = o->len + (size_t)need + 1;
-                break;
-            }
-            ncap *= 2;
-        }
-        grown = (char *)realloc(o->data, ncap);
-        if (!grown) {
-            va_end(aq);
-            return -1;
-        }
-        o->data = grown;
-        o->cap = ncap;
     }
     vsnprintf(o->data + o->len, o->cap - o->len, fmt, aq);
     va_end(aq);
     o->len += (size_t)need;
+    return 0;
+}
+
+static int out_add_mem(outbuf *o, const char *s, size_t n)
+{
+    if (n == 0)
+        return 0;
+    if (out_reserve(o, n) != 0)
+        return -1;
+    memcpy(o->data + o->len, s, n);
+    o->len += n;
+    o->data[o->len] = '\0';
     return 0;
 }
 
@@ -1368,27 +1533,38 @@ static int out_add(outbuf *o, const char *fmt, ...)
         goto print_free; \
 } while (0)
 
+static int json_byte_escaped(unsigned char c)
+{
+    return c == '"' || c == '\\' || c < 0x20 || c >= 0x80;
+}
+
+/* Copy a run of safe bytes in one write. Escapes stay one at a time. */
 static int json_add_bytes(outbuf *o, const char *s, size_t n)
 {
-    size_t i;
+    size_t i = 0;
 
     if (out_add(o, "\"") != 0)
         return -1;
     if (s == NULL)
         n = 0;
-    for (i = 0; i < n; i++) {
-        unsigned char c = (unsigned char)s[i];
+    while (i < n) {
+        size_t start = i;
+        unsigned char c;
 
+        while (i < n && !json_byte_escaped((unsigned char)s[i]))
+            i++;
+        if (i > start && out_add_mem(o, s + start, i - start) != 0)
+            return -1;
+        if (i >= n)
+            break;
+        c = (unsigned char)s[i];
         if (c == '"' || c == '\\') {
             if (out_add(o, "\\%c", c) != 0)
                 return -1;
         }
-        else if (c < 0x20 || c >= 0x80) {
-            if (out_add(o, "\\u%04x", c) != 0)
-                return -1;
-        }
-        else if (out_add(o, "%c", c) != 0)
+        else if (out_add(o, "\\u%04x", c) != 0)
             return -1;
+        i++;
     }
     return out_add(o, "\"");
 }
@@ -1448,6 +1624,7 @@ static int build_v2_json(outbuf *o, pdns_record *l, pdns_asset *p,
     const struct timeval *fts;
     uint8_t proto;
     int first = 1;
+    int mixed = 0;
     int rc = -1;
 
     if (l == NULL || p == NULL || p->rr == NULL || p->answer == NULL)
@@ -1479,27 +1656,67 @@ static int build_v2_json(outbuf *o, pdns_record *l, pdns_asset *p,
         uint32_t count = 0;
         uint32_t ai;
         size_t off = 4;
+        uint16_t first_type = 0;
 
         memcpy(&count, raw, 4);
         for (ai = 0; ai < count; ai++) {
+            uint16_t typ = 0;
             uint32_t plen = 0;
+            const unsigned char *data = NULL;
 
-            if (off + 4 > p->answer_len)
+            if (pack_next(raw, p->answer_len, &off, &typ, &data, &plen) != 0)
                 goto json_done;
-            memcpy(&plen, raw + off, 4);
-            off += 4;
-            if ((size_t)plen > p->answer_len - off)
-                goto json_done;
+            if (ai == 0)
+                first_type = typ;
+            else if (typ != first_type)
+                mixed = 1;
             if (!first && out_add(o, ",") != 0)
                 goto json_done;
             first = 0;
-            if (json_add_bytes(o, (const char *)raw + off, plen) != 0)
+            if (json_add_bytes(o, (const char *)data, plen) != 0)
                 goto json_done;
-            off += plen;
         }
     }
     if (out_add(o, "],\"atype\":") != 0 || json_add_str(o, atype) != 0)
         goto json_done;
+    /* One type for the whole list stays atype. A mixed section also
+     * carries atypes, parallel to answer, so the loader can tell a
+     * CNAME from an A. A one-type line does not gain this field. */
+    if (mixed) {
+        const unsigned char *raw = p->answer;
+        uint32_t count = 0;
+        uint32_t ai;
+        size_t off = 4;
+        int tfirst = 1;
+
+        if (out_add(o, ",\"atypes\":[") != 0)
+            goto json_done;
+        memcpy(&count, raw, 4);
+        for (ai = 0; ai < count; ai++) {
+            uint16_t typ = 0;
+            uint32_t plen = 0;
+            const unsigned char *data = NULL;
+            char *tname;
+
+            if (pack_next(raw, p->answer_len, &off, &typ, &data, &plen) != 0)
+                goto json_done;
+            tname = ldns_rr_type2str((ldns_rr_type)typ);
+            if (tname == NULL)
+                goto json_done;
+            if (!tfirst && out_add(o, ",") != 0) {
+                free(tname);
+                goto json_done;
+            }
+            tfirst = 0;
+            if (json_add_str(o, tname) != 0) {
+                free(tname);
+                goto json_done;
+            }
+            free(tname);
+        }
+        if (out_add(o, "]") != 0)
+            goto json_done;
+    }
     if (out_add(o, ",\"qid\":%u,\"rc\":", p->qid) != 0 ||
             json_add_str(o, rcbuf) != 0)
         goto json_done;
@@ -2205,6 +2422,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
                 (const char *)pdnsr->qname) == 0) {
             /* match :) */
             memcpy( &pdnsr->last_seen, &pi->pheader->ts, sizeof( struct timeval ) );
+            rec_time_touch(pdnsr);
             pdnsr->af = pi->cxt->af;
             pdnsr->cip = pi->cxt->s_ip; /* This should always be the client IP */
             pdnsr->sip = pi->cxt->d_ip; /* This should always be the server IP */
@@ -2264,6 +2482,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
     pdnsr->proto = pi->proto;
 
     dbucket[dnshash] = pdnsr;
+    rec_time_push(pdnsr);
     return pdnsr;
 }
 
@@ -2299,7 +2518,21 @@ void expire_dns_records(size_t need)
         uint64_t before;
         run = 1;
         before = config.mem_limit_size;
-        for (iter = 0; iter < DBUCKET_SIZE; iter++)
+        /* A timed scan still visits every name so idle assets expire.
+         * An insert that does not fit drops from the oldest name, which
+         * is the head of the last_seen list. */
+        if (need > 0) {
+            pdns_record *rec;
+
+            if (oldest_record != NULL &&
+                oldest_record->last_seen.tv_sec < oldest)
+                oldest = oldest_record->last_seen.tv_sec;
+            while ((rec = next_expirable(expire_t)) != NULL) {
+                delete_dns_record(rec, &dbucket[hash(rec->qname)]);
+                removed++;
+            }
+        }
+        for (iter = 0; need == 0 && iter < DBUCKET_SIZE; iter++)
         {
             pdnsr = dbucket[iter];
             while (pdnsr != NULL)
@@ -2405,6 +2638,18 @@ void expire_all_dns_records()
     }
 }
 
+static pdns_record *next_expirable(time_t expire_t)
+{
+    pdns_record *rec = oldest_record;
+
+    while (rec != NULL && rec->last_seen.tv_sec <= expire_t) {
+        if (rec != expire_keep)
+            return rec;
+        rec = rec->newer;
+    }
+    return NULL;
+}
+
 void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
 {
     pdns_record *prev = pdnsr->prev;    /* Older DNS record */
@@ -2413,6 +2658,7 @@ void delete_dns_record(pdns_record * pdnsr, pdns_record ** bucket_ptr)
     pdns_asset *tmp_asset;
 
     dlog("[D] Deleting domain record: %s\n", pdnsr->qname);
+    rec_time_unlink(pdnsr);
 
     /* Delete all domain assets */
     while (asset != NULL)

@@ -99,7 +99,12 @@ PDNS_DB_USER, and PDNS_DB_TABLE (default pdns). sql/pdns.sql is that table.
 A name or table that is not an identifier is refused. A port must be
 1..65535. The pcre list files are operator input and are treated as trusted.
 pdns2db.py reads a JSON log and a || log. One answer is one row. An empty
-answer with a response code is stored as that code.
+answer with a response code is stored as that code. A mixed answer section
+is stored under each value's own type when the line carries atypes.
+ANSWER is MEDIUMTEXT. The unique key is a SHA-256 of the stored answer.
+The first run widens an older varchar(255) table. That needs ALTER and
+INDEX as well as SELECT, CREATE, INSERT, and UPDATE, and it locks the
+table until it finishes. A failed insert is logged.
 
     sudo apt install python3-pymysql
     sudo apt install libdatetime-perl libdate-simple-perl libdbd-mysql-perl

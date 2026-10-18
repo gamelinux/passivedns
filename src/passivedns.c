@@ -127,6 +127,10 @@ void reopen_log_files();
 void game_over ();
 void got_packet(u_char *useless, const struct pcap_pkthdr *pheader,
                 const u_char *packet);
+#ifdef __linux__
+static pcap_t *fanout_handles[PDNS_WORKERS_MAX];
+static int fanout_nhandles;
+#endif
 #ifdef HAVE_PFRING
 void pfring_got_packet(const struct pfring_pkthdr *pfheader,
                        const u_char *packet, const u_char *useless);
@@ -1685,6 +1689,43 @@ void print_pdns_stats()
          PDNS_U32_GET(config.p_s.eth_recv));
     flog(handle, "-- Total VLAN packets received            :%12u\n",
          PDNS_U32_GET(config.p_s.vlan_recv));
+    {
+        struct pcap_stat ps;
+        unsigned long drop = 0;
+        unsigned long ifdrop = 0;
+        int ok = 0;
+        int i;
+
+        if (config.handle != NULL && pcap_stats(config.handle, &ps) == 0) {
+            drop += ps.ps_drop;
+            ifdrop += ps.ps_ifdrop;
+            ok = 1;
+        }
+#ifdef __linux__
+        for (i = 0; i < fanout_nhandles; i++) {
+            if (fanout_handles[i] != NULL &&
+                pcap_stats(fanout_handles[i], &ps) == 0) {
+                drop += ps.ps_drop;
+                ifdrop += ps.ps_ifdrop;
+                ok = 1;
+            }
+        }
+#else
+        (void)i;
+#endif
+        if (ok) {
+            flog(handle, "-- Kernel packets dropped               :%12lu\n",
+                 drop);
+            flog(handle, "-- Interface packets dropped            :%12lu\n",
+                 ifdrop);
+        }
+        else {
+            flog(handle, "-- Kernel packets dropped               :%12s\n",
+                 "n/a");
+            flog(handle, "-- Interface packets dropped            :%12s\n",
+                 "n/a");
+        }
+    }
 
     if (config.use_stats_file) {
         fclose(handle);
@@ -1717,6 +1758,7 @@ void usage()
     olog(" -d <delimiter>  Delimiter between fields in log file (default: ||).\n");
     olog(" --format <json|text>  Record format (default: json).\n");
     olog("                 json is one object per line. text is the || line.\n");
+    olog("                 -X (except 0), -f, -d, -j, -J, -L, and -Y apply to text.\n");
 #ifdef HAVE_JSON
     olog(" -j              Use JSON as output in log file.\n");
     olog(" -J              Use JSON as output in NXDOMAIN log file.\n");
@@ -1913,8 +1955,6 @@ static void warn_if_gro(const char *dev)
 #define CACHE_Q_MAX 8192
 #define LOG_Q_MAX 8192
 
-static pcap_t *fanout_handles[PDNS_WORKERS_MAX];
-static int fanout_nhandles;
 static connection **fanout_buckets[PDNS_WORKERS_MAX];
 static pthread_t cap_th[PDNS_WORKERS_MAX];
 static pthread_t cache_th;
@@ -2713,6 +2753,29 @@ static void check_worker_args(void)
         elog("[!] -W cannot use interface \"any\"\n");
         exit(1);
     }
+    /* PACKET_FANOUT_FLAG_DEFRAG is IPv4. An IPv6 fragment has no ports,
+     * so the kernel hash can deliver it to another worker than the query. */
+    elog("[!] -W defragments IPv4 before the fanout hash. An IPv6 fragment can miss the worker that saw the query and will not be logged.\n");
+}
+
+static void warn_json_ignored(int saw_x, const char *x_arg, int saw_f,
+                              int saw_d, int saw_j, int saw_J, int saw_L,
+                              int saw_Y)
+{
+    if (config.log_format != PDNS_LOG_JSON)
+        return;
+    if (saw_x && (x_arg == NULL || strcmp(x_arg, "0") != 0))
+        elog("[!] --format json does not use -X type letters. Only -X 0 logs an empty NOERROR. Other answer types are already logged.\n");
+    if (saw_f)
+        elog("[!] --format json ignores -f. The JSON object always has the same fields.\n");
+    if (saw_d)
+        elog("[!] --format json ignores -d.\n");
+    if (saw_j || saw_J)
+        elog("[!] --format json ignores -j and -J. Those flags are the text-mode printer.\n");
+    if (saw_L)
+        elog("[!] --format json writes every response code to the main log. -L does not select a separate NXDOMAIN file.\n");
+    if (saw_Y)
+        elog("[!] --format json ignores -Y.\n");
 }
 
 extern int optind, opterr, optopt; // getopt()
@@ -2722,6 +2785,9 @@ int main(int argc, char *argv[])
 {
     int ch = 0; // verbose_already = 0;
     int daemon = 0;
+    int saw_x = 0, saw_f = 0, saw_d = 0, saw_j = 0, saw_J = 0;
+    int saw_L = 0, saw_Y = 0;
+    const char *x_arg = NULL;
     memset(&config, 0, sizeof(globalconfig));
     config.pid_fd = -1;
     config.workers = 1;
@@ -2841,6 +2907,7 @@ int main(int argc, char *argv[])
             config.cflags |= CONFIG_QUIET;
             break;
         case 'L':
+            saw_L = 1;
             config.output_log_nxd = 1;
             config.logfile_nxd = optarg;
             break;
@@ -2852,17 +2919,21 @@ int main(int argc, char *argv[])
             config.output_syslog = 1;
             break;
         case 'Y':
+            saw_Y = 1;
             config.output_syslog_nxd = 1;
             break;
 #ifdef HAVE_JSON
         case 'j':
+            saw_j = 1;
             config.use_json = 1;
             break;
         case 'J':
+            saw_J = 1;
             config.use_json_nxd = 1;
             break;
 #endif /* HAVE_JSON */
         case 'd':
+            saw_d = 1;
             config.log_delimiter = optarg;
             break;
         case 'b':
@@ -2917,9 +2988,12 @@ int main(int argc, char *argv[])
             config.statsfile = optarg;
             break;
         case 'f':
+            saw_f = 1;
             parse_field_flags(optarg);
             break;
         case 'X':
+            saw_x = 1;
+            x_arg = optarg;
             parse_dns_flags(optarg);
             break;
         case 'D':
@@ -2987,6 +3061,7 @@ int main(int argc, char *argv[])
      * a capture device is required. */
     resolve_privs();
     check_worker_args();
+    warn_json_ignored(saw_x, x_arg, saw_f, saw_d, saw_j, saw_J, saw_L, saw_Y);
 
     /* Fall back to log file if syslog is not used */
     if (config.output_syslog == 0)

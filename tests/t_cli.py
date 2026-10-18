@@ -253,7 +253,8 @@ def main():
            and "--stats-file <file>" in out
            and "-W <n>" in out and "--fanout-group <id>" in out
            and "AF_PACKET" in out
-           and "--format <json|text>" in out,
+           and "--format <json|text>" in out
+           and "apply to text" in out,
            "help", out + err)
 
     missing = tempfile.mkdtemp(prefix="pdns-missing-")
@@ -283,7 +284,9 @@ def main():
     code, out, err = run([], empty)
     report(code == 0 and "Snapshot length: 65535" in out
            and "Record letters: 46CDNPRShV" in out
-           and "-s " not in out,
+           and "-s " not in out
+           and "Kernel packets dropped" in out
+           and "n/a" in out,
            "startup-letters", out + err)
 
     code, out, err = run(["-q"], empty)
@@ -321,6 +324,20 @@ def main():
     code, out, err = run(["-X", "F"], empty)
     report(code == 0 and "Record letters: F" in out and "FT" not in out,
            "spf-does-not-enable-txt", out + err)
+
+    code, out, err = run(["-X", "4", "-f", "i", "-d", "|"], empty)
+    report(code == 0 and "does not use -X" in err and "ignores -f" in err
+           and "ignores -d" in err and "does not select a separate" in err,
+           "json-flag-warn", out + err)
+    code, out, err = run(["-X", "0"], empty)
+    report(code == 0 and "does not use -X" not in err
+           and "does not select a separate" in err,
+           "json-x0", out + err)
+    code, out, err = run(["--format", "text", "-X", "4", "-f", "i", "-d", "|"], empty)
+    report(code == 0 and "Log format: text" in out
+           and "does not use -X" not in err and "ignores -f" not in err
+           and "ignores -d" not in err and "does not select a separate" not in err,
+           "text-flags-used", out + err)
 
     code, out, err = run(["-S", "0"], empty)
     report(code != 0 and "memory limit" in (out + err), "mem-zero", out + err)
@@ -374,7 +391,8 @@ def main():
            "workers-missing-iface", out + err)
 
     code, out, err = run_live(["-W", "2", "-i", "nosuch-pdns0", "--fanout-group", "9"])
-    report(code != 0 and "pcap_open_live" in (out + err),
+    report(code != 0 and "pcap_open_live" in (out + err)
+           and "IPv6 fragment" in (out + err),
            "workers-missing-device", out + err)
 
     code, out, err = workers_daemon_missing()

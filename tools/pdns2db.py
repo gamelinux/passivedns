@@ -17,6 +17,7 @@ answer list is stored as that code, for example NXDOMAIN.
 
 import argparse
 import calendar
+import hashlib
 import json
 import os
 import re
@@ -25,7 +26,7 @@ import sys
 import time
 from datetime import datetime
 
-VERSION = "1.0"
+VERSION = "1.1"
 IDENT = re.compile(r"^[A-Za-z0-9_]+$")
 UNIX_TS = re.compile(r"^(\d+)(?:\.\d+)?$")
 ISO_TS = re.compile(
@@ -38,9 +39,9 @@ TIMEOUT = 1
 
 INSERT_SQL = """
 INSERT INTO {table} (
-  QUERY,RR,MAPTYPE,ANSWER,TTL,COUNT,LAST_SEEN,FIRST_SEEN
+  QUERY,RR,MAPTYPE,ANSWER,AHASH,TTL,COUNT,LAST_SEEN,FIRST_SEEN
 ) VALUES (
-  %s,%s,%s,%s,%s,%s,FROM_UNIXTIME(%s),FROM_UNIXTIME(%s)
+  %s,%s,%s,%s,%s,%s,%s,FROM_UNIXTIME(%s),FROM_UNIXTIME(%s)
 ) ON DUPLICATE KEY UPDATE
   TTL = IF(TTL < VALUES(TTL), VALUES(TTL), TTL),
   COUNT = COUNT + VALUES(COUNT),
@@ -54,15 +55,16 @@ CREATE TABLE IF NOT EXISTS {table} (
   QUERY         varchar(255)         NOT NULL DEFAULT   '',
   MAPTYPE       varchar(10)          NOT NULL DEFAULT   '',
   RR            varchar(10)          NOT NULL DEFAULT   '',
-  ANSWER        varchar(255)         NOT NULL DEFAULT   '',
+  ANSWER        MEDIUMTEXT           NOT NULL,
+  AHASH         BINARY(32)           NOT NULL,
   TTL           int(10)              NOT NULL DEFAULT  '0',
   COUNT         BIGINT(20) UNSIGNED  NOT NULL DEFAULT  '1',
   FIRST_SEEN    DATETIME             NOT NULL,
   LAST_SEEN     DATETIME             NOT NULL,
   PRIMARY KEY (ID),
-  UNIQUE KEY MARQ (MAPTYPE,ANSWER,RR,QUERY),
+  UNIQUE KEY MARQ (MAPTYPE,AHASH,RR,QUERY),
   KEY query_idx (QUERY),
-  KEY answer_idx (ANSWER)
+  KEY answer_idx (ANSWER(255))
 )
 """
 
@@ -86,6 +88,37 @@ def strip_dot(value):
 def db_text(value):
     # A NUL would cut the value off in a C database client.
     return value.replace("\x00", "\\000")
+
+
+def answer_hash(value):
+    # The unique key cannot hold a full TXT. This is the stored bytes.
+    return hashlib.sha256(value.encode("utf-8")).digest()
+
+
+def upgrade_statements(table, answer_type, has_ahash):
+    """SQL that widens ANSWER and keys the row by a hash of that value.
+
+    A new table is already MEDIUMTEXT with AHASH, so this returns nothing.
+    answer_type is the information_schema DATA_TYPE, compared lowercase.
+    """
+    kind = (answer_type or "").lower()
+    if kind in ("mediumtext", "longtext") and has_ahash:
+        return []
+    stmts = []
+    if not has_ahash:
+        stmts.append(f"ALTER TABLE {table} ADD COLUMN AHASH BINARY(32) NULL")
+        stmts.append(
+            f"UPDATE {table} SET AHASH = UNHEX(SHA2(ANSWER, 256)) WHERE AHASH IS NULL"
+        )
+    stmts.append(f"ALTER TABLE {table} DROP INDEX answer_idx")
+    stmts.append(f"ALTER TABLE {table} DROP INDEX MARQ")
+    stmts.append(f"ALTER TABLE {table} MODIFY ANSWER MEDIUMTEXT NOT NULL")
+    stmts.append(f"ALTER TABLE {table} MODIFY AHASH BINARY(32) NOT NULL")
+    stmts.append(
+        f"ALTER TABLE {table} ADD UNIQUE KEY MARQ (MAPTYPE, AHASH, RR, QUERY)"
+    )
+    stmts.append(f"ALTER TABLE {table} ADD KEY answer_idx (ANSWER(255))")
+    return stmts
 
 
 def unix_seconds(value):
@@ -129,7 +162,10 @@ class CaptureDB:
     def _rec(self, *parts):
         with open(self.path, "a", encoding="utf-8") as handle:
             for part in parts:
-                text = "" if part is None else str(part)
+                if isinstance(part, (bytes, bytearray)):
+                    text = part.hex()
+                else:
+                    text = "" if part is None else str(part)
                 text = text.replace("\n", "\\n").replace("\r", "\\r")
                 handle.write(text + "\n")
             handle.write("END\n")
@@ -139,6 +175,8 @@ class CaptureDB:
         return True
 
     def execute(self, sql, args):
+        if os.environ.get("PDNS_TEST_FAIL_INSERT") == "1":
+            raise RuntimeError("data too long for column")
         self._rec("EXEC", sql, *args)
 
     def close(self):
@@ -161,6 +199,14 @@ class MysqlDB:
         cur = self.raw.cursor()
         try:
             cur.execute(sql, args)
+        finally:
+            cur.close()
+
+    def query(self, sql, args=None):
+        cur = self.raw.cursor()
+        try:
+            cur.execute(sql, args)
+            return cur.fetchall()
         finally:
             cur.close()
 
@@ -302,16 +348,22 @@ def rows_from_json(line):
         return []
     qtype = obj.get("qtype") if isinstance(obj.get("qtype"), str) else ""
     atype = obj.get("atype") if isinstance(obj.get("atype"), str) else qtype
+    atypes = obj.get("atypes")
+    use_types = (
+        isinstance(atypes, list)
+        and len(atypes) == len(answers)
+        and all(isinstance(item, str) for item in atypes)
+    )
     rc = obj.get("rc") if isinstance(obj.get("rc"), str) else ""
     query = strip_dot(query)
     rows = []
-    for item in answers:
+    for index, item in enumerate(answers):
         if not isinstance(item, str):
             continue
         rows.append({
             "query": query,
             "rr": "IN",
-            "type": atype,
+            "type": atypes[index] if use_types else atype,
             "answer": strip_dot(item),
             "ttl": ttl_n,
             "count": count_n,
@@ -341,19 +393,56 @@ def parse_line(line):
 def setup_db(db, table):
     try:
         db.do(f"select count(*) from {table} where 1=0")
+    except Exception:
+        try:
+            db.do(CREATE_SQL.format(table=table))
+        except Exception:
+            die(f"[E] Table {table} does not exist, and we could not create it! Sorry!")
         return
-    except Exception:
-        pass
     try:
-        db.do(CREATE_SQL.format(table=table))
-    except Exception:
-        die(f"[E] Table {table} does not exist, and we could not create it! Sorry!")
+        ensure_answer_schema(db, table)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        die(f"[E] Could not widen {table}.ANSWER: {exc}")
+
+
+def ensure_answer_schema(db, table):
+    query = getattr(db, "query", None)
+    if query is None:
+        return
+    rows = query(
+        "SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s "
+        "AND COLUMN_NAME IN ('ANSWER', 'AHASH')",
+        (table,),
+    )
+    answer_type = ""
+    has_ahash = False
+    for name, data_type in rows:
+        if str(name).upper() == "ANSWER":
+            answer_type = str(data_type)
+        elif str(name).upper() == "AHASH":
+            has_ahash = True
+    statements = upgrade_statements(table, answer_type, has_ahash)
+    for sql in statements:
+        try:
+            db.do(sql)
+            logger(f"[*] {sql}")
+        except Exception as exc:
+            code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else None
+            # 1060 duplicate column, 1061 duplicate key, 1091 missing index.
+            if code in (1060, 1061, 1091):
+                logger(f"[*] Skipped ({code}): {sql}")
+                continue
+            raise
 
 
 def put_row(db, table, row):
     sql = INSERT_SQL.format(table=table)
+    stored = db_text(row["answer"])
     db.execute(sql, (
-        db_text(row["query"]), row["rr"], row["type"], db_text(row["answer"]),
+        db_text(row["query"]), row["rr"], row["type"], stored, answer_hash(stored),
         row["ttl"], row["count"], row["ts"], row["ts"],
     ))
 
@@ -411,7 +500,11 @@ def parse_logfile(path, start, stop, db, table, lists, alertlog, nodb, verbose):
             for row in kept:
                 try:
                     put_row(db, table, row)
-                except Exception:
+                except Exception as exc:
+                    logger(
+                        f"[E] Insert failed for {row['query']} {row['type']} "
+                        f"({len(row['answer'])} bytes): {exc}"
+                    )
                     continue
     finally:
         handle.close()

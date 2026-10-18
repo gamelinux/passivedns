@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Perl tool checks. A stub DBI records SQL and bound values. No database."""
 
+import importlib.util
 import json
 import os
 import shutil
@@ -279,6 +280,83 @@ def main():
                and "a\\000b" in joined_bind
                and "badttl.example.com" not in joined_bind,
                "pdns2db-json", proc.stdout + proc.stderr + "\n" + cap)
+
+        spec = importlib.util.spec_from_file_location("pdns2db_mod", PDNS2DB)
+        pdns2db_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pdns2db_mod)
+        fresh = pdns2db_mod.upgrade_statements("pdns", "mediumtext", True)
+        legacy = pdns2db_mod.upgrade_statements("pdns", "varchar", False)
+        report(fresh == []
+               and any("MEDIUMTEXT" in sql for sql in legacy)
+               and any("ADD COLUMN AHASH" in sql for sql in legacy)
+               and any("UNIQUE KEY MARQ (MAPTYPE, AHASH, RR, QUERY)" in sql for sql in legacy),
+               "pdns2db-schema", "\n".join(legacy))
+
+        long_answer = "A" * 400
+        mixpath = os.path.join(tmp, "mixed.log")
+        with open(mixpath, "w", encoding="utf-8") as fh:
+            fh.write(jline({
+                "query": "mixed.example.com",
+                "qtype": "A",
+                "answer": ["cdn.example.com", "9.9.9.9"],
+                "atype": "A",
+                "atypes": ["CNAME", "A"],
+                "rc": "NOERROR",
+                "ttl": 300,
+                "cnt": 1,
+                "pts": pts,
+            }) + "\n")
+            fh.write(jline({
+                "query": "long.example.com",
+                "qtype": "TXT",
+                "answer": [long_answer],
+                "atype": "TXT",
+                "rc": "NOERROR",
+                "ttl": 60,
+                "cnt": 1,
+                "pts": pts,
+            }) + "\n")
+            fh.write(jline({
+                "query": "sametype.example.com",
+                "qtype": "A",
+                "answer": ["1.1.1.1", "9.9.9.9"],
+                "atype": "A",
+                "rc": "NOERROR",
+                "ttl": 60,
+                "cnt": 1,
+                "pts": pts,
+            }) + "\n")
+        open(capture, "w").close()
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", mixpath], loaded)
+        cap = open(capture, encoding="utf-8").read() if os.path.exists(capture) else ""
+        execs = [b for b in blocks(cap) if b and b[0] == "EXEC"]
+
+        def paired(rtype, answer):
+            for block in execs:
+                text = "\n" + "\n".join(block) + "\n"
+                if ("\n%s\n" % rtype) in text and ("\n%s\n" % answer) in text:
+                    return True
+            return False
+
+        report(proc.returncode == 0
+               and paired("CNAME", "cdn.example.com")
+               and paired("A", "9.9.9.9")
+               and not paired("A", "cdn.example.com")
+               and not paired("CNAME", "9.9.9.9")
+               and paired("TXT", long_answer)
+               and paired("A", "1.1.1.1")
+               and paired("A", "9.9.9.9"),
+               "pdns2db-mixed", proc.stdout + proc.stderr + "\n" + cap)
+
+        fail_env = perl_env(lib, capture, {
+            "PDNS_DB_PASSWORD": "s3cret",
+            "PDNS_TEST_FAIL_INSERT": "1",
+        })
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", mixpath], fail_env)
+        report(proc.returncode == 0 and "Insert failed" in proc.stdout
+               and "data too long" in proc.stdout
+               and "mixed.example.com" in proc.stdout,
+               "pdns2db-insert-error", proc.stdout + proc.stderr)
 
         proc = run(["perl", SEARCH, "-s", ""], env)
         report(proc.returncode == 0 and "need to search" in (proc.stdout + proc.stderr),
