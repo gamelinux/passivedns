@@ -1,4 +1,4 @@
--- PassiveDNS table created by tools/pdns2db.pl when it is missing.
+-- PassiveDNS table created by tools/pdns2db.py when it is missing.
 -- The default name is pdns. PDNS_DB_TABLE may select another identifier.
 -- search-pdns.pl and www/index.php read this table.
 

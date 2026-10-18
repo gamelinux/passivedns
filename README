@@ -18,7 +18,12 @@ losing the essense in the DNS answer.
 Build instructions for Ubuntu 26.04 are in doc/INSTALL.
 Report a vulnerability through SECURITY.md.
 
-Example output from version 1.0.0->Current in the log file (/var/log/passivedns.log):
+Version 2 writes one JSON object per line. --format text writes the
+|| lines from 1.x. A shortened JSON line looks like this:
+
+{"query":"upload.youtube.com","qtype":"A","answer":["74.125.43.117"],"atype":"A","rc":"NOERROR","ttl":46587,"cnt":5}
+
+Example || output (--format text) in the log file (/var/log/passivedns.log):
 
 #timestamp||dns-client ||dns-server||RR class||Query||Query Type||Answer||TTL||Count
 1322849924.408856||10.1.1.1||8.8.8.8||IN||upload.youtube.com.||A||74.125.43.117||46587||5

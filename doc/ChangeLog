@@ -1,3 +1,14 @@
+Changes with PassiveDNS 2.0.1
+
+- tools/pdns2db.py reads the JSON log and the older || lines.
+  It replaces tools/pdns2db.pl. One answer is one database row.
+  An empty answer with a response code is stored as that code
+- A TXT value is one JSON array element. Bytes 0x00-0x1f and
+  0x80-0xff are written as \u00XX, so a TXT record cannot split
+  the line or make it invalid JSON
+- When a new cache entry does not fit under -S, drop the oldest
+  names even if they are younger than 12 hours
+
 Changes with PassiveDNS 2.0.0
 
 - Log one JSON object per line by default, the same fields as

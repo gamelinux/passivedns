@@ -89,10 +89,12 @@
   hours have passed (DNSPRINTTIME, 86400 seconds), or when
   passivedns exits. The count on that line is only the
   sightings not written yet, including a repeat whose
-  timestamp did not move. pdns2db.pl adds that count to the
+  timestamp did not move. pdns2db.py adds that count to the
   stored total. An entry with nothing new is not written again.
 * A record that has not been updated for 12 hours
   (DNSCACHETIMEOUT, 43200 seconds) is dropped from the cache.
   Both intervals can be changed with -P and -C.
+  If a new record does not fit under the -S memory limit, the
+  oldest names are dropped even when they are younger than that.
 
 

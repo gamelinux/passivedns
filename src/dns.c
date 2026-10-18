@@ -321,9 +321,65 @@ void dns_parser(packetinfo *pi)
     ldns_pkt_free(dns_pkt);
 }
 
-static int cmp_strptr(const void *a, const void *b)
+typedef struct _ans_part {
+    char   *data;
+    size_t  len;
+} ans_part;
+
+static int cmp_ans_part(const void *a, const void *b)
 {
-    return strcmp(*(char *const *)a, *(char *const *)b);
+    const ans_part *pa = a;
+    const ans_part *pb = b;
+    size_t n = pa->len < pb->len ? pa->len : pb->len;
+    int cmp = 0;
+
+    if (n > 0)
+        cmp = memcmp(pa->data, pb->data, n);
+    if (cmp != 0)
+        return cmp;
+    if (pa->len < pb->len)
+        return -1;
+    if (pa->len > pb->len)
+        return 1;
+    return 0;
+}
+
+/* Count, then each answer as a length and its bytes. No separator
+ * byte, so a TXT value cannot add or cut elements. */
+static unsigned char *pack_answers(ans_part *parts, int n, size_t *outlen)
+{
+    size_t total = 4;
+    size_t off;
+    int i;
+    unsigned char *buf;
+
+    for (i = 0; i < n; i++) {
+        if (parts[i].len > UINT32_MAX || total > SIZE_MAX - 4 - parts[i].len)
+            return NULL;
+        total += 4 + parts[i].len;
+    }
+    buf = malloc(total + 1);
+    if (buf == NULL)
+        return NULL;
+    off = 0;
+    {
+        uint32_t count = (uint32_t)n;
+
+        memcpy(buf + off, &count, 4);
+        off += 4;
+    }
+    for (i = 0; i < n; i++) {
+        uint32_t plen = (uint32_t)parts[i].len;
+
+        memcpy(buf + off, &plen, 4);
+        off += 4;
+        if (plen > 0)
+            memcpy(buf + off, parts[i].data, plen);
+        off += plen;
+    }
+    buf[off] = '\0';
+    *outlen = total;
+    return buf;
 }
 
 static void strip_one_dot(char *s)
@@ -388,7 +444,7 @@ static char *join_space(char **parts, int n)
 }
 
 /* Character-strings, without the length byte and without quotes. */
-static char *txt_raw(ldns_rr *rr)
+static char *txt_raw(ldns_rr *rr, size_t *outlen)
 {
     size_t total = 1;
     size_t o = 0;
@@ -427,6 +483,8 @@ static char *txt_raw(ldns_rr *rr)
         o += d[0];
     }
     out[o] = '\0';
+    if (outlen != NULL)
+        *outlen = o;
     return out;
 }
 
@@ -548,8 +606,11 @@ static char *json_rdata(ldns_rr *rr)
         free_parts(parts, 4);
         return out;
     case LDNS_RR_TYPE_TXT:
-    case LDNS_RR_TYPE_SPF:
-        return txt_raw(rr);
+    case LDNS_RR_TYPE_SPF: {
+        size_t n = 0;
+
+        return txt_raw(rr, &n);
+    }
     case LDNS_RR_TYPE_SOA:
         parts[0] = rdf_text(ldns_rr_rdf(rr, 0), 1);
         parts[1] = rdf_text(ldns_rr_rdf(rr, 1), 1);
@@ -609,9 +670,9 @@ static int log_json_answer(packetinfo *pi, ldns_rr *qrr, ldns_pkt *dns_pkt)
     int nanswers;
     int i;
     int kept = 0;
-    char **parts = NULL;
-    char *joined = NULL;
-    size_t jlen = 1;
+    ans_part *parts = NULL;
+    unsigned char *joined = NULL;
+    size_t jlen = 0;
     uint16_t qtype;
     uint16_t atype;
     uint16_t rcode;
@@ -653,22 +714,34 @@ static int log_json_answer(packetinfo *pi, ldns_rr *qrr, ldns_pkt *dns_pkt)
     if (rcode == 0) {
         for (i = 0; i < nanswers; i++) {
             ldns_rr *rr = ldns_rr_list_rr(answers, i);
-            char *text = json_rdata(rr);
+            ldns_rr_type t = ldns_rr_get_type(rr);
+            char *text;
+            size_t tlen = 0;
             int k;
 
+            if (t == LDNS_RR_TYPE_TXT || t == LDNS_RR_TYPE_SPF)
+                text = txt_raw(rr, &tlen);
+            else {
+                text = json_rdata(rr);
+                if (text != NULL)
+                    tlen = strlen(text);
+            }
             if (text == NULL) {
                 for (k = 0; k < kept; k++)
-                    free(parts[k]);
+                    free(parts[k].data);
                 free(parts);
                 free(qname);
                 return -1;
             }
-            if (text[0] == '\0') {
+            /* A TXT that starts with NUL is not empty. Length 0 is. */
+            if (tlen == 0) {
                 free(text);
                 continue;
             }
-            parts[kept++] = text;
-            atype = (uint16_t)ldns_rr_get_type(rr);
+            parts[kept].data = text;
+            parts[kept].len = tlen;
+            kept++;
+            atype = (uint16_t)t;
             ttl = ldns_rr_ttl(rr);
         }
     }
@@ -681,23 +754,13 @@ static int log_json_answer(packetinfo *pi, ldns_rr *qrr, ldns_pkt *dns_pkt)
         }
         atype = qtype;
         ttl = 0;
-        joined = calloc(1, 1);
+        joined = pack_answers(NULL, 0, &jlen);
     }
     else {
-        qsort(parts, (size_t)kept, sizeof(*parts), cmp_strptr);
+        qsort(parts, (size_t)kept, sizeof(*parts), cmp_ans_part);
+        joined = pack_answers(parts, kept, &jlen);
         for (i = 0; i < kept; i++)
-            jlen += strlen(parts[i]) + 1;
-        joined = malloc(jlen);
-        if (joined != NULL) {
-            joined[0] = '\0';
-            for (i = 0; i < kept; i++) {
-                if (i > 0)
-                    strcat(joined, "\x1e");
-                strcat(joined, parts[i]);
-            }
-        }
-        for (i = 0; i < kept; i++)
-            free(parts[i]);
+            free(parts[i].data);
         free(parts);
     }
     if (joined == NULL) {
@@ -716,7 +779,7 @@ static int log_json_answer(packetinfo *pi, ldns_rr *qrr, ldns_pkt *dns_pkt)
     fake._rr_type = atype;
     fake._rr_class = LDNS_RR_CLASS_IN;
     fake._ttl = ttl;
-    update_pdns_record_asset(pi, pr, &fake, (unsigned char *)joined,
+    update_pdns_record_asset(pi, pr, &fake, joined, jlen,
                              qtype, (uint16_t)ldns_pkt_id(dns_pkt), rcode);
     free(joined);
     return 0;
@@ -1058,7 +1121,7 @@ int cache_dns_objects(packetinfo *pi, ldns_rdf *rdf_data,
 
         /* Update the pdns record with the pdns asset */
         update_pdns_record_asset(pi, pr, rr, (unsigned char*)rdomain_name,
-                                 0, 0, 0);
+                                 strlen(rdomain_name), 0, 0, 0);
 
         /* If CNAME, free domain_name, and cp rdomain_name to domain_name */
         if (ldns_rr_get_type(rr) == LDNS_RR_TYPE_CNAME) {
@@ -1120,11 +1183,15 @@ static void asset_json_meta(pdns_asset *passet, packetinfo *pi,
 
 void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
                               ldns_rr *rr, unsigned char *rdomain_name,
-                              uint16_t qtype, uint16_t qid, uint16_t rc)
+                              size_t alen, uint16_t qtype, uint16_t qid,
+                              uint16_t rc)
 {
     pdns_asset *passet = pr->passet;
     pdns_asset *head = passet;
     ldns_rr *prr = NULL;
+
+    if (rdomain_name == NULL || alen > UINT32_MAX)
+        return;
 
     dlog("Searching: %u, %s, %s\n", rr->_rr_type, pr->qname, rdomain_name);
 
@@ -1138,8 +1205,8 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
             dlog("[*] rr match\n");
             dlog("r:%s == a:%s\n", rdomain_name, passet->answer);
             if (passet->qtype == qtype && passet->rc == rc &&
-                    strcmp((const char *)rdomain_name,
-                    (const char *)passet->answer) == 0 ) {
+                    passet->answer_len == (uint32_t)alen &&
+                    (alen == 0 || memcmp(rdomain_name, passet->answer, alen) == 0)) {
                 dlog("[*] rname/answer match\n");
                 /* We have this, update and if its over 24h since last print -
                    print it, then return */
@@ -1164,10 +1231,9 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
 
     /* Else, we got a new passet :) */
     if (passet == NULL) {
-        size_t alen = strlen((char *)rdomain_name);
         if (!mem_charge(sizeof(pdns_asset) + sizeof(ldns_rr) + alen + 1)) {
             expire_keep = pr;
-            expire_dns_records();
+            expire_dns_records(sizeof(pdns_asset) + sizeof(ldns_rr) + alen + 1);
             expire_keep = NULL;
             if (!mem_charge(sizeof(pdns_asset) + sizeof(ldns_rr) + alen + 1))
                 return;
@@ -1199,6 +1265,7 @@ void update_pdns_record_asset(packetinfo *pi, pdns_record *pr,
             return;
         }
         memcpy(passet->answer, rdomain_name, alen);
+        passet->answer_len = (uint32_t)alen;
         PDNS_U32_INC(config.p_s.dns_assets);
         PDNS_U32_INC(config.dns_assets);
     }
@@ -1301,27 +1368,36 @@ static int out_add(outbuf *o, const char *fmt, ...)
         goto print_free; \
 } while (0)
 
-static int json_add_str(outbuf *o, const char *s)
+static int json_add_bytes(outbuf *o, const char *s, size_t n)
 {
-    const unsigned char *p;
+    size_t i;
 
     if (out_add(o, "\"") != 0)
         return -1;
     if (s == NULL)
-        s = "";
-    for (p = (const unsigned char *)s; *p; p++) {
-        if (*p == '"' || *p == '\\') {
-            if (out_add(o, "\\%c", *p) != 0)
+        n = 0;
+    for (i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+
+        if (c == '"' || c == '\\') {
+            if (out_add(o, "\\%c", c) != 0)
                 return -1;
         }
-        else if (*p < 0x20) {
-            if (out_add(o, "\\u%04x", *p) != 0)
+        else if (c < 0x20 || c >= 0x80) {
+            if (out_add(o, "\\u%04x", c) != 0)
                 return -1;
         }
-        else if (out_add(o, "%c", *p) != 0)
+        else if (out_add(o, "%c", c) != 0)
             return -1;
     }
     return out_add(o, "\"");
+}
+
+static int json_add_str(outbuf *o, const char *s)
+{
+    if (s == NULL)
+        s = "";
+    return json_add_bytes(o, s, strlen(s));
 }
 
 static void rcode_text(uint16_t rc, char *buf, size_t n)
@@ -1370,7 +1446,6 @@ static int build_v2_json(outbuf *o, pdns_record *l, pdns_asset *p,
     struct timeval pts;
     struct timespec now;
     const struct timeval *fts;
-    const char *cursor;
     uint8_t proto;
     int first = 1;
     int rc = -1;
@@ -1397,30 +1472,30 @@ static int build_v2_json(outbuf *o, pdns_record *l, pdns_asset *p,
         goto json_done;
     if (out_add(o, ",\"answer\":[") != 0)
         goto json_done;
-    cursor = (const char *)p->answer;
-    if (cursor[0] != '\0') {
-        while (*cursor) {
-            const char *end = strchr(cursor, '\x1e');
-            size_t n = end ? (size_t)(end - cursor) : strlen(cursor);
-            char *one = malloc(n + 1);
+    if (p->answer_len < 4)
+        goto json_done;
+    {
+        const unsigned char *raw = p->answer;
+        uint32_t count = 0;
+        uint32_t ai;
+        size_t off = 4;
 
-            if (one == NULL)
+        memcpy(&count, raw, 4);
+        for (ai = 0; ai < count; ai++) {
+            uint32_t plen = 0;
+
+            if (off + 4 > p->answer_len)
                 goto json_done;
-            memcpy(one, cursor, n);
-            one[n] = '\0';
-            if (!first && out_add(o, ",") != 0) {
-                free(one);
+            memcpy(&plen, raw + off, 4);
+            off += 4;
+            if ((size_t)plen > p->answer_len - off)
                 goto json_done;
-            }
+            if (!first && out_add(o, ",") != 0)
+                goto json_done;
             first = 0;
-            if (json_add_str(o, one) != 0) {
-                free(one);
+            if (json_add_bytes(o, (const char *)raw + off, plen) != 0)
                 goto json_done;
-            }
-            free(one);
-            if (end == NULL)
-                break;
-            cursor = end + 1;
+            off += plen;
         }
     }
     if (out_add(o, "],\"atype\":") != 0 || json_add_str(o, atype) != 0)
@@ -2148,7 +2223,7 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
         size_t qlen = strlen((char *)domain_name);
         size_t need = sizeof(pdns_record) + qlen + 1;
         if (!mem_charge(need)) {
-            expire_dns_records();
+            expire_dns_records(need);
             if (!mem_charge(need))
                 return NULL;
         }
@@ -2192,10 +2267,24 @@ pdns_record *get_pdns_record(uint64_t dnshash, packetinfo *pi,
     return pdnsr;
 }
 
-void expire_dns_records()
+static int mem_needs_room(size_t need)
+{
+    /* mem_charge never stores more than the limit, so a failed
+     * charge leaves size at or below the max. need is the bytes
+     * that did not fit. need 0 is the timed scan. */
+    if (need > 0 && need <= config.mem_limit_max &&
+            config.mem_limit_size > config.mem_limit_max - need)
+        return 1;
+    if (config.mem_limit_size > config.mem_limit_max)
+        return 1;
+    return 0;
+}
+
+void expire_dns_records(size_t need)
 {
     pdns_record *pdnsr;
     uint8_t run = 0;
+    uint8_t forced = 0;
     time_t expire_t;
     time_t oldest;
     expire_t = (config.tstamp.tv_sec - config.dnscachetimeout);
@@ -2250,15 +2339,24 @@ void expire_dns_records()
         }
 
         update_config_mem_counters();
-        /* If we are using more memory than mem_limit_max
-         * decrease expire_t too the oldest seen asset at least.
-         * Stop when a pass frees nothing, so flows and fragment
-         * buffers cannot spin this loop.
+        /* Past the soft limit, keep walking. A pass that frees
+         * something moves the cutoff five minutes past the oldest
+         * name still stored. A pass that frees nothing, because
+         * every name is younger than the cutoff, drops that oldest
+         * cohort instead. One forced pass that still frees nothing
+         * stops, so the record being inserted cannot spin the loop.
          */
-        if (config.mem_limit_size > config.mem_limit_max &&
+        if (mem_needs_room(need) &&
             removed > 0 && config.mem_limit_size < before) {
             expire_t = (oldest + 300);  /* Oldest asset + 5 minutes */
             oldest = config.tstamp.tv_sec;
+            forced = 0;
+            run = 0;
+        }
+        else if (mem_needs_room(need) && removed == 0 && !forced) {
+            expire_t = oldest;
+            oldest = config.tstamp.tv_sec;
+            forced = 1;
             run = 0;
         }
     }
@@ -2418,7 +2516,7 @@ void delete_dns_asset(pdns_asset **passet_head, pdns_asset *passet)
     }
 
     if (passet->answer)
-        mem_refund(strlen((char *)passet->answer) + 1);
+        mem_refund((size_t)passet->answer_len + 1);
     mem_refund(sizeof(ldns_rr));
     mem_refund(sizeof(pdns_asset));
     free(passet->rr);

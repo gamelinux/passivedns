@@ -1240,7 +1240,7 @@ void set_end_dns_records()
     config.intr_flag |= INTERRUPT_DNS;
 
     if (config.inpacket == 0) {
-        expire_dns_records();
+        expire_dns_records(0);
         config.dnslastchk = config.tstamp.tv_sec;
         config.intr_flag &= ~INTERRUPT_DNS;
     }
@@ -2222,7 +2222,7 @@ static void cache_expire_due(void)
     if (now <= 0)
         return;
     if ((now - config.dnslastchk) >= 600) {
-        expire_dns_records();
+        expire_dns_records(0);
         config.dnslastchk = now;
     }
 }

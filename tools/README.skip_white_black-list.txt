@@ -1,5 +1,5 @@
 # PassiveDNS (https://github.com/gamelinux/passivedns)
-# Example file for skiplist, whitelist and blacklist to be read from pdns2db.pl 
+# Example file for skiplist, whitelist and blacklist to be read from pdns2db.py 
 # Lines starting with # are not processed.
 
 # Example 1: STATIC DOMAINS/IPs

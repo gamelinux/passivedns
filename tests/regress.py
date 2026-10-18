@@ -177,7 +177,7 @@ def run_case(binary, packets, args, linktype=1, times=None):
             extra = ["--format", "text"] + extra
         cmd = [binary, "-r", pcap, "-l", log, "-L", log] + extra
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
             return 124, "", "timeout", False, ""
         text = ""
@@ -772,6 +772,25 @@ def cases():
     ], ['"query":"nxjson.example.com","qtype":"A","answer":[],"atype":"A"',
         '"rc":"NXDOMAIN"'],
        ["--format", "json"])
+
+    raw_txt = b"a\x1eb\x00c\x80d"
+    yield ("json-txt", qa("10.20.2.3", "10.20.2.4", 42021, 0x515b,
+                          "txt.example.com", bytes([len(raw_txt)]) + raw_txt, qtype=16),
+           '"query":"txt.example.com","qtype":"TXT","answer":["a\\u001eb\\u0000c\\u0080d"],"atype":"TXT"',
+           ["--format", "json"])
+
+    flood = []
+    for i in range(4000):
+        qname = "n%04x.flood.example.com" % i
+        tid = (i % 65534) + 1
+        flood.append(eth(ipv4("10.30.0.1", "10.30.0.2", 17,
+                              udp(40000, 53, dns_query(tid, qname)))))
+        flood.append(eth(ipv4("10.30.0.2", "10.30.0.1", 17,
+                              udp(53, 40000, dns_nxdomain(tid, qname)))))
+    flood.extend(qa("10.30.0.1", "10.30.0.2", 40001, 9,
+                    "kept.example.com", socket.inet_aton("9.9.9.9")))
+    yield ("json-flood", flood, '"query":"kept.example.com","qtype":"A","answer":["9.9.9.9"]',
+           ["--format", "json", "-S", "1"])
 
     yield ("json-pipe", qa("10.20.3.1", "10.20.3.2", 42030, 0x5156,
                            "a||b.example.com", socket.inet_aton("1.2.3.4")),

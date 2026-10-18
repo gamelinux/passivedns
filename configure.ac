@@ -1,7 +1,7 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([passivedns], [2.0.0])
+AC_INIT([passivedns], [2.0.1])
 AM_INIT_AUTOMAKE
 AC_USE_SYSTEM_EXTENSIONS
 AC_CONFIG_SRCDIR([src/passivedns.h])

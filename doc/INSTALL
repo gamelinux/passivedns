@@ -30,7 +30,10 @@ A source install lands in /usr/local/bin. The example init script in
 etc/init.d/passivedns-debian still points DAEMON at /usr/bin/passivedns.
 Change that path if you use the example.
 
-JSON output is optional:
+The log is one JSON object per line. --format text writes the older
+|| lines. ./configure --enable-json is only the optional jansson
+printer (-j and -J) on that text path. It is not required for the
+default JSON log.
 
     sudo apt install libjansson-dev
     ./configure --enable-json
@@ -89,22 +92,26 @@ part of the suite is skipped.
 Database tools
 --------------
 
-pdns2db.pl and search-pdns.pl talk to MySQL or MariaDB. They read the
+tools/pdns2db.py and search-pdns.pl talk to MySQL or MariaDB. They read the
 password from PDNS_DB_PASSWORD and refuse to connect without it. Optional
 settings are PDNS_DB_HOST, PDNS_DB_PORT (default 3306), PDNS_DB_NAME,
 PDNS_DB_USER, and PDNS_DB_TABLE (default pdns). sql/pdns.sql is that table.
 A name or table that is not an identifier is refused. A port must be
 1..65535. The pcre list files are operator input and are treated as trusted.
+pdns2db.py reads a JSON log and a || log. One answer is one row. An empty
+answer with a response code is stored as that code.
 
+    sudo apt install python3-pymysql
     sudo apt install libdatetime-perl libdate-simple-perl libdbd-mysql-perl
 
 Create the database and a user with SELECT, CREATE, INSERT, and UPDATE
 on it. Then:
 
     export PDNS_DB_PASSWORD='choose-a-password'
-    perl tools/pdns2db.pl --file /var/log/passivedns.log
+    python3 tools/pdns2db.py --file /var/log/passivedns.log
 
-search-pdns.pl uses the same variables. See doc/README.
+The Perl packages are for search-pdns.pl. It uses the same variables.
+See doc/README.
 
 The page in www/ is a local demo. It needs php-cli and php-mysql (mysqli),
 the same PDNS_DB_PASSWORD, and PDNS_WEB_TOKEN when it is reachable past

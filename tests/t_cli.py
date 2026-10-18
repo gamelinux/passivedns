@@ -241,7 +241,7 @@ def run_live(args):
 
 def main():
     code, out, err = run(["-V"])
-    report(code == 0 and "PassiveDNS 2.0.0" in out and "Edward Bjarte Fjellskål" in out,
+    report(code == 0 and "PassiveDNS 2.0.1" in out and "Edward Bjarte Fjellskål" in out,
            "version", out + err)
 
     code, out, err = run(["-h"])

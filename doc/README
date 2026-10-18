@@ -15,7 +15,11 @@ See doc/INSTALL for the Ubuntu 26.04 build.
 
 root@localhost: ./passivedns -i eth1 -l /var/log/passivedns.log
 
-# pdns2db.pl
+# pdns2db.py
+root@localhost: sudo apt install python3-pymysql
+
+search-pdns.pl still needs the Perl database modules:
+
 root@localhost: sudo apt install libdatetime-perl libdate-simple-perl libdbd-mysql-perl
 
 First you need to add a user to the MySQL or MariaDB server. Grant only
@@ -26,10 +30,10 @@ mysql> CREATE USER 'pdns'@'localhost' IDENTIFIED BY 'choose-a-password';
 mysql> GRANT SELECT, CREATE, INSERT, UPDATE ON pdns.* TO 'pdns'@'localhost';
 mysql> FLUSH PRIVILEGES;
 
-Then you need to start up pdns2db.pl
+Then you need to start up pdns2db.py
 
 root@localhost: export PDNS_DB_PASSWORD='choose-a-password'
-root@localhost: perl pdns2db.pl --file /var/log/passivedns.log
+root@localhost: python3 pdns2db.py --file /var/log/passivedns.log
 
 The web page in www/ is a local demo. It reads the same PDNS_DB_PASSWORD,
 PDNS_DB_PORT, and PDNS_DB_TABLE. Set PDNS_WEB_TOKEN as well if that page

@@ -149,6 +149,7 @@ typedef struct _pdns_asset {
     struct ldns_struct_rr  *rr;        /* PTR,MX,TXT,A,AAAA...  */
     uint64_t               seen;       /* Number of times seen */
     unsigned char          *answer;    /* Answer, like 8.8.8.8 or 2001:67c:21e0::16 */
+    uint32_t               answer_len; /* Bytes of answer, not counting a trailing NUL. */
     uint32_t               af;         /* IP version (4/6) AF_INET */
     struct in6_addr        sip;        /* DNS Server IP (v4/6) */
     uint8_t                sip_ttl;    /* IP TTL or hop limit of the reply */
@@ -194,11 +195,11 @@ pdns_record *get_pdns_record (uint64_t dnshash, packetinfo *pi, unsigned char *d
 const char *u_ntop (const struct in6_addr ip_addr, int af, char *dest);
 void dns_parser (packetinfo *pi);
 void update_pdns_record_asset (packetinfo *pi, pdns_record *pr, ldns_rr *rr,
-                                unsigned char *rdomain_name, uint16_t qtype,
-                                uint16_t qid, uint16_t rc);
+                                unsigned char *rdomain_name, size_t alen,
+                                uint16_t qtype, uint16_t qid, uint16_t rc);
 void print_passet (pdns_record *l, pdns_asset *p, ldns_rr *rr, ldns_rdf *lname, uint16_t rcode);
 void expire_dns_assets (pdns_record *pdnsr, time_t expire_t);
-void expire_dns_records();
+void expire_dns_records(size_t need);
 void expire_all_dns_records();
 void delete_dns_record (pdns_record *pdnsr, pdns_record **bucket_ptr);
 void delete_dns_asset (pdns_asset **passet_head, pdns_asset *passet);

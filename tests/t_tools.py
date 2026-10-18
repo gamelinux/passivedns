@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Perl tool checks. A stub DBI records SQL and bound values. No database."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -8,7 +9,7 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PDNS2DB = os.path.join(ROOT, "tools", "pdns2db.pl")
+PDNS2DB = os.path.join(ROOT, "tools", "pdns2db.py")
 SEARCH = os.path.join(ROOT, "tools", "search-pdns.pl")
 failed = 0
 
@@ -115,9 +116,8 @@ def main():
         capture = os.path.join(tmp, "capture.txt")
         env = perl_env(lib, capture)
 
-        proc = run(["perl", "-c", PDNS2DB], env)
-        report(proc.returncode == 0 and "syntax OK" in (proc.stdout + proc.stderr),
-               "pdns2db-syntax", proc.stdout + proc.stderr)
+        proc = run([sys.executable, "-m", "py_compile", PDNS2DB], env)
+        report(proc.returncode == 0, "pdns2db-syntax", proc.stdout + proc.stderr)
         proc = run(["perl", "-c", SEARCH], env)
         report(proc.returncode == 0 and "syntax OK" in (proc.stdout + proc.stderr),
                "search-syntax", proc.stdout + proc.stderr)
@@ -144,31 +144,31 @@ def main():
         with open(skip, "w", encoding="utf-8") as fh:
             fh.write("skip.example.com\n")
 
-        proc = run(["perl", PDNS2DB, "--batch", "--file", logfile], env)
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", logfile], env)
         report(proc.returncode != 0 and "PDNS_DB_PASSWORD" in (proc.stdout + proc.stderr),
                "pdns2db-password", proc.stdout + proc.stderr)
 
         badname = perl_env(lib, capture, {"PDNS_DB_NAME": "bad-name", "PDNS_DB_PASSWORD": "x"})
-        proc = run(["perl", PDNS2DB, "--batch", "--file", logfile], badname)
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", logfile], badname)
         report(proc.returncode != 0 and "identifier" in (proc.stdout + proc.stderr),
                "pdns2db-db-name", proc.stdout + proc.stderr)
 
         badtable = perl_env(lib, capture, {"PDNS_DB_TABLE": "pdns;drop", "PDNS_DB_PASSWORD": "x"})
-        proc = run(["perl", PDNS2DB, "--batch", "--file", logfile], badtable)
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", logfile], badtable)
         report(proc.returncode != 0 and "identifier" in (proc.stdout + proc.stderr),
                "pdns2db-table", proc.stdout + proc.stderr)
 
         nodb = perl_env(lib, capture)
-        proc = run(["perl", PDNS2DB, "--nodb", "--batch", "--file", logfile,
+        proc = run([sys.executable, PDNS2DB, "--nodb", "--batch", "--file", logfile,
                     "--alertlog", alert], nodb)
         report(proc.returncode == 0, "pdns2db-nodb", proc.stdout + proc.stderr)
 
         pipe_name = "|not-a-command"
         open(os.path.join(tmp, pipe_name), "w").close()
-        proc = run(["perl", PDNS2DB, "--nodb", "--batch", "--file", pipe_name], nodb, cwd=tmp)
+        proc = run([sys.executable, PDNS2DB, "--nodb", "--batch", "--file", pipe_name], nodb, cwd=tmp)
         report(proc.returncode == 0 and "Processing of |not-a-command is done" in (proc.stdout + proc.stderr),
                "pdns2db-pipe-file", proc.stdout + proc.stderr)
-        proc = run(["perl", PDNS2DB, "--nodb", "--batch", "--file", logfile,
+        proc = run([sys.executable, PDNS2DB, "--nodb", "--batch", "--file", logfile,
                     "--whitelist", white], nodb)
         report(proc.returncode == 0 and "Whitelist without Blacklist" in (proc.stdout + proc.stderr),
                "pdns2db-whitelist-only", proc.stdout + proc.stderr)
@@ -177,7 +177,7 @@ def main():
         if os.path.exists(alert):
             os.remove(alert)
         loaded = perl_env(lib, capture, {"PDNS_DB_PASSWORD": "s3cret"})
-        proc = run(["perl", PDNS2DB, "--batch", "--file", logfile, "--alertlog", alert,
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", logfile, "--alertlog", alert,
                     "--blacklist", black, "--whitelist", white, "--skiplist", skip], loaded)
         cap = open(capture, encoding="utf-8").read() if os.path.exists(capture) else ""
         alert_text = open(alert, encoding="utf-8").read() if os.path.exists(alert) else ""
@@ -187,7 +187,7 @@ def main():
         joined_sql = "\n".join(sqls)
         joined_bind = "\n".join(binds)
         report(proc.returncode == 0
-               and all("?" in sql and "evil" not in sql and "bad.example" not in sql for sql in sqls)
+               and all("%s" in sql and "evil" not in sql and "bad.example" not in sql for sql in sqls)
                and "INSERT INTO pdns" in joined_sql
                and "bad.example.com" in joined_bind
                and "good.example.com" in joined_bind
@@ -202,7 +202,7 @@ def main():
         with open(only, "w", encoding="utf-8") as fh:
             fh.write("good.example.com\n")
         open(capture, "w").close()
-        proc = run(["perl", PDNS2DB, "--batch", "--file", logfile, "--onlylist", only], loaded)
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", logfile, "--onlylist", only], loaded)
         cap = open(capture, encoding="utf-8").read() if os.path.exists(capture) else ""
         binds = ["\n".join(b[2:]) for b in blocks(cap) if b and b[0] == "EXEC"]
         joined_bind = "\n".join(binds)
@@ -212,6 +212,73 @@ def main():
                and "skip.example.com" not in joined_bind
                and "evil" not in joined_bind,
                "pdns2db-onlylist", proc.stdout + proc.stderr + "\n" + cap)
+
+        def jline(obj):
+            return json.dumps(obj, separators=(",", ":"))
+
+        pts = "2023-11-14T22:13:21.000000Z"
+        jpath = os.path.join(tmp, "json.log")
+        with open(jpath, "w", encoding="utf-8") as fh:
+            fh.write(jline({
+                "query": "json.example.com",
+                "qtype": "A",
+                "answer": ["9.9.9.9", "1.1.1.1"],
+                "atype": "A",
+                "rc": "NOERROR",
+                "ttl": 300,
+                "cnt": 2,
+                "pts": pts,
+            }) + "\n")
+            fh.write(jline({
+                "query": "nx.example.com",
+                "qtype": "A",
+                "answer": [],
+                "atype": "A",
+                "rc": "NXDOMAIN",
+                "ttl": 0,
+                "cnt": 1,
+                "pts": pts,
+            }) + "\n")
+            fh.write(jline({
+                "query": "badttl.example.com",
+                "qtype": "A",
+                "answer": ["1.2.3.4"],
+                "atype": "A",
+                "rc": "NOERROR",
+                "ttl": "nope",
+                "cnt": 1,
+                "pts": pts,
+            }) + "\n")
+            fh.write(jline({
+                "query": "nul.example.com",
+                "qtype": "TXT",
+                "answer": ["a\x00b"],
+                "atype": "TXT",
+                "rc": "NOERROR",
+                "ttl": 60,
+                "cnt": 1,
+                "pts": pts,
+            }) + "\n")
+            fh.write("{not-json\n")
+            fh.write("1700000001.000001||10.0.0.1||10.0.0.2||IN||text.example.com.||A||8.8.8.8||60||4\n")
+        open(capture, "w").close()
+        proc = run([sys.executable, PDNS2DB, "--batch", "--file", jpath], loaded)
+        cap = open(capture, encoding="utf-8").read() if os.path.exists(capture) else ""
+        binds = ["\n".join(b[2:]) for b in blocks(cap) if b and b[0] == "EXEC"]
+        joined_bind = "\n".join(binds)
+        report(proc.returncode == 0
+               and len(binds) == 5
+               and "json.example.com" in joined_bind
+               and "9.9.9.9" in joined_bind
+               and "1.1.1.1" in joined_bind
+               and "nx.example.com" in joined_bind
+               and "NXDOMAIN" in joined_bind
+               and "text.example.com" in joined_bind
+               and "8.8.8.8" in joined_bind
+               and "1700000001" in joined_bind
+               and "a\\000b" in joined_bind
+               and "badttl.example.com" not in joined_bind,
+               "pdns2db-json", proc.stdout + proc.stderr + "\n" + cap)
 
         proc = run(["perl", SEARCH, "-s", ""], env)
         report(proc.returncode == 0 and "need to search" in (proc.stdout + proc.stderr),
@@ -234,7 +301,7 @@ def main():
         report(proc.returncode != 0 and "PDNS_DB_PORT" in (proc.stdout + proc.stderr),
                "search-port", proc.stdout + proc.stderr)
         badport = perl_env(lib, capture, {"PDNS_DB_PORT": "nope"})
-        proc = run(["perl", PDNS2DB, "--nodb", "--batch", "--file", logfile], badport)
+        proc = run([sys.executable, PDNS2DB, "--nodb", "--batch", "--file", logfile], badport)
         report(proc.returncode != 0 and "PDNS_DB_PORT" in (proc.stdout + proc.stderr),
                "pdns2db-port", proc.stdout + proc.stderr)
 

@@ -1,3 +1,17 @@
+Upgrade from PassiveDNS 2.0.0 to 2.0.1:
+
+- 2.0.0 writes one JSON object per line. tools/pdns2db.pl only
+  reads || lines, so a 2.0.0 log does not fill the database.
+- Install tools/pdns2db.py and run it in place of pdns2db.pl.
+  It reads JSON and || lines. The table does not change.
+  python3-pymysql is the database driver. search-pdns.pl is
+  unchanged.
+- Until that script is in place, start the 2.0.0 daemon with
+  --format text so the log stays in the old || form.
+- A full cache of young names, such as a flood of NXDOMAIN
+  answers, is evicted from the oldest name. The 12 hour idle
+  timeout still applies when the cache is under -S.
+
 Upgrade from PassiveDNS < 1.0 to 1.0:
 
 - If you are using custom tools to process the passivedns.log files,
