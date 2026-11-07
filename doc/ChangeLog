@@ -1,3 +1,10 @@
+Changes with PassiveDNS 2.0.2
+
+- Signal handlers passed to signal() take an int. GCC 15, in C23
+  mode, treats an empty parameter list as void(void), and
+  signal() requires void (*)(int). The handlers still call the
+  same functions
+
 Changes with PassiveDNS 2.0.1
 
 - tools/pdns2db.py reads the JSON log and the older || lines.

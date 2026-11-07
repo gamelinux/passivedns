@@ -2778,6 +2778,39 @@ static void warn_json_ignored(int saw_x, const char *x_arg, int saw_f,
         elog("[!] --format json ignores -Y.\n");
 }
 
+/* signal() takes void (*)(int). C23 treats an empty parameter list as
+ * void(void), so the functions below cannot be passed to signal() directly.
+ * They are also called with no argument from the rest of the program. */
+static void sig_game_over(int sig)
+{
+    (void)sig;
+    game_over();
+}
+
+static void sig_alarm(int sig)
+{
+    (void)sig;
+    sig_alarm_handler();
+}
+
+static void sig_hup(int sig)
+{
+    (void)sig;
+    sig_hup_handler();
+}
+
+static void sig_print_stats(int sig)
+{
+    (void)sig;
+    print_pdns_stats();
+}
+
+static void sig_expire_records(int sig)
+{
+    (void)sig;
+    expire_all_dns_records();
+}
+
 extern int optind, opterr, optopt; // getopt()
 
 /* magic main */
@@ -2840,13 +2873,13 @@ int main(int argc, char *argv[])
     config.cluster_id = 0;
     u_int32_t flags = 0;
 #endif /* HAVE_PFRING */
-    signal(SIGTERM, game_over);
-    signal(SIGINT,  game_over);
-    signal(SIGQUIT, game_over);
-    signal(SIGALRM, sig_alarm_handler);
-    signal(SIGHUP,  sig_hup_handler);
-    signal(SIGUSR1, print_pdns_stats);
-    signal(SIGUSR2, expire_all_dns_records);
+    signal(SIGTERM, sig_game_over);
+    signal(SIGINT,  sig_game_over);
+    signal(SIGQUIT, sig_game_over);
+    signal(SIGALRM, sig_alarm);
+    signal(SIGHUP,  sig_hup);
+    signal(SIGUSR1, sig_print_stats);
+    signal(SIGUSR2, sig_expire_records);
 
 #define ARGS "i:H:r:qc:nyYNjJl:s:L:d:hb:Dp:C:P:S:f:X:u:g:T:VW:"
 #define OPT_STATS_FILE 256
