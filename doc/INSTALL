@@ -1,8 +1,8 @@
 PassiveDNS on Ubuntu 26.04
 
-These steps match Ubuntu 26.04 LTS (Resolute). libldns-dev, libjansson-dev,
-and the Perl database modules are in universe. Enable that component if apt
-cannot see them.
+These steps match Ubuntu 26.04 LTS (Resolute). libldns-dev and the Perl
+database modules are in universe. Enable that component if apt cannot
+see them.
 
 Build
 -----

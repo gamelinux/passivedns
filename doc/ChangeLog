@@ -1,3 +1,9 @@
+Changes not yet released
+
+- doc/INSTALL no longer lists libjansson-dev with the packages
+  the default JSON log needs. --enable-json remains the optional
+  -j and -J printer
+
 Changes with PassiveDNS 2.0.2
 
 - Signal handlers passed to signal() take an int. GCC 15, in C23

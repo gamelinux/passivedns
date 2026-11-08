@@ -238,7 +238,7 @@ AS_IF([test "x$enable_pfring" = "xyes"], [
 
 # Checks for libjansson.
 AC_ARG_ENABLE(json,
-    AS_HELP_STRING([--enable-json], [Enable JSON support]))
+    AS_HELP_STRING([--enable-json], [Optional -j and -J printer via libjansson. The default JSON log does not use this]))
 
 AC_ARG_WITH(jansson_includes,
     [  --with-jansson-includes=DIR   libjansson include directory],
