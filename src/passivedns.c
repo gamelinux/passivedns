@@ -1591,6 +1591,9 @@ static void start_capture_session(int do_daemon)
         finish_daemon();
 }
 
+/* 0 unless pcap_loop failed. game_over() is the normal exit path. */
+static int pdns_exit_code;
+
 void game_over()
 {
     if (config.inpacket == 0) {
@@ -1634,7 +1637,7 @@ void game_over()
 
         free_config();
         olog("\n[*] passivedns ended.\n");
-        exit(0);
+        exit(pdns_exit_code);
     }
     config.intr_flag |= INTERRUPT_END;
 }
@@ -3301,9 +3304,17 @@ int main(int argc, char *argv[])
 
     if (!config.pcap_file) olog("[*] Sniffing...\n\n");
 
-    pcap_loop(config.handle, -1, got_packet, NULL);
+    {
+        int loop_rc = pcap_loop(config.handle, -1, got_packet, NULL);
+
+        /* -1 is an error. -2 is pcap_breakloop. 0 is the end of a pcap file. */
+        if (loop_rc == -1) {
+            elog("[E] pcap_loop: %s\n", pcap_geterr(config.handle));
+            pdns_exit_code = 1;
+        }
+    }
 
     game_over();
-    return 0;
+    return pdns_exit_code;
 }
 

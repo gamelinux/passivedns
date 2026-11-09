@@ -3,6 +3,9 @@ Changes not yet released
 - doc/INSTALL no longer lists libjansson-dev with the packages
   the default JSON log needs. --enable-json remains the optional
   -j and -J printer
+- A failed pcap_loop is logged and the process exits non-zero
+  after the usual cleanup. pcap_breakloop and the end of a pcap
+  file still exit 0
 
 Changes with PassiveDNS 2.0.2
 
